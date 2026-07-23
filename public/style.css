@@ -1,0 +1,226 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    background: #1a1f2b;
+    color: #ecf0f1;
+    overflow: hidden;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Lobby */
+#lobby-screen {
+    background: radial-gradient(circle at 50% 30%, #2c3e50, #1a1f2b 70%);
+}
+
+#game-title {
+    font-size: 48px;
+    letter-spacing: 4px;
+    margin-bottom: 40px;
+    color: #f1c40f;
+    text-shadow: 0 0 20px rgba(241, 196, 15, 0.4);
+}
+
+.play-btn {
+    position: absolute;
+    right: 30px;
+    bottom: 30px;
+    padding: 16px 36px;
+    font-size: 22px;
+    font-weight: bold;
+    background: linear-gradient(180deg, #e67e22, #d35400);
+    color: white;
+    border: 2px solid #f39c12;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+#lobby-screen .play-btn { position: absolute; }
+
+.play-btn:hover {
+    filter: brightness(1.1);
+}
+
+#boss-select-screen .play-btn,
+#waiting-screen .play-btn,
+#result-screen .play-btn {
+    position: static;
+}
+
+.char-select-btn {
+    position: absolute;
+    left: 30px;
+    bottom: 30px;
+    padding: 14px 28px;
+    font-size: 18px;
+    font-weight: bold;
+    background: #2c3e50;
+    color: white;
+    border: 2px solid #3498db;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.char-select-btn:hover {
+    filter: brightness(1.15);
+}
+
+.boss-card.selected {
+    border-color: #f1c40f;
+    box-shadow: 0 0 16px rgba(241, 196, 15, 0.5);
+}
+
+/* Boss select */
+.boss-list {
+    display: flex;
+    gap: 20px;
+    margin: 30px 0;
+}
+
+.boss-card {
+    width: 180px;
+    height: 220px;
+    background: #2c3e50;
+    border: 3px solid #34495e;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.boss-card:hover {
+    border-color: #f1c40f;
+    transform: translateY(-4px);
+}
+
+.boss-card.locked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.boss-card .icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.boss-card .name {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.secondary-btn {
+    padding: 10px 24px;
+    font-size: 16px;
+    background: #34495e;
+    color: white;
+    border: 2px solid #7f8c8d;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+/* Waiting room */
+.waiting-actions {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+#waiting-status {
+    font-size: 20px;
+    color: #bdc3c7;
+    margin-top: 10px;
+}
+
+/* Fight screen */
+#fight-screen {
+    background: #0f1319;
+}
+
+#gameCanvas {
+    background: radial-gradient(circle at 50% 50%, #2c3540, #12161d 75%);
+    border-radius: 50%;
+    box-shadow: 0 0 0 6px #34495e, 0 0 40px rgba(0,0,0,0.6);
+}
+
+.hp-container {
+    position: absolute;
+    z-index: 10;
+}
+
+.hp-container.top {
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 400px;
+}
+
+.hp-container.bottom-left {
+    bottom: 20px;
+    left: 20px;
+    width: 220px;
+}
+
+.hp-container.bottom-right {
+    bottom: 20px;
+    right: 20px;
+    width: 220px;
+}
+
+.hp-label {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #bdc3c7;
+}
+
+.hp-bar-bg {
+    width: 100%;
+    height: 18px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid #34495e;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.hp-bar-fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.15s ease-out;
+}
+
+.hp-bar-fill.boss { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+.hp-bar-fill.mine { background: linear-gradient(90deg, #2980b9, #3498db); }
+.hp-bar-fill.partner { background: linear-gradient(90deg, #27ae60, #2ecc71); }
+
+/* Result screen */
+#result-title {
+    font-size: 42px;
+    margin-bottom: 12px;
+}
+
+#result-desc {
+    font-size: 18px;
+    color: #bdc3c7;
+    margin-bottom: 30px;
+}

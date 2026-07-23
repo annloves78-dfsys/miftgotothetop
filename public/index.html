@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boss Raid</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Lobby -->
+    <div id="lobby-screen" class="screen">
+        <h1 id="game-title">BOSS RAID</h1>
+        <button id="character-select-btn" class="char-select-btn">🧑 <span id="selected-char-name">캐릭터</span></button>
+        <button id="play-btn" class="play-btn">▶ 플레이</button>
+    </div>
+
+    <!-- Character select -->
+    <div id="character-select-screen" class="screen hidden">
+        <h2>캐릭터 선택</h2>
+        <div id="character-list" class="boss-list"></div>
+        <button id="back-from-character-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Boss select -->
+    <div id="boss-select-screen" class="screen hidden">
+        <h2>보스 레이드</h2>
+        <div id="boss-list" class="boss-list"></div>
+        <button id="back-to-lobby-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Waiting room -->
+    <div id="waiting-screen" class="screen hidden">
+        <h2 id="waiting-boss-name">보스 이름</h2>
+        <p id="waiting-status">대기 중... (1/2)</p>
+        <div class="waiting-actions">
+            <button id="start-solo-btn" class="play-btn">혼자 시작하기</button>
+            <button id="cancel-waiting-btn" class="secondary-btn">취소</button>
+        </div>
+    </div>
+
+    <!-- Fight -->
+    <div id="fight-screen" class="screen hidden">
+        <div id="boss-hp-container" class="hp-container top">
+            <div class="hp-label" id="boss-hp-label">보스</div>
+            <div class="hp-bar-bg"><div id="boss-hp-bar" class="hp-bar-fill boss"></div></div>
+        </div>
+        <div id="my-hp-container" class="hp-container bottom-left">
+            <div class="hp-label">나</div>
+            <div class="hp-bar-bg"><div id="my-hp-bar" class="hp-bar-fill mine"></div></div>
+        </div>
+        <div id="partner-hp-container" class="hp-container bottom-right hidden">
+            <div class="hp-label">파트너</div>
+            <div class="hp-bar-bg"><div id="partner-hp-bar" class="hp-bar-fill partner"></div></div>
+        </div>
+        <canvas id="gameCanvas" width="700" height="700"></canvas>
+    </div>
+
+    <!-- Result -->
+    <div id="result-screen" class="screen hidden">
+        <h1 id="result-title">승리!</h1>
+        <p id="result-desc"></p>
+        <button id="result-back-btn" class="play-btn">보스 선택으로</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/shared.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/boss.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
