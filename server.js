@@ -322,18 +322,18 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
 
-        // Some cookies heal the team every time they attack, hit or not.
-        // The ultimate can temporarily raise that per-attack heal amount.
-        if (character.attackHealOnUse) {
-            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
-            healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
-        }
-
         if (character.attackType === 'melee_kick') {
             if (meleeLineHit(p.x, p.y, p.facing, character.attackRange, character.attackWidth, BOSS_RADIUS)) {
                 room.bossHp = Math.max(0, room.bossHp - character.attackDamage);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
+
+                // Some cookies heal the team whenever the attack actually
+                // connects. The ultimate can temporarily raise that amount.
+                if (character.attackHealOnUse) {
+                    const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+                    healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+                }
             }
         }
     });

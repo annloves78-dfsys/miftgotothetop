@@ -62,7 +62,7 @@ const CHARACTERS = {
         attackWidth: 35,
         attackDamage: 1,
         attackCooldown: 500,
-        attackHealOnUse: 1, // heals every teammate this much each time the attack fires (hit or not)
+        attackHealOnUse: 1, // heals every teammate this much whenever the attack connects
         skillType: 'spin_heal', // channel a spin for skillDurationMs; if it connects, heal the team once
         skillRadius: 40,
         skillDurationMs: 2000,
