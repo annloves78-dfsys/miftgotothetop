@@ -178,26 +178,5 @@ class Player {
         ctx.fillRect(this.x - barW / 2, hpBarY, barW, barH);
         ctx.fillStyle = '#2ecc71';
         ctx.fillRect(this.x - barW / 2, hpBarY, barW * (this.hp / this.maxHp), barH);
-
-        // Cooldown readout below the player, where the HP bar used to sit.
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        let cdY = this.y + R + 16;
-        if (this.stats.skillType) {
-            const remain = Math.max(0, this.stats.skillCooldown - (now - this.lastSkillClientTime)) / 1000;
-            if (remain > 0.05) {
-                ctx.fillStyle = '#e67e22';
-                ctx.fillText(`스킬 ${remain.toFixed(1)}s`, this.x, cdY);
-                cdY += 12;
-            }
-        }
-        if (this.stats.ultimateType) {
-            const remain = Math.max(0, this.stats.ultimateCooldownMs - (now - this.lastUltimateClientTime)) / 1000;
-            if (remain > 0.05) {
-                ctx.fillStyle = '#2ecc71';
-                ctx.fillText(`궁극기 ${remain.toFixed(1)}s`, this.x, cdY);
-            }
-        }
     }
 }

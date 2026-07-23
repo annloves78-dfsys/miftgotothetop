@@ -30,6 +30,8 @@ const ctx = canvas.getContext('2d');
 const bossHpBar = document.getElementById('boss-hp-bar');
 const bossHpLabel = document.getElementById('boss-hp-label');
 const myHpBar = document.getElementById('my-hp-bar');
+const mySkillCdEl = document.getElementById('my-skill-cd');
+const myUltimateCdEl = document.getElementById('my-ultimate-cd');
 const partnerHpContainer = document.getElementById('partner-hp-container');
 const partnerHpBar = document.getElementById('partner-hp-bar');
 const resultTitle = document.getElementById('result-title');
@@ -216,6 +218,19 @@ function updateHpBars() {
     if (partner) partnerHpBar.style.width = `${Math.max(0, (partner.hp / partner.maxHp) * 100)}%`;
 }
 
+function updateCooldownDisplay(now) {
+    const me = players[socket.id];
+    if (!me) return;
+    if (me.stats.skillType) {
+        const remain = Math.max(0, me.stats.skillCooldown - (now - me.lastSkillClientTime)) / 1000;
+        mySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+    }
+    if (me.stats.ultimateType) {
+        const remain = Math.max(0, me.stats.ultimateCooldownMs - (now - me.lastUltimateClientTime)) / 1000;
+        myUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+    }
+}
+
 // ---- Input ----
 window.addEventListener('keydown', (e) => {
     keys[e.key] = true;
@@ -316,6 +331,7 @@ function frame() {
             socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
             lastMoveEmit = now;
         }
+        updateCooldownDisplay(now);
     }
     if (boss) boss.update(now);
 
