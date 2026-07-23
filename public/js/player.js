@@ -54,16 +54,19 @@ class Player {
         if (keys['d'] || keys['D']) dx += speed;
         if (dx === 0 && dy === 0) return false;
 
-        const nx = this.x + dx;
-        const ny = this.y + dy;
-        const maxDist = SHARED.ARENA_RADIUS - SHARED.PLAYER_RADIUS;
+        let nx = this.x + dx;
+        let ny = this.y + dy;
         const dist = Math.hypot(nx, ny);
-        if (dist <= maxDist) {
-            this.x = nx; this.y = ny;
-        } else {
+        const maxDist = SHARED.ARENA_RADIUS - SHARED.PLAYER_RADIUS;
+        const minDist = SHARED.BOSS_RADIUS + SHARED.PLAYER_RADIUS; // boss is solid, can't be walked through
+        if (dist > maxDist) {
             const scale = maxDist / dist;
-            this.x = nx * scale; this.y = ny * scale;
+            nx *= scale; ny *= scale;
+        } else if (dist < minDist && dist > 0) {
+            const scale = minDist / dist;
+            nx *= scale; ny *= scale;
         }
+        this.x = nx; this.y = ny;
         return true;
     }
 

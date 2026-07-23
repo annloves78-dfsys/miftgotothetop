@@ -63,6 +63,7 @@ const CHARACTERS = {
         attackDamage: 1,
         attackCooldown: 500,
         attackHealOnUse: 1, // heals every teammate this much whenever the attack connects
+        attackHealChance: 0.4, // ...but only procs this often per connecting hit
         skillType: 'spin_heal', // channel a spin for skillDurationMs; if it connects, heal the team once
         skillRadius: 40,
         skillDurationMs: 2000,
@@ -111,6 +112,7 @@ const BOSS_DEFS = {
     boss2: {
         id: 'boss2',
         name: '시하라얼',
+        color: '#f1c40f',
         maxHpPerPlayer: 1000, // fixed at the arena center, same as boss1
         restMsRange: [3000, 10000],
         patterns: {

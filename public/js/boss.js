@@ -146,7 +146,7 @@ class Boss {
         // Boss body
         ctx.beginPath();
         ctx.arc(0, 0, R, 0, Math.PI * 2);
-        ctx.fillStyle = this.state === 'telegraph' ? '#95a5a6' : '#7f8c8d';
+        ctx.fillStyle = this.def.color || (this.state === 'telegraph' ? '#95a5a6' : '#7f8c8d');
         ctx.fill();
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#2c3e50';

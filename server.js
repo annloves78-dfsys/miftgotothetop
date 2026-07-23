@@ -398,7 +398,9 @@ io.on('connection', (socket) => {
         if (!room) return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        if (Math.hypot(x, y) > ARENA_RADIUS - PLAYER_RADIUS + 1) return; // ignore out-of-bounds claims
+        const dist = Math.hypot(x, y);
+        if (dist > ARENA_RADIUS - PLAYER_RADIUS + 1) return; // ignore out-of-bounds claims
+        if (dist < BOSS_RADIUS + PLAYER_RADIUS - 1) return; // ignore positions overlapping the boss
         p.x = x; p.y = y; p.facing = facing;
         socket.to(roomId).emit('playerMoved', { id: socket.id, x, y, facing });
     });
@@ -421,8 +423,9 @@ io.on('connection', (socket) => {
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
 
                 // Some cookies heal the team whenever the attack actually
-                // connects. The ultimate can temporarily raise that amount.
-                if (character.attackHealOnUse) {
+                // connects (only a chance to proc, if attackHealChance is
+                // set). The ultimate can temporarily raise the heal amount.
+                if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
                     const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
                     healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
                 }
