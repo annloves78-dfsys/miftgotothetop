@@ -43,7 +43,11 @@ class Player {
         if (keys['d'] || keys['D']) dx += speed;
         if (dx === 0 && dy === 0) return false;
 
-        if (dx > 0) this.facing = 'right';
+        if (dx > 0 && dy > 0) this.facing = 'downright';
+        else if (dx > 0 && dy < 0) this.facing = 'upright';
+        else if (dx < 0 && dy > 0) this.facing = 'downleft';
+        else if (dx < 0 && dy < 0) this.facing = 'upleft';
+        else if (dx > 0) this.facing = 'right';
         else if (dx < 0) this.facing = 'left';
         else if (dy > 0) this.facing = 'down';
         else if (dy < 0) this.facing = 'up';
@@ -73,7 +77,8 @@ class Player {
 
     draw(ctx, now) {
         const R = SHARED.PLAYER_RADIUS;
-        const facingAngle = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[this.facing] || 0;
+        const [fx, fy] = SHARED.FACING_VECTORS[this.facing] || [1, 0];
+        const facingAngle = Math.atan2(fy, fx);
         ctx.save();
         ctx.translate(this.x, this.y);
 
