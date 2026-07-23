@@ -81,7 +81,8 @@ class Player {
 
     triggerSkillEffect() {
         this.lastSkillClientTime = performance.now();
-        this.skillEffectUntil = performance.now() + 350;
+        const duration = this.stats.skillType === 'spin_heal' ? this.stats.skillDurationMs : 350;
+        this.skillEffectUntil = performance.now() + duration;
         if (this.stats.skillType === 'speed_boost') {
             this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
         }
@@ -124,11 +125,22 @@ class Player {
         }
 
         if (now < this.skillEffectUntil) {
-            ctx.beginPath();
-            ctx.arc(0, 0, R + 26, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
-            ctx.lineWidth = 6;
-            ctx.stroke();
+            if (this.stats.skillType === 'spin_heal') {
+                // Shows the actual spin radius, since it matters for gameplay.
+                ctx.beginPath();
+                ctx.arc(0, 0, this.stats.skillRadius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(39, 174, 96, 0.2)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(39, 174, 96, 0.85)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.arc(0, 0, R + 26, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
+                ctx.lineWidth = 6;
+                ctx.stroke();
+            }
         }
 
         if (now < this.ultimateEffectUntil) {

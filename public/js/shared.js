@@ -50,6 +50,29 @@ const CHARACTERS = {
         ultimateRadius: 90, // medium-sized circle at the clicked point
         ultimateDamage: 10,
         ultimateCooldownMs: 30000
+    },
+    spinach: {
+        name: '시금치맛 쿠키',
+        shortName: '시금치', // shown on the lobby's character-select button
+        color: '#27ae60',
+        health: 100,
+        speed: 2,
+        attackType: 'melee_kick', // same straight-line mechanic, long reach
+        attackRange: 150,
+        attackWidth: 35,
+        attackDamage: 1,
+        attackCooldown: 500,
+        attackHealOnUse: 1, // heals every teammate this much each time the attack fires (hit or not)
+        skillType: 'spin_heal', // channel a spin for skillDurationMs; if it connects, heal the team once
+        skillRadius: 40,
+        skillDurationMs: 2000,
+        skillDamage: 1,
+        skillHealOnHit: 10,
+        skillCooldown: 10000,
+        ultimateType: 'attack_heal_boost', // temporarily raises attackHealOnUse to ultimateHealPerAttack
+        ultimateDurationMs: 8000,
+        ultimateHealPerAttack: 5,
+        ultimateCooldownMs: 30000
     }
 };
 

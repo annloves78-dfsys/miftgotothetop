@@ -10,7 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // rooms[roomId] = {
 //   bossId, state: 'waiting'|'fighting'|'ended',
-//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime } },
+//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil } },
 //   bossHp, bossMaxHp, bossState: 'idle'|'telegraph'|'active',
 //   bossPattern, bossPatternStartAt, bossPatternRuntime, nextAttackAt, loopHandle, activeBuffs
 // }
@@ -37,6 +37,17 @@ function meleeLineHit(px, py, facingAngle, range, width, targetRadius) {
     if (proj < -targetRadius || proj > range + targetRadius) return false;
     const perp = Math.abs(vx * dy - vy * dx); // distance off the facing axis
     return perp <= (width / 2 + targetRadius);
+}
+
+function healTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        const healed = Math.min(p.maxHp, p.hp + amount);
+        if (healed !== p.hp) {
+            p.hp = healed;
+            io.to(roomId).emit('playerHealed', { id, hp: p.hp });
+        }
+    }
 }
 
 function publicPlayers(room) {
@@ -134,12 +145,17 @@ function tickRoom(roomId) {
             if (now - buff.lastTickAt >= buff.tickMs) {
                 buff.lastTickAt += buff.tickMs;
                 if (buff.type === 'team_heal_over_time') {
-                    for (const [id, p] of Object.entries(room.players)) {
-                        if (!p.alive) continue;
-                        const healed = Math.min(p.maxHp, p.hp + buff.healPerTick);
-                        if (healed !== p.hp) {
-                            p.hp = healed;
-                            io.to(roomId).emit('playerHealed', { id, hp: p.hp });
+                    healTeam(room, roomId, buff.healPerTick);
+                } else if (buff.type === 'spin_heal_check' && !buff.triggered) {
+                    const caster = room.players[buff.casterId];
+                    if (caster && caster.alive) {
+                        const distToEdge = Math.hypot(caster.x, caster.y) - BOSS_RADIUS;
+                        if (distToEdge <= buff.radius) {
+                            buff.triggered = true;
+                            room.bossHp = Math.max(0, room.bossHp - buff.damage);
+                            io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: buff.casterId });
+                            if (room.bossHp <= 0) endRoom(roomId, 'win');
+                            healTeam(room, roomId, buff.healAmount);
                         }
                     }
                 }
@@ -263,7 +279,7 @@ io.on('connection', (socket) => {
             x: pos.x, y: pos.y,
             hp: character.health, maxHp: character.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
-            facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
+            facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0
         };
 
         socket.join(roomId);
@@ -306,6 +322,13 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
 
+        // Some cookies heal the team every time they attack, hit or not.
+        // The ultimate can temporarily raise that per-attack heal amount.
+        if (character.attackHealOnUse) {
+            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+            healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        }
+
         if (character.attackType === 'melee_kick') {
             if (meleeLineHit(p.x, p.y, p.facing, character.attackRange, character.attackWidth, BOSS_RADIUS)) {
                 room.bossHp = Math.max(0, room.bossHp - character.attackDamage);
@@ -337,6 +360,20 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        } else if (character.skillType === 'spin_heal') {
+            // Channels for skillDurationMs; if the boss is ever in range during
+            // that window, it lands once (damage + team heal) and stops checking.
+            room.activeBuffs.push({
+                type: 'spin_heal_check',
+                casterId: socket.id,
+                radius: character.skillRadius,
+                damage: character.skillDamage,
+                healAmount: character.skillHealOnHit,
+                endAt: now + character.skillDurationMs,
+                tickMs: 150,
+                lastTickAt: now,
+                triggered: false
+            });
         }
     });
 
@@ -382,6 +419,9 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        } else if (character.ultimateType === 'attack_heal_boost') {
+            // Read by the playerAttack handler for the duration of the buff.
+            p.attackHealBoostUntil = now + character.ultimateDurationMs;
         }
     });
 

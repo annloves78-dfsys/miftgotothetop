@@ -4,7 +4,7 @@ const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
-    unlockedCharacters: ['kicker', 'sweetpotato']
+    unlockedCharacters: Object.keys(SHARED.CHARACTERS)
 };
 
 function loadGameData() {
@@ -13,12 +13,12 @@ function loadGameData() {
         if (saved) {
             const parsed = JSON.parse(saved);
             const data = { ...defaultData, ...parsed };
-            // Saves made before a new cookie existed won't have it in their
-            // stored unlockedCharacters array (the merge above just keeps the
-            // old array) — patch newly-added cookies in for existing saves.
-            if (!data.unlockedCharacters.includes('sweetpotato')) {
-                data.unlockedCharacters.push('sweetpotato');
-            }
+            // Saves made before a cookie existed won't have it in their stored
+            // unlockedCharacters array (the merge above just keeps the old
+            // array) — there's no unlock system yet, so patch every cookie in.
+            Object.keys(SHARED.CHARACTERS).forEach(id => {
+                if (!data.unlockedCharacters.includes(id)) data.unlockedCharacters.push(id);
+            });
             return data;
         }
     } catch (e) {
