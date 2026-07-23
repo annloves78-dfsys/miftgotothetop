@@ -10,9 +10,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // rooms[roomId] = {
 //   bossId, state: 'waiting'|'fighting'|'ended',
-//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime } },
+//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime } },
 //   bossHp, bossMaxHp, bossState: 'idle'|'telegraph'|'active',
-//   bossPattern, bossPatternStartAt, bossPatternRuntime, nextAttackAt, loopHandle
+//   bossPattern, bossPatternStartAt, bossPatternRuntime, nextAttackAt, loopHandle, activeBuffs
 // }
 const rooms = {};
 
@@ -109,6 +109,7 @@ function startFight(roomId) {
     room.bossMaxHp = room.bossHp;
     room.bossState = 'idle';
     room.nextAttackAt = Date.now() + randomRest(bossDef);
+    room.activeBuffs = [];
 
     io.to(roomId).emit('raidStarted', {
         bossHp: room.bossHp,
@@ -124,6 +125,27 @@ function tickRoom(roomId) {
     if (!room || room.state !== 'fighting') return;
     const bossDef = BOSS_DEFS[room.bossId];
     const now = Date.now();
+
+    // Team-wide buffs (e.g. the healer's ultimate) tick independently of the
+    // boss's own attack state machine below.
+    if (room.activeBuffs && room.activeBuffs.length) {
+        room.activeBuffs = room.activeBuffs.filter(buff => now < buff.endAt);
+        for (const buff of room.activeBuffs) {
+            if (now - buff.lastTickAt >= buff.tickMs) {
+                buff.lastTickAt += buff.tickMs;
+                if (buff.type === 'team_heal_over_time') {
+                    for (const [id, p] of Object.entries(room.players)) {
+                        if (!p.alive) continue;
+                        const healed = Math.min(p.maxHp, p.hp + buff.healPerTick);
+                        if (healed !== p.hp) {
+                            p.hp = healed;
+                            io.to(roomId).emit('playerHealed', { id, hp: p.hp });
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (room.bossState === 'idle') {
         if (now >= room.nextAttackAt) {
@@ -241,7 +263,7 @@ io.on('connection', (socket) => {
             x: pos.x, y: pos.y,
             hp: character.health, maxHp: character.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
-            facing: 'down', alive: true, lastAttackTime: 0, lastSkillTime: 0
+            facing: 'down', alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
         };
 
         socket.join(roomId);
@@ -315,6 +337,31 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        }
+    });
+
+    socket.on('playerUltimate', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        if (!character.ultimateType) return;
+        const now = Date.now();
+        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        p.lastUltimateTime = now;
+
+        socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
+
+        if (character.ultimateType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
         }
     });
 

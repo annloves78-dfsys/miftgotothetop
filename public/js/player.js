@@ -17,6 +17,10 @@ class Player {
 
         this.lastSkillClientTime = -Infinity;
         this.skillEffectUntil = 0;
+
+        this.lastUltimateClientTime = -Infinity;
+        this.ultimateEffectUntil = 0;
+        this.healEffectUntil = 0;
     }
 
     get stats() {
@@ -29,6 +33,10 @@ class Player {
 
     canUseSkill(now) {
         return this.alive && !!this.stats.skillType && now - this.lastSkillClientTime >= this.stats.skillCooldown;
+    }
+
+    canUseUltimate(now) {
+        return this.alive && !!this.stats.ultimateType && now - this.lastUltimateClientTime >= this.stats.ultimateCooldownMs;
     }
 
     // Local-only movement prediction; server remains the source of truth for
@@ -75,6 +83,15 @@ class Player {
         this.skillEffectUntil = performance.now() + 350;
     }
 
+    triggerUltimateEffect() {
+        this.lastUltimateClientTime = performance.now();
+        this.ultimateEffectUntil = performance.now() + (this.stats.ultimateDurationMs || 0);
+    }
+
+    triggerHealEffect() {
+        this.healEffectUntil = performance.now() + 250;
+    }
+
     draw(ctx, now) {
         const R = SHARED.PLAYER_RADIUS;
         const [fx, fy] = SHARED.FACING_VECTORS[this.facing] || [1, 0];
@@ -101,6 +118,24 @@ class Player {
             ctx.arc(0, 0, R + 26, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
             ctx.lineWidth = 6;
+            ctx.stroke();
+        }
+
+        if (now < this.ultimateEffectUntil) {
+            // Slow pulse for the whole heal-over-time duration.
+            const pulse = 4 + Math.sin(now / 150) * 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, R + 20 + pulse, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.7)';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+        }
+
+        if (now < this.healEffectUntil) {
+            ctx.beginPath();
+            ctx.arc(0, 0, R + 10, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.9)';
+            ctx.lineWidth = 3;
             ctx.stroke();
         }
 

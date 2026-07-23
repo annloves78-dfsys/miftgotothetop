@@ -35,7 +35,12 @@ const CHARACTERS = {
         skillType: 'spin_kick', // future characters may omit skillType entirely
         skillRange: 100,
         skillDamage: 40,
-        skillCooldown: 8000
+        skillCooldown: 8000,
+        ultimateType: 'team_heal_over_time', // future characters may omit ultimateType entirely
+        ultimateHealPerTick: 10,
+        ultimateTickMs: 1000,
+        ultimateDurationMs: 6000,
+        ultimateCooldownMs: 30000
     }
 };
 

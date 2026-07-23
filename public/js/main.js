@@ -150,6 +150,19 @@ socket.on('playerSkillUsed', ({ id }) => {
     if (p) p.triggerSkillEffect();
 });
 
+socket.on('playerUltimateUsed', ({ id }) => {
+    const p = players[id];
+    if (p) p.triggerUltimateEffect();
+});
+
+socket.on('playerHealed', ({ id, hp }) => {
+    const p = players[id];
+    if (!p) return;
+    p.hp = hp;
+    p.triggerHealEffect();
+    updateHpBars();
+});
+
 socket.on('bossDamaged', ({ bossHp }) => {
     if (boss) boss.setHp(bossHp);
     updateHpBars();
@@ -194,7 +207,10 @@ function updateHpBars() {
 }
 
 // ---- Input ----
-window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+window.addEventListener('keydown', (e) => {
+    keys[e.key] = true;
+    if (e.key === 'f' || e.key === 'F') tryUseUltimate();
+});
 window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -219,6 +235,15 @@ function tryUseSkill() {
     if (!me.canUseSkill(now)) return;
     me.triggerSkillEffect();
     socket.emit('playerSkill');
+}
+
+function tryUseUltimate() {
+    const me = players[socket.id];
+    if (!me) return;
+    const now = performance.now();
+    if (!me.canUseUltimate(now)) return;
+    me.triggerUltimateEffect();
+    socket.emit('playerUltimate');
 }
 
 // ---- Loop ----
