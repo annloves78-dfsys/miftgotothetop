@@ -13,7 +13,7 @@ const CHARACTERS = {
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
         health: 100,
-        speed: 5,
+        speed: 2,
         attackType: 'melee_kick', // future: 'ranged', 'magic', ...
         attackRange: 70, // how far the line-shaped kick reaches
         attackWidth: 40, // width of the straight-line kick corridor
