@@ -41,7 +41,7 @@ let gameData = loadGameData();
 // ---- Character select ----
 function updateSelectedCharLabel() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
-    selectedCharNameEl.textContent = stats.name;
+    selectedCharNameEl.textContent = stats.shortName || stats.name;
 }
 updateSelectedCharLabel();
 
