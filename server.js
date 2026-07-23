@@ -340,7 +340,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('playerUltimate', () => {
+    socket.on('playerUltimate', (payload) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.state !== 'fighting') return;
@@ -362,6 +362,26 @@ io.on('connection', (socket) => {
                 endAt: now + character.ultimateDurationMs,
                 lastTickAt: now
             });
+        } else if (character.ultimateType === 'targeted_aoe') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+
+            // Clamp the click to the arena so an off-screen/garbage click can't
+            // be reported as a valid strike point.
+            const dist = Math.hypot(targetX, targetY);
+            const clampedDist = Math.min(dist, ARENA_RADIUS);
+            const scale = dist > 0 ? clampedDist / dist : 0;
+            const tx = targetX * scale, ty = targetY * scale;
+
+            io.to(roomId).emit('ultimateImpact', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
+
+            const distToBoss = Math.hypot(tx, ty);
+            if (distToBoss <= character.ultimateRadius + BOSS_RADIUS) {
+                room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
         }
     });
 

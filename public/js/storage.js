@@ -4,7 +4,7 @@ const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
-    unlockedCharacters: ['kicker']
+    unlockedCharacters: ['kicker', 'sweetpotato']
 };
 
 function loadGameData() {
@@ -12,7 +12,14 @@ function loadGameData() {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
             const parsed = JSON.parse(saved);
-            return { ...defaultData, ...parsed };
+            const data = { ...defaultData, ...parsed };
+            // Saves made before a new cookie existed won't have it in their
+            // stored unlockedCharacters array (the merge above just keeps the
+            // old array) — patch newly-added cookies in for existing saves.
+            if (!data.unlockedCharacters.includes('sweetpotato')) {
+                data.unlockedCharacters.push('sweetpotato');
+            }
+            return data;
         }
     } catch (e) {
         console.error("Failed to load save data", e);

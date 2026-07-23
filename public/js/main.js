@@ -122,6 +122,8 @@ const keys = {};
 let lastMoveEmit = 0;
 let mouseX = null;
 let mouseY = null; // canvas-space; null until the mouse first moves over it
+let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired by left-click
+let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -134,6 +136,8 @@ socket.on('raidStarted', (data) => {
     });
     partnerHpContainer.classList.toggle('hidden', Object.keys(players).length < 2);
     raidStartAt = performance.now();
+    isTargetingUltimate = false;
+    impactEffects = [];
     updateHpBars();
     showScreen('fight');
     startLoop();
@@ -155,6 +159,10 @@ socket.on('playerSkillUsed', ({ id }) => {
 socket.on('playerUltimateUsed', ({ id }) => {
     const p = players[id];
     if (p) p.triggerUltimateEffect();
+});
+
+socket.on('ultimateImpact', ({ x, y, radius }) => {
+    impactEffects.push({ x, y, radius, until: performance.now() + 400 });
 });
 
 socket.on('playerHealed', ({ id, hp }) => {
@@ -211,14 +219,19 @@ function updateHpBars() {
 // ---- Input ----
 window.addEventListener('keydown', (e) => {
     keys[e.key] = true;
-    if (e.key === 'f' || e.key === 'F') tryUseUltimate();
+    if (e.key === 'f' || e.key === 'F') handleUltimateKey();
+    if (e.key === 'Escape') isTargetingUltimate = false;
 });
 window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) tryAttack();
-    else if (e.button === 2) tryUseSkill();
+    if (e.button === 0) {
+        if (isTargetingUltimate) confirmUltimateTarget();
+        else tryAttack();
+    } else if (e.button === 2) {
+        tryUseSkill();
+    }
 });
 canvas.addEventListener('mousemove', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -253,6 +266,32 @@ function tryUseUltimate() {
     if (!me.canUseUltimate(now)) return;
     me.triggerUltimateEffect();
     socket.emit('playerUltimate');
+}
+
+// F does different things depending on the character: instant cast for
+// heal-over-time, or arm targeting mode for a click-to-place AOE.
+function handleUltimateKey() {
+    const me = players[socket.id];
+    if (!me) return;
+    if (me.stats.ultimateType === 'targeted_aoe') {
+        if (isTargetingUltimate) { isTargetingUltimate = false; return; } // F again cancels
+        if (!me.canUseUltimate(performance.now())) return;
+        isTargetingUltimate = true;
+    } else {
+        tryUseUltimate();
+    }
+}
+
+function confirmUltimateTarget() {
+    const me = players[socket.id];
+    isTargetingUltimate = false;
+    if (!me || mouseX === null) return;
+    if (!me.canUseUltimate(performance.now())) return;
+    me.markUltimateUsed();
+    socket.emit('playerUltimate', {
+        targetX: mouseX - canvas.width / 2,
+        targetY: mouseY - canvas.height / 2
+    });
 }
 
 // ---- Loop ----
@@ -297,6 +336,30 @@ function render(now) {
 
     if (boss) boss.draw(ctx, now);
     Object.values(players).forEach(p => p.draw(ctx, now));
+
+    impactEffects = impactEffects.filter(fx => now < fx.until);
+    impactEffects.forEach(fx => {
+        const t = 1 - Math.max(0, (fx.until - now) / 400); // 0 -> 1 as it fades
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    });
+
+    if (isTargetingUltimate && mouseX !== null) {
+        const me = players[socket.id];
+        const radius = me ? me.stats.ultimateRadius : 90;
+        ctx.beginPath();
+        ctx.setLineDash([8, 6]);
+        ctx.arc(mouseX - canvas.width / 2, mouseY - canvas.height / 2, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
 
     ctx.restore();
 }

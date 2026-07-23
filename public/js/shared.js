@@ -5,8 +5,10 @@ const ARENA_RADIUS = 300;
 const BOSS_RADIUS = 50;
 const PLAYER_RADIUS = 18;
 
-// Character roster. Only 'kicker' exists today; future characters get their
-// own attackType branch in player.js instead of rewriting this structure.
+// Character roster. Every cookie shares movement speed 2; other stats are
+// balanced against 'kicker' as the baseline. attackType/skillType/ultimateType
+// pick which branch of player.js/server.js logic applies to that cookie, so
+// adding another cookie is a data entry here plus (at most) one new branch.
 const CHARACTERS = {
     kicker: {
         name: '자두맛 쿠키',
@@ -14,7 +16,7 @@ const CHARACTERS = {
         color: '#3498db',
         health: 100,
         speed: 2,
-        attackType: 'melee_kick', // future: 'ranged', 'magic', ...
+        attackType: 'melee_kick', // straight-line hit in the facing direction
         attackRange: 70, // how far the line-shaped kick reaches
         attackWidth: 40, // width of the straight-line kick corridor
         attackDamage: 5,
@@ -22,11 +24,31 @@ const CHARACTERS = {
         skillType: 'spin_kick', // future characters may omit skillType entirely
         skillRange: 100,
         skillDamage: 7,
-        skillCooldown: 8000,
+        skillCooldown: 10000,
         ultimateType: 'team_heal_over_time', // future characters may omit ultimateType entirely
         ultimateHealPerTick: 10,
         ultimateTickMs: 1000,
         ultimateDurationMs: 6000,
+        ultimateCooldownMs: 30000
+    },
+    sweetpotato: {
+        name: '자색 고구마맛 쿠키',
+        shortName: '고구마', // shown on the lobby's character-select button
+        color: '#8e44ad',
+        health: 100,
+        speed: 2,
+        attackType: 'melee_kick', // same straight-line mechanic, just a longer "hook" reach
+        attackRange: 150,
+        attackWidth: 30,
+        attackDamage: 5,
+        attackCooldown: 500,
+        skillType: 'speed_boost', // self-buff, no server-side damage effect needed
+        skillSpeedValue: 3,
+        skillSpeedDurationMs: 5000,
+        skillCooldown: 10000,
+        ultimateType: 'targeted_aoe', // F arms it, next left-click picks the strike point
+        ultimateRadius: 90, // medium-sized circle at the clicked point
+        ultimateDamage: 10,
         ultimateCooldownMs: 30000
     }
 };

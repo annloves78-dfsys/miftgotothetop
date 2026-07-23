@@ -21,6 +21,8 @@ class Player {
         this.lastUltimateClientTime = -Infinity;
         this.ultimateEffectUntil = 0;
         this.healEffectUntil = 0;
+
+        this.speedBoostUntil = 0; // performance.now() timestamp; see triggerSkillEffect()
     }
 
     get stats() {
@@ -43,7 +45,8 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = this.stats.speed;
+        const boosted = this.stats.skillType === 'speed_boost' && performance.now() < this.speedBoostUntil;
+        const speed = boosted ? this.stats.skillSpeedValue : this.stats.speed;
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -79,10 +82,20 @@ class Player {
     triggerSkillEffect() {
         this.lastSkillClientTime = performance.now();
         this.skillEffectUntil = performance.now() + 350;
+        if (this.stats.skillType === 'speed_boost') {
+            this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
+        }
+    }
+
+    // Starts the ultimate's cooldown. Split out from triggerUltimateEffect()
+    // because targeted_aoe fires from a click at some point after F is
+    // pressed, and its feedback is the impact marker, not a self-aura.
+    markUltimateUsed() {
+        this.lastUltimateClientTime = performance.now();
     }
 
     triggerUltimateEffect() {
-        this.lastUltimateClientTime = performance.now();
+        this.markUltimateUsed();
         this.ultimateEffectUntil = performance.now() + (this.stats.ultimateDurationMs || 0);
     }
 
