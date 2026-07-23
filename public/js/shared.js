@@ -27,15 +27,15 @@ const CHARACTERS = {
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
         health: 100,
-        speed: 2.52,
+        speed: 10,
         attackType: 'melee_kick', // future: 'ranged', 'magic', ...
         attackRange: 70, // how far the line-shaped kick reaches
         attackWidth: 40, // width of the straight-line kick corridor
-        attackDamage: 12,
+        attackDamage: 5,
         attackCooldown: 500,
         skillType: 'spin_kick', // future characters may omit skillType entirely
         skillRange: 100,
-        skillDamage: 40,
+        skillDamage: 7,
         skillCooldown: 8000,
         ultimateType: 'team_heal_over_time', // future characters may omit ultimateType entirely
         ultimateHealPerTick: 10,
