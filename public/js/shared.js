@@ -23,7 +23,7 @@ const FACING_VECTORS = {
 // own attackType branch in player.js instead of rewriting this structure.
 const CHARACTERS = {
     kicker: {
-        name: '자두맛 쿠키',
+        name: '쿠키',
         color: '#3498db',
         health: 100,
         speed: 2.52,
