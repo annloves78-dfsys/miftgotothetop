@@ -15,11 +15,11 @@ class Boss {
         if (maxHp !== undefined) this.maxHp = maxHp;
     }
 
-    onTelegraph({ pattern, telegraphMs }) {
+    onTelegraph(data) {
         this.state = 'telegraph';
-        this.pattern = pattern;
+        this.pattern = data.pattern;
         this.stateStartAt = performance.now();
-        this.runtime = { telegraphMs };
+        this.runtime = data; // keeps targetAngle/targetX/targetY for the patterns that target a player
     }
 
     onAttack(data) {
@@ -45,9 +45,10 @@ class Boss {
             return;
         }
         if (this.state === 'active') {
-            let activeDurationMs = 300; // slam: instant flash
+            let activeDurationMs = 300; // slam/spear_thrust/spear_sweep: instant flash
             if (this.pattern === 'spray') activeDurationMs = patternDef.travelMs;
             else if (this.pattern === 'sweep') activeDurationMs = patternDef.durationMs;
+            else if (this.pattern === 'star_drop') activeDurationMs = 200;
             if (elapsed >= activeDurationMs) this.state = 'idle';
         }
     }
@@ -110,6 +111,36 @@ class Boss {
                 ctx.lineTo(Math.cos(angle) * SHARED.ARENA_RADIUS, Math.sin(angle) * SHARED.ARENA_RADIUS);
                 ctx.stroke();
             }
+        } else if (this.pattern === 'spear_thrust' && (this.state === 'telegraph' || this.state === 'active')) {
+            const patternDef = this.def.patterns.spear_thrust;
+            const angle = this.runtime.targetAngle || 0;
+            ctx.strokeStyle = this.state === 'telegraph' ? 'rgba(231, 76, 60, 0.55)' : 'rgba(231, 76, 60, 0.95)';
+            ctx.lineWidth = patternDef.width;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(angle) * patternDef.range, Math.sin(angle) * patternDef.range);
+            ctx.stroke();
+            ctx.lineCap = 'butt';
+        } else if (this.pattern === 'spear_sweep' && (this.state === 'telegraph' || this.state === 'active')) {
+            const angle = this.runtime.targetAngle || 0;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, SHARED.ARENA_RADIUS, angle - Math.PI / 2, angle + Math.PI / 2);
+            ctx.closePath();
+            ctx.fillStyle = this.state === 'telegraph' ? 'rgba(231, 76, 60, 0.3)' : 'rgba(231, 76, 60, 0.55)';
+            ctx.fill();
+        } else if (this.pattern === 'star_drop' && (this.state === 'telegraph' || this.state === 'active')) {
+            const patternDef = this.def.patterns.star_drop;
+            const tx = this.runtime.targetX || 0, ty = this.runtime.targetY || 0;
+            const alpha = this.state === 'telegraph' ? 0.5 : 0.9;
+            ctx.beginPath();
+            ctx.arc(tx, ty, patternDef.radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(231, 76, 60, ${alpha * 0.5})`;
+            ctx.fill();
+            ctx.strokeStyle = `rgba(231, 76, 60, ${alpha})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
         }
 
         // Boss body

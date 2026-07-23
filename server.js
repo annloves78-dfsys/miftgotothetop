@@ -39,6 +39,24 @@ function meleeLineHit(px, py, facingAngle, range, width, targetRadius) {
     return perp <= (width / 2 + targetRadius);
 }
 
+// Locks onto wherever a random alive player is standing right now; used by
+// target-facing boss patterns (spear_thrust, spear_sweep).
+function pickTargetAngle(room) {
+    const alivePlayers = Object.values(room.players).filter(pl => pl.alive);
+    if (!alivePlayers.length) return 0;
+    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+    return Math.atan2(target.y, target.x);
+}
+
+// Same idea but returns a world position, for patterns that drop something
+// at a spot (star_drop) rather than firing along a direction.
+function pickTargetPosition(room) {
+    const alivePlayers = Object.values(room.players).filter(pl => pl.alive);
+    if (!alivePlayers.length) return { x: 0, y: 0 };
+    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+    return { x: target.x, y: target.y };
+}
+
 function healTeam(room, roomId, amount) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
@@ -167,11 +185,19 @@ function tickRoom(roomId) {
         if (now >= room.nextAttackAt) {
             const patternNames = Object.keys(bossDef.patterns);
             const pattern = patternNames[Math.floor(Math.random() * patternNames.length)];
+            const patternDef = bossDef.patterns[pattern];
             room.bossPattern = pattern;
             room.bossState = 'telegraph';
             room.bossPatternStartAt = now;
             room.bossPatternRuntime = {};
-            io.to(roomId).emit('bossTelegraph', { pattern, telegraphMs: bossDef.patterns[pattern].telegraphMs });
+
+            const telegraphPayload = { pattern, telegraphMs: patternDef.telegraphMs };
+            if (pattern === 'spear_thrust' || pattern === 'spear_sweep') {
+                const targetAngle = pickTargetAngle(room);
+                room.bossPatternRuntime.targetAngle = targetAngle;
+                telegraphPayload.targetAngle = targetAngle;
+            }
+            io.to(roomId).emit('bossTelegraph', telegraphPayload);
         }
         return;
     }
@@ -204,6 +230,39 @@ function tickRoom(roomId) {
                 io.to(roomId).emit('bossAttack', { pattern: 'slam', hits });
                 room.bossState = 'idle';
                 room.nextAttackAt = now + randomRest(bossDef);
+            } else if (room.bossPattern === 'spear_thrust') {
+                const targetAngle = room.bossPatternRuntime.targetAngle || 0;
+                const dx = Math.cos(targetAngle), dy = Math.sin(targetAngle);
+                const hits = [];
+                for (const [id, p] of Object.entries(room.players)) {
+                    if (!p.alive) continue;
+                    const proj = p.x * dx + p.y * dy;
+                    if (proj < 0 || proj > patternDef.range) continue;
+                    const perp = Math.abs(p.x * dy - p.y * dx);
+                    if (perp <= (patternDef.width / 2 + PLAYER_RADIUS)) {
+                        hits.push(id);
+                        applyDamageToPlayer(roomId, id, patternDef.damage);
+                    }
+                }
+                io.to(roomId).emit('bossAttack', { pattern: 'spear_thrust', targetAngle, hits });
+                room.bossState = 'idle';
+                room.nextAttackAt = now + randomRest(bossDef);
+            } else if (room.bossPattern === 'spear_sweep') {
+                const targetAngle = room.bossPatternRuntime.targetAngle || 0;
+                const hits = [];
+                for (const [id, p] of Object.entries(room.players)) {
+                    if (!p.alive) continue;
+                    const playerAngle = Math.atan2(p.y, p.x);
+                    let diff = Math.abs(playerAngle - targetAngle) % (Math.PI * 2);
+                    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+                    if (diff <= Math.PI / 2) {
+                        hits.push(id);
+                        applyDamageToPlayer(roomId, id, patternDef.damage);
+                    }
+                }
+                io.to(roomId).emit('bossAttack', { pattern: 'spear_sweep', targetAngle, hits });
+                room.bossState = 'idle';
+                room.nextAttackAt = now + randomRest(bossDef);
             } else if (room.bossPattern === 'spray') {
                 const baseAngle = Math.random() * Math.PI * 2;
                 const angles = Array.from({ length: patternDef.count }, (_, i) => baseAngle + i * (Math.PI * 2 / patternDef.count));
@@ -213,6 +272,10 @@ function tickRoom(roomId) {
                 const startAngle = Math.random() * Math.PI * 2;
                 room.bossPatternRuntime = { startAngle, lastTickAt: now };
                 io.to(roomId).emit('bossAttack', { pattern: 'sweep', startAngle, durationMs: patternDef.durationMs });
+            } else if (room.bossPattern === 'star_drop') {
+                // Waves are driven entirely from the 'active' tick below; this
+                // just seeds the counter so wave 1 fires on the very next tick.
+                room.bossPatternRuntime = { waveIndex: 0, nextWaveAt: now, currentWave: null };
             }
         }
         return;
@@ -259,6 +322,35 @@ function tickRoom(roomId) {
             if (elapsed >= patternDef.durationMs) {
                 room.bossState = 'idle';
                 room.nextAttackAt = now + randomRest(bossDef);
+            }
+        } else if (room.bossPattern === 'star_drop') {
+            const rt = room.bossPatternRuntime;
+            if (!rt.currentWave) {
+                if (rt.waveIndex >= patternDef.waveCount) {
+                    room.bossState = 'idle';
+                    room.nextAttackAt = now + randomRest(bossDef);
+                } else if (now >= rt.nextWaveAt) {
+                    const pos = pickTargetPosition(room);
+                    rt.currentWave = { targetX: pos.x, targetY: pos.y, telegraphEndAt: now + patternDef.telegraphMs };
+                    rt.nextWaveAt = now + patternDef.waveIntervalMs; // waves are spaced by START time
+                    io.to(roomId).emit('bossTelegraph', {
+                        pattern: 'star_drop', telegraphMs: patternDef.telegraphMs,
+                        targetX: pos.x, targetY: pos.y
+                    });
+                }
+            } else if (now >= rt.currentWave.telegraphEndAt) {
+                const { targetX, targetY } = rt.currentWave;
+                const hits = [];
+                for (const [id, p] of Object.entries(room.players)) {
+                    if (!p.alive) continue;
+                    if (Math.hypot(p.x - targetX, p.y - targetY) <= patternDef.radius + PLAYER_RADIUS) {
+                        hits.push(id);
+                        applyDamageToPlayer(roomId, id, patternDef.damage);
+                    }
+                }
+                io.to(roomId).emit('bossAttack', { pattern: 'star_drop', targetX, targetY, hits });
+                rt.waveIndex++;
+                rt.currentWave = null;
             }
         }
     }

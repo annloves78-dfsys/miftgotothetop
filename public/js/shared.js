@@ -107,12 +107,46 @@ const BOSS_DEFS = {
                 angleTolerance: 0.18 // radians
             }
         }
+    },
+    boss2: {
+        id: 'boss2',
+        name: '시하라얼',
+        maxHpPerPlayer: 1000, // fixed at the arena center, same as boss1
+        restMsRange: [3000, 10000],
+        patterns: {
+            // 창 찌르기: a red line telegraphs from the boss straight toward
+            // wherever a (randomly chosen) target player was standing, then
+            // strikes along that fixed line 0.3s later.
+            spear_thrust: {
+                telegraphMs: 300,
+                range: 320, // long enough to reach across the whole arena
+                width: 50,
+                damage: 15
+            },
+            // 창 휘두르기: telegraphs a full half of the arena (the half
+            // containing a random target player), red for 0.5s, then strikes
+            // anyone still standing in that half regardless of distance.
+            spear_sweep: {
+                telegraphMs: 500,
+                damage: 20
+            },
+            // 별 떨어트리기: 5 separate strikes, 1s apart, each telegraphing a
+            // small circle at a (re-picked) target player's position and
+            // landing 0.3s later.
+            star_drop: {
+                telegraphMs: 300,
+                radius: 20,
+                damage: 10,
+                waveCount: 5,
+                waveIntervalMs: 1000
+            }
+        }
     }
 };
 
 const BOSS_LIST = [
     { id: 'boss1', name: '스톤 골렘', locked: false },
-    { id: 'boss2', name: '???', locked: true },
+    { id: 'boss2', name: '시하라얼', locked: false },
     { id: 'boss3', name: '???', locked: true }
 ];
 
