@@ -120,6 +120,8 @@ let raidStartAt = 0;
 let loopHandle = null;
 const keys = {};
 let lastMoveEmit = 0;
+let mouseX = null;
+let mouseY = null; // canvas-space; null until the mouse first moves over it
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -218,6 +220,13 @@ canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) tryAttack();
     else if (e.button === 2) tryUseSkill();
 });
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    mouseX = (e.clientX - rect.left) * scaleX;
+    mouseY = (e.clientY - rect.top) * scaleY;
+});
 
 function tryAttack() {
     const me = players[socket.id];
@@ -260,8 +269,11 @@ function frame() {
     const now = performance.now();
     const me = players[socket.id];
     if (me) {
-        const moved = me.updateLocal(keys);
-        if (moved && now - lastMoveEmit > 33) {
+        me.updateLocal(keys);
+        if (mouseX !== null) {
+            me.aimAt(mouseX - canvas.width / 2, mouseY - canvas.height / 2);
+        }
+        if (now - lastMoveEmit > 33) {
             socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
             lastMoveEmit = now;
         }

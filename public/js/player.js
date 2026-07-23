@@ -4,7 +4,7 @@ class Player {
         this.charType = SHARED.CHARACTERS[charType] ? charType : 'kicker';
         this.x = x;
         this.y = y;
-        this.facing = 'down';
+        this.facing = 0; // radians; kicker aims at the mouse, see aimAt()
         this.isLocal = isLocal;
 
         const stats = SHARED.CHARACTERS[this.charType];
@@ -51,15 +51,6 @@ class Player {
         if (keys['d'] || keys['D']) dx += speed;
         if (dx === 0 && dy === 0) return false;
 
-        if (dx > 0 && dy > 0) this.facing = 'downright';
-        else if (dx > 0 && dy < 0) this.facing = 'upright';
-        else if (dx < 0 && dy > 0) this.facing = 'downleft';
-        else if (dx < 0 && dy < 0) this.facing = 'upleft';
-        else if (dx > 0) this.facing = 'right';
-        else if (dx < 0) this.facing = 'left';
-        else if (dy > 0) this.facing = 'down';
-        else if (dy < 0) this.facing = 'up';
-
         const nx = this.x + dx;
         const ny = this.y + dy;
         const maxDist = SHARED.ARENA_RADIUS - SHARED.PLAYER_RADIUS;
@@ -71,6 +62,13 @@ class Player {
             this.x = nx * scale; this.y = ny * scale;
         }
         return true;
+    }
+
+    // Local-only aiming; points the kick (and its visuals) at the mouse
+    // regardless of which way the player is walking.
+    aimAt(targetX, targetY) {
+        if (!this.alive) return;
+        this.facing = Math.atan2(targetY - this.y, targetX - this.x);
     }
 
     triggerAttackEffect() {
@@ -94,8 +92,7 @@ class Player {
 
     draw(ctx, now) {
         const R = SHARED.PLAYER_RADIUS;
-        const [fx, fy] = SHARED.FACING_VECTORS[this.facing] || [1, 0];
-        const facingAngle = Math.atan2(fy, fx);
+        const facingAngle = this.facing;
         ctx.save();
         ctx.translate(this.x, this.y);
 

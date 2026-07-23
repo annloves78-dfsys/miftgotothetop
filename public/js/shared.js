@@ -5,20 +5,6 @@ const ARENA_RADIUS = 300;
 const BOSS_RADIUS = 50;
 const PLAYER_RADIUS = 18;
 
-// 8-way facing, shared by client rendering (angle = atan2) and server hit
-// detection (line-kick direction), so both always agree on what each facing
-// value actually points at.
-const FACING_VECTORS = {
-    right: [1, 0],
-    downright: [Math.SQRT1_2, Math.SQRT1_2],
-    down: [0, 1],
-    downleft: [-Math.SQRT1_2, Math.SQRT1_2],
-    left: [-1, 0],
-    upleft: [-Math.SQRT1_2, -Math.SQRT1_2],
-    up: [0, -1],
-    upright: [Math.SQRT1_2, -Math.SQRT1_2]
-};
-
 // Character roster. Only 'kicker' exists today; future characters get their
 // own attackType branch in player.js instead of rewriting this structure.
 const CHARACTERS = {
@@ -27,7 +13,7 @@ const CHARACTERS = {
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
         health: 100,
-        speed: 10,
+        speed: 5,
         attackType: 'melee_kick', // future: 'ranged', 'magic', ...
         attackRange: 70, // how far the line-shaped kick reaches
         attackWidth: 40, // width of the straight-line kick corridor
@@ -86,7 +72,7 @@ const BOSS_LIST = [
 ];
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, FACING_VECTORS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, FACING_VECTORS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
 }

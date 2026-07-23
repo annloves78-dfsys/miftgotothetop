@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, FACING_VECTORS, CHARACTERS, BOSS_DEFS } = require('./public/js/shared.js');
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -27,11 +27,11 @@ function spawnPosition(slotIndex) {
 
 // Boss is always fixed at the arena origin (0,0). A "line kick" hits if the
 // boss falls within a straight corridor (length=range, half-width=width/2)
-// extending from the player in their facing direction.
-function meleeLineHit(px, py, facing, range, width, targetRadius) {
-    const dir = FACING_VECTORS[facing];
-    if (!dir) return false;
-    const [dx, dy] = dir;
+// extending from the player toward wherever their mouse is aiming
+// (facingAngle, in radians).
+function meleeLineHit(px, py, facingAngle, range, width, targetRadius) {
+    if (typeof facingAngle !== 'number' || !Number.isFinite(facingAngle)) return false;
+    const dx = Math.cos(facingAngle), dy = Math.sin(facingAngle);
     const vx = -px, vy = -py; // vector from player to boss center
     const proj = vx * dx + vy * dy; // distance along the facing axis
     if (proj < -targetRadius || proj > range + targetRadius) return false;
@@ -263,7 +263,7 @@ io.on('connection', (socket) => {
             x: pos.x, y: pos.y,
             hp: character.health, maxHp: character.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
-            facing: 'down', alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
+            facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
         };
 
         socket.join(roomId);
