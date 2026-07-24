@@ -8,7 +8,6 @@ const screens = {
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
-    waiting: document.getElementById('waiting-screen'),
     fight: document.getElementById('fight-screen'),
     result: document.getElementById('result-screen')
 };
@@ -37,9 +36,10 @@ const detailBossPower = document.getElementById('detail-boss-power');
 const detailBossHp = document.getElementById('detail-boss-hp');
 const detailMultiBtn = document.getElementById('detail-multi-btn');
 const detailSoloBtn = document.getElementById('detail-solo-btn');
-const waitingBossName = document.getElementById('waiting-boss-name');
-const waitingStatus = document.getElementById('waiting-status');
-const cancelWaitingBtn = document.getElementById('cancel-waiting-btn');
+const detailLeaveBtn = document.getElementById('detail-leave-btn');
+const detailPartnerPreview = document.getElementById('detail-partner-preview');
+const detailPartnerIcon = document.getElementById('detail-partner-icon');
+const detailPartnerName = document.getElementById('detail-partner-name');
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const bossHpBar = document.getElementById('boss-hp-bar');
@@ -159,6 +159,11 @@ backToLobbyBtn.addEventListener('click', () => showScreen('modeSelect'));
 
 // ---- Boss detail ----
 let selectedBossId = null;
+let currentRoomState = null; // { roomId, bossId, count, players }
+let raidPhase = 'idle'; // 'idle' | 'searching' | 'matched' -- 'idle' covers solo too (it starts instantly)
+let myReady = false;
+let searchStartAt = 0;
+let searchTimerHandle = null;
 
 function updateDetailCharPreview() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
@@ -166,7 +171,47 @@ function updateDetailCharPreview() {
     detailCharName.textContent = stats.name;
 }
 
+function stopSearchTimer() {
+    if (searchTimerHandle) clearInterval(searchTimerHandle);
+    searchTimerHandle = null;
+}
+
+function updateSearchTimerLabel() {
+    const secs = Math.floor((Date.now() - searchStartAt) / 1000);
+    const label = `대기중 (${secs}초)`;
+    detailMultiBtn.textContent = label;
+    detailSoloBtn.textContent = label;
+}
+
+function startSearchTimer() {
+    stopSearchTimer();
+    searchStartAt = Date.now();
+    updateSearchTimerLabel();
+    searchTimerHandle = setInterval(updateSearchTimerLabel, 1000);
+}
+
+function resetDetailActions() {
+    raidPhase = 'idle';
+    myReady = false;
+    stopSearchTimer();
+    detailMultiBtn.textContent = '멀티플레이';
+    detailMultiBtn.disabled = false;
+    detailSoloBtn.textContent = '솔로플레이';
+    detailSoloBtn.disabled = false;
+    detailLeaveBtn.classList.add('hidden');
+    detailPartnerPreview.classList.add('hidden');
+}
+
+function leaveCurrentRaidIfAny() {
+    if (raidPhase !== 'idle') {
+        socket.emit('leaveRaid');
+        currentRoomState = null;
+    }
+    resetDetailActions();
+}
+
 function openBossDetail(bossId) {
+    leaveCurrentRaidIfAny();
     selectedBossId = bossId;
     const bossDef = SHARED.BOSS_DEFS[bossId];
     const bossListEntry = SHARED.BOSS_LIST.find(b => b.id === bossId);
@@ -179,33 +224,73 @@ function openBossDetail(bossId) {
     showScreen('bossDetail');
 }
 
-backFromDetailBtn.addEventListener('click', () => showScreen('bossSelect'));
-detailMultiBtn.addEventListener('click', () => joinRaid(selectedBossId, false));
-detailSoloBtn.addEventListener('click', () => joinRaid(selectedBossId, true));
-
-// ---- Waiting room ----
-let currentRoomState = null; // { roomId, bossId, count, players }
-
-function joinRaid(bossId, solo) {
-    socket.emit('joinRaid', { bossId, charType: gameData.selectedCharacter || 'kicker' });
-    if (solo) socket.emit('startRaid');
-    const bossDef = SHARED.BOSS_DEFS[bossId];
-    waitingBossName.textContent = bossDef.name;
-    waitingStatus.textContent = '대기 중... (1/2)';
-    showScreen('waiting');
-}
-
-cancelWaitingBtn.addEventListener('click', () => {
-    socket.emit('leaveRaid');
-    currentRoomState = null;
-    if (selectedBossId) openBossDetail(selectedBossId);
-    else showScreen('bossSelect');
+backFromDetailBtn.addEventListener('click', () => {
+    leaveCurrentRaidIfAny();
+    showScreen('bossSelect');
 });
+
+detailLeaveBtn.addEventListener('click', () => leaveCurrentRaidIfAny());
+
+// Multiplayer: click arms a search + ready-check (both players must click
+// "플레이" once matched before the fight actually starts). Solo: starts
+// immediately with no waiting, in its own room (never matched with a
+// multiplayer searcher -- see the `solo` flag on joinRaid/createRoom).
+function handleMultiOrSoloClick(isMulti) {
+    const charType = gameData.selectedCharacter || 'kicker';
+    if (raidPhase === 'idle') {
+        if (isMulti) {
+            raidPhase = 'searching';
+            detailMultiBtn.disabled = true;
+            detailSoloBtn.disabled = true;
+            detailLeaveBtn.classList.remove('hidden');
+            startSearchTimer();
+            socket.emit('joinRaid', { bossId: selectedBossId, charType });
+        } else {
+            detailMultiBtn.disabled = true;
+            detailSoloBtn.disabled = true;
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true });
+            socket.emit('startRaid');
+        }
+    } else if (raidPhase === 'matched' && !myReady) {
+        myReady = true;
+        detailMultiBtn.disabled = true;
+        detailSoloBtn.disabled = true;
+        detailMultiBtn.textContent = '플레이 (대기중)';
+        detailSoloBtn.textContent = '플레이 (대기중)';
+        socket.emit('playerReady');
+    }
+}
+detailMultiBtn.addEventListener('click', () => handleMultiOrSoloClick(true));
+detailSoloBtn.addEventListener('click', () => handleMultiOrSoloClick(false));
 
 socket.on('raidRoomUpdate', (data) => {
     currentRoomState = data;
-    if (!screens.waiting.classList.contains('hidden')) {
-        waitingStatus.textContent = `대기 중... (${data.count}/2)`;
+    if (screens.bossDetail.classList.contains('hidden')) return;
+    if (data.count >= 2) {
+        raidPhase = 'matched';
+        stopSearchTimer();
+        const partnerEntry = Object.entries(data.players).find(([id]) => id !== socket.id);
+        if (partnerEntry) {
+            const pStats = SHARED.CHARACTERS[partnerEntry[1].charType] || SHARED.CHARACTERS.kicker;
+            detailPartnerIcon.style.background = pStats.color;
+            detailPartnerName.textContent = pStats.name;
+            detailPartnerPreview.classList.remove('hidden');
+        }
+        if (!myReady) {
+            detailMultiBtn.textContent = '플레이';
+            detailSoloBtn.textContent = '플레이';
+            detailMultiBtn.disabled = false;
+            detailSoloBtn.disabled = false;
+        }
+    } else if (raidPhase !== 'idle') {
+        // partner left before the fight started -- go back to searching alone
+        raidPhase = 'searching';
+        myReady = false;
+        detailPartnerPreview.classList.add('hidden');
+        detailMultiBtn.disabled = true;
+        detailSoloBtn.disabled = true;
+        detailLeaveBtn.classList.remove('hidden');
+        startSearchTimer();
     }
 });
 
@@ -234,6 +319,7 @@ socket.on('raidStarted', (data) => {
     raidStartAt = performance.now();
     isTargetingUltimate = false;
     impactEffects = [];
+    resetDetailActions();
     settingsMenu.classList.add('hidden');
     leavePendingBanner.classList.add('hidden');
     leaveRequestModal.classList.add('hidden');

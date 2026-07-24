@@ -71,24 +71,25 @@ function healTeam(room, roomId, amount) {
 function publicPlayers(room) {
     const out = {};
     for (const [id, p] of Object.entries(room.players)) {
-        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive };
+        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive, ready: !!p.ready };
     }
     return out;
 }
 
 function findOpenRoom(bossId) {
     for (const [roomId, room] of Object.entries(rooms)) {
-        if (room.bossId === bossId && room.state === 'waiting' && Object.keys(room.players).length < 2) {
+        if (room.bossId === bossId && room.state === 'waiting' && !room.solo && Object.keys(room.players).length < 2) {
             return roomId;
         }
     }
     return null;
 }
 
-function createRoom(bossId) {
+function createRoom(bossId, solo) {
     const roomId = `${bossId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     rooms[roomId] = {
         bossId,
+        solo: !!solo, // solo rooms are never matched into by findOpenRoom
         state: 'waiting',
         players: {},
         bossHp: 0,
@@ -357,12 +358,12 @@ function tickRoom(roomId) {
 }
 
 io.on('connection', (socket) => {
-    socket.on('joinRaid', ({ bossId, charType }) => {
+    socket.on('joinRaid', ({ bossId, charType, solo }) => {
         if (!BOSS_DEFS[bossId]) return;
         const character = CHARACTERS[charType] || CHARACTERS.kicker;
 
-        let roomId = findOpenRoom(bossId);
-        if (!roomId) roomId = createRoom(bossId);
+        let roomId = solo ? null : findOpenRoom(bossId);
+        if (!roomId) roomId = createRoom(bossId, solo);
         const room = rooms[roomId];
 
         const slotIndex = Object.keys(room.players).length;
@@ -371,7 +372,8 @@ io.on('connection', (socket) => {
             x: pos.x, y: pos.y,
             hp: character.health, maxHp: character.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
-            facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0
+            facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+            ready: false
         };
 
         socket.join(roomId);
@@ -381,15 +383,32 @@ io.on('connection', (socket) => {
             roomId, bossId, count: Object.keys(room.players).length,
             players: publicPlayers(room)
         });
-
-        if (Object.keys(room.players).length >= 2) {
-            startFight(roomId);
-        }
+        // Fight no longer auto-starts once 2 players are present -- each
+        // player must explicitly click "ready" (playerReady) once matched.
     });
 
     socket.on('startRaid', () => {
         const roomId = socket.data.roomId;
         if (roomId) startFight(roomId);
+    });
+
+    socket.on('playerReady', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.state !== 'waiting') return;
+        const p = room.players[socket.id];
+        if (!p) return;
+        p.ready = true;
+
+        io.to(roomId).emit('raidRoomUpdate', {
+            roomId, bossId: room.bossId, count: Object.keys(room.players).length,
+            players: publicPlayers(room)
+        });
+
+        const playerList = Object.values(room.players);
+        if (playerList.length >= 2 && playerList.every(pl => pl.ready)) {
+            startFight(roomId);
+        }
     });
 
     socket.on('playerMove', ({ x, y, facing }) => {
@@ -556,6 +575,9 @@ io.on('connection', (socket) => {
             delete rooms[roomId];
             return;
         }
+        if (room.state === 'waiting') {
+            Object.values(room.players).forEach(pl => { pl.ready = false; });
+        }
         io.to(roomId).emit('raidRoomUpdate', {
             roomId, bossId: room.bossId, count: Object.keys(room.players).length,
             players: publicPlayers(room)
@@ -571,6 +593,9 @@ io.on('connection', (socket) => {
             if (room.loopHandle) clearInterval(room.loopHandle);
             delete rooms[roomId];
             return;
+        }
+        if (room.state === 'waiting') {
+            Object.values(room.players).forEach(pl => { pl.ready = false; });
         }
         io.to(roomId).emit('raidRoomUpdate', {
             roomId, bossId: room.bossId, count: Object.keys(room.players).length,

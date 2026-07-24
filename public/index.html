@@ -64,10 +64,19 @@
 
     <!-- Boss detail -->
     <div id="boss-detail-screen" class="screen hidden">
+        <button id="detail-leave-btn" class="leave-party-btn hidden">나가기</button>
         <div class="detail-layout">
             <div class="detail-left">
-                <div id="detail-char-icon" class="char-icon-circle"></div>
-                <div id="detail-char-name" class="char-name"></div>
+                <div class="char-preview-row">
+                    <div class="char-preview">
+                        <div id="detail-char-icon" class="char-icon-circle"></div>
+                        <div id="detail-char-name" class="char-name"></div>
+                    </div>
+                    <div id="detail-partner-preview" class="char-preview hidden">
+                        <div id="detail-partner-icon" class="char-icon-circle"></div>
+                        <div id="detail-partner-name" class="char-name"></div>
+                    </div>
+                </div>
                 <button id="detail-change-char-btn" class="secondary-btn">캐릭터 변경</button>
             </div>
             <div class="detail-right">
@@ -84,15 +93,6 @@
             </div>
         </div>
         <button id="back-from-detail-btn" class="secondary-btn">뒤로</button>
-    </div>
-
-    <!-- Waiting room -->
-    <div id="waiting-screen" class="screen hidden">
-        <h2 id="waiting-boss-name">보스 이름</h2>
-        <p id="waiting-status">대기 중... (1/2)</p>
-        <div class="waiting-actions">
-            <button id="cancel-waiting-btn" class="secondary-btn">취소</button>
-        </div>
     </div>
 
     <!-- Fight -->

@@ -60,7 +60,6 @@ html, body {
 }
 
 #boss-select-screen .play-btn,
-#waiting-screen .play-btn,
 #result-screen .play-btn,
 #boss-detail-screen .play-btn {
     position: static;
@@ -201,6 +200,20 @@ html, body {
     gap: 14px;
 }
 
+.char-preview-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+}
+
+.char-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
 .char-icon-circle {
     width: 100px;
     height: 100px;
@@ -212,6 +225,31 @@ html, body {
 .char-name {
     font-size: 18px;
     font-weight: bold;
+}
+
+.leave-party-btn {
+    position: absolute;
+    top: 24px;
+    left: 44%;
+    transform: translateX(-50%);
+    z-index: 5;
+    padding: 10px 22px;
+    font-size: 15px;
+    background: #34495e;
+    color: white;
+    border: 2px solid #7f8c8d;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.leave-party-btn:hover {
+    filter: brightness(1.15);
+}
+
+.play-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: none;
 }
 
 .boss-icon-circle {
@@ -406,19 +444,6 @@ html, body {
     border: 2px solid #7f8c8d;
     border-radius: 8px;
     cursor: pointer;
-}
-
-/* Waiting room */
-.waiting-actions {
-    display: flex;
-    gap: 16px;
-    margin-top: 20px;
-}
-
-#waiting-status {
-    font-size: 20px;
-    color: #bdc3c7;
-    margin-top: 10px;
 }
 
 /* Fight screen */
