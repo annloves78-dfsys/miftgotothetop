@@ -118,6 +118,7 @@ charDetailSelectBtn.addEventListener('click', () => {
     saveGameData(gameData);
     updateSelectedCharLabel();
     if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
+    else if (characterReturnScreen === 'storyTower') renderTower();
     showScreen(characterReturnScreen);
 });
 
@@ -171,10 +172,17 @@ const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn')
 const storySoloBtn = document.getElementById('story-solo-btn');
 const towerFloorListEl = document.getElementById('tower-floor-list');
 const towerFloorPower = document.getElementById('tower-floor-power');
+const towerCharPreview = document.getElementById('tower-char-preview');
 const towerCharIcon = document.getElementById('tower-char-icon');
 const towerCharName = document.getElementById('tower-char-name');
 const towerPlayBtn = document.getElementById('tower-play-btn');
 const backFromTowerBtn = document.getElementById('back-from-tower-btn');
+
+towerCharPreview.addEventListener('click', () => {
+    characterReturnScreen = 'storyTower';
+    renderCharacterList();
+    showScreen('characterSelect');
+});
 
 backFromStoryModeBtn.addEventListener('click', () => showScreen('modeSelect'));
 // story-multi-btn stays permanently disabled -- multiplayer story mode isn't built yet.
@@ -218,7 +226,8 @@ function renderTower() {
         towerFloorListEl.appendChild(card);
     });
 
-    towerFloorPower.textContent = '미정';
+    const floorDef = SHARED.STORY_FLOOR_DEFS[selectedStoryFloor];
+    towerFloorPower.textContent = (floorDef && floorDef.recommendedPower) || '미정';
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     towerCharIcon.style.background = stats.color;
     towerCharName.textContent = stats.name;

@@ -359,6 +359,21 @@ html, body {
     gap: 10px;
 }
 
+.char-preview.clickable {
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 10px;
+    transition: 0.15s;
+}
+
+.char-preview.clickable:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.char-preview.clickable:hover .char-icon-circle {
+    box-shadow: 0 0 0 3px rgba(241, 196, 15, 0.6);
+}
+
 .char-icon-circle {
     width: 100px;
     height: 100px;

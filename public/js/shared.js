@@ -180,14 +180,15 @@ const MONSTERS = {
 // start (x=0). All 5 monsters are clustered together in one room between
 // arenaEntranceX and arenaExitX; once the player enters, an energy shield
 // seals both gates (see server's storyPlayerMove handler) until every
-// monster in the room is dead. Past the (now-open) exit gate, further down
-// the bridge, sits the star -- attacking it clears the floor.
+// monster in the room is dead. The star sits just past the (now-open) exit
+// gate -- attacking it clears the floor.
 // Only floor 1 has content so far -- floors 2+ exist in STORY_FLOOR_DEFS.
 const STORY_FLOOR_DEFS = {
     1: {
         levelType: 'bridge',
-        levelLength: 2500, // how far the bridge extends to the left of the start
+        levelLength: 1750, // how far the bridge extends to the left of the start
         laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
+        recommendedPower: 500, // shown on the tower's floor-select screen
         arenaEntranceX: -900, // shield seals here (blocks retreat) once monsters are engaged
         arenaExitX: -1500, // shield here blocks progress until the room is cleared
         monsters: [
@@ -197,7 +198,7 @@ const STORY_FLOOR_DEFS = {
             { type: 'cake_slice', x: -1350, y: -35 },
             { type: 'cake_slice', x: -1350, y: 35 }
         ],
-        star: { x: -2400, y: 0 }
+        star: { x: -1620, y: 0 } // right past the exit gate, no long walk after clearing
     }
 };
 
