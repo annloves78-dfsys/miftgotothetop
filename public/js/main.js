@@ -38,7 +38,21 @@ const charDetailPower = document.getElementById('char-detail-power');
 const charDetailGrade = document.getElementById('char-detail-grade');
 const charDetailElement = document.getElementById('char-detail-element');
 const charDetailRole = document.getElementById('char-detail-role');
+const charDetailAtk = document.getElementById('char-detail-atk');
+const charDetailHp = document.getElementById('char-detail-hp');
+const charDetailSkillIcon = document.getElementById('char-detail-skill-icon');
+const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-icon');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
+
+const SKILL_ICONS = {
+    melee_kick: '🗡',
+    spin_kick: '🌀',
+    speed_boost: '💨',
+    spin_heal: '🌿',
+    team_heal_over_time: '💚',
+    targeted_aoe: '💥',
+    attack_heal_boost: '✨'
+};
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
 const detailChangeCharBtn = document.getElementById('detail-change-char-btn');
@@ -112,8 +126,13 @@ function openCharacterDetail(id) {
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
+    charDetailGrade.className = 'grade-badge' + (stats.grade === '희귀' ? ' rare' : ' common');
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
+    charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
+    charDetailHp.textContent = stats.health != null ? stats.health : '-';
+    charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
+    charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
     showScreen('characterDetail');
 }
 
