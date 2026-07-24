@@ -14,6 +14,9 @@ const CHARACTERS = {
         name: '자두맛 쿠키',
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
+        grade: '일반',
+        element: '바람',
+        role: '힐러',
         health: 100,
         combatPower: 500, // starting value for every character
         speed: 2,
@@ -36,6 +39,9 @@ const CHARACTERS = {
         name: '자색 고구마맛 쿠키',
         shortName: '고구마', // shown on the lobby's character-select button
         color: '#8e44ad',
+        grade: '희귀',
+        element: '어둠',
+        role: '대미지 딜러',
         health: 100,
         combatPower: 500, // starting value for every character
         speed: 2,
@@ -57,6 +63,9 @@ const CHARACTERS = {
         name: '시금치맛 쿠키',
         shortName: '시금치', // shown on the lobby's character-select button
         color: '#27ae60',
+        grade: '일반',
+        element: '바람',
+        role: '힐러',
         health: 100,
         combatPower: 500, // starting value for every character
         speed: 2,

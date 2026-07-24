@@ -35,6 +35,9 @@ const charDetailBackBtn = document.getElementById('char-detail-back-btn');
 const charDetailIcon = document.getElementById('char-detail-icon');
 const charDetailName = document.getElementById('char-detail-name');
 const charDetailPower = document.getElementById('char-detail-power');
+const charDetailGrade = document.getElementById('char-detail-grade');
+const charDetailElement = document.getElementById('char-detail-element');
+const charDetailRole = document.getElementById('char-detail-role');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -108,6 +111,9 @@ function openCharacterDetail(id) {
     charDetailIcon.style.background = stats.color;
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
+    charDetailGrade.textContent = stats.grade || '-';
+    charDetailElement.textContent = stats.element || '-';
+    charDetailRole.textContent = stats.role || '-';
     showScreen('characterDetail');
 }
 
