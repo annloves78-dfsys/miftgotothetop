@@ -196,8 +196,10 @@ function resetDetailActions() {
     stopSearchTimer();
     detailMultiBtn.textContent = '멀티플레이';
     detailMultiBtn.disabled = false;
+    detailMultiBtn.classList.remove('hidden');
     detailSoloBtn.textContent = '솔로플레이';
     detailSoloBtn.disabled = false;
+    detailSoloBtn.classList.remove('hidden');
     detailLeaveBtn.classList.add('hidden');
     detailPartnerPreview.classList.add('hidden');
 }
@@ -254,9 +256,7 @@ function handleMultiOrSoloClick(isMulti) {
     } else if (raidPhase === 'matched' && !myReady) {
         myReady = true;
         detailMultiBtn.disabled = true;
-        detailSoloBtn.disabled = true;
         detailMultiBtn.textContent = '플레이 (대기중)';
-        detailSoloBtn.textContent = '플레이 (대기중)';
         socket.emit('playerReady');
     }
 }
@@ -269,6 +269,7 @@ socket.on('raidRoomUpdate', (data) => {
     if (data.count >= 2) {
         raidPhase = 'matched';
         stopSearchTimer();
+        detailSoloBtn.classList.add('hidden'); // matched: one shared "플레이" button, not two
         const partnerEntry = Object.entries(data.players).find(([id]) => id !== socket.id);
         if (partnerEntry) {
             const pStats = SHARED.CHARACTERS[partnerEntry[1].charType] || SHARED.CHARACTERS.kicker;
@@ -278,15 +279,14 @@ socket.on('raidRoomUpdate', (data) => {
         }
         if (!myReady) {
             detailMultiBtn.textContent = '플레이';
-            detailSoloBtn.textContent = '플레이';
             detailMultiBtn.disabled = false;
-            detailSoloBtn.disabled = false;
         }
     } else if (raidPhase !== 'idle') {
         // partner left before the fight started -- go back to searching alone
         raidPhase = 'searching';
         myReady = false;
         detailPartnerPreview.classList.add('hidden');
+        detailSoloBtn.classList.remove('hidden');
         detailMultiBtn.disabled = true;
         detailSoloBtn.disabled = true;
         detailLeaveBtn.classList.remove('hidden');
