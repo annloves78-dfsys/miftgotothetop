@@ -57,36 +57,66 @@ html, body {
 .tower-body {
     /* No capped top on purpose -- this tower is lore-infinite, so it fades
        into the sky instead of ending in a visible roof. */
-    width: 15vw;
-    min-width: 140px;
-    max-width: 220px;
+    width: 17vw;
+    min-width: 160px;
+    max-width: 240px;
     height: 92vh;
-    background: linear-gradient(180deg, #7a6552, #4a3c2f 85%);
-    border-left: 4px solid #3a2f24;
-    border-right: 4px solid #3a2f24;
+    background:
+        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 3px, transparent 3px 22px),
+        repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 3px, transparent 3px 26px),
+        linear-gradient(180deg, #8a7562, #4a3c2f 85%);
+    border-left: 5px solid #3a2f24;
+    border-right: 5px solid #3a2f24;
+    box-shadow: inset 6px 0 10px rgba(0, 0, 0, 0.35), inset -6px 0 10px rgba(0, 0, 0, 0.35);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: space-evenly;
     -webkit-mask-image: linear-gradient(to top, black 50%, transparent 92%);
     mask-image: linear-gradient(to top, black 50%, transparent 92%);
 }
 
+.tower-segment {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 4px solid rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.07);
+}
+
+.tower-segment::before,
+.tower-segment::after {
+    /* small stone ledge caps poking out at each floor boundary */
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    width: 12px;
+    height: 8px;
+    background: #3a2f24;
+    border-radius: 2px;
+}
+
+.tower-segment::before { left: -9px; }
+.tower-segment::after { right: -9px; }
+
 .tower-window {
-    width: 22%;
+    width: 34%;
     aspect-ratio: 2 / 3;
-    background: #f1c40f;
-    opacity: 0.55;
-    border-radius: 3px 3px 0 0;
-    box-shadow: 0 0 14px rgba(241, 196, 15, 0.45);
+    background: radial-gradient(circle at 50% 35%, #fff3c4, #f1c40f 70%);
+    opacity: 0.7;
+    border-radius: 50% 50% 8% 8%;
+    box-shadow: 0 0 16px rgba(241, 196, 15, 0.55), inset 0 -4px 6px rgba(0, 0, 0, 0.25);
 }
 
 .tower-base {
-    width: 120%;
-    height: 30px;
-    background: #3a2f24;
+    width: 130%;
+    height: 34px;
+    background:
+        repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0 3px, transparent 3px 28px),
+        #3a2f24;
     border-radius: 4px;
     margin-top: -2px;
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.4);
 }
 
 #game-title {
