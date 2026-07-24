@@ -242,6 +242,13 @@ const storyMyUltimateCdEl = document.getElementById('story-my-ultimate-cd');
 const storyMonstersLeftEl = document.getElementById('story-monsters-left');
 const storyLeaveBtn = document.getElementById('story-leave-btn');
 
+function resizeStoryCanvas() {
+    storyCanvas.width = window.innerWidth;
+    storyCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeStoryCanvas);
+resizeStoryCanvas();
+
 let storyFloorDef = null;
 let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime,...}
 let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
@@ -322,6 +329,7 @@ socket.on('storyFloorResult', ({ result, floor }) => {
         resultDesc.textContent = '몬스터에게 쓰러졌습니다.';
     }
     resultReturnScreen = 'storyTower';
+    resultBackBtn.textContent = '올라가기';
     showScreen('result');
 });
 
@@ -1016,6 +1024,23 @@ canvas.addEventListener('mousemove', (e) => {
     mouseY = (e.clientY - rect.top) * scaleY;
 });
 
+// The canvas buffer is resized to fill the viewport (see resizeGameCanvas),
+// so screen/world conversion needs to account for the resulting scale factor
+// -- world space still uses the original fixed-size arena coordinates.
+const BASE_CANVAS_SIZE = 700;
+let gameScale = 1;
+function screenToWorld(sx, sy) {
+    return { x: (sx - canvas.width / 2) / gameScale, y: (sy - canvas.height / 2) / gameScale };
+}
+function resizeGameCanvas() {
+    const size = Math.min(window.innerWidth, window.innerHeight) - 40;
+    canvas.width = size;
+    canvas.height = size;
+    gameScale = size / BASE_CANVAS_SIZE;
+}
+window.addEventListener('resize', resizeGameCanvas);
+resizeGameCanvas();
+
 function tryAttack() {
     const me = players[socket.id];
     if (!me) return;
@@ -1063,10 +1088,8 @@ function confirmUltimateTarget() {
     if (!me || mouseX === null) return;
     if (!me.canUseUltimate(performance.now())) return;
     me.markUltimateUsed();
-    socket.emit('playerUltimate', {
-        targetX: mouseX - canvas.width / 2,
-        targetY: mouseY - canvas.height / 2
-    });
+    const world = screenToWorld(mouseX, mouseY);
+    socket.emit('playerUltimate', { targetX: world.x, targetY: world.y });
 }
 
 // ---- Loop ----
@@ -1085,7 +1108,8 @@ function frame() {
     if (me) {
         me.updateLocal(keys);
         if (mouseX !== null) {
-            me.aimAt(mouseX - canvas.width / 2, mouseY - canvas.height / 2);
+            const world = screenToWorld(mouseX, mouseY);
+            me.aimAt(world.x, world.y);
         }
         if (now - lastMoveEmit > 33) {
             socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
@@ -1103,6 +1127,7 @@ function render(now) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.scale(gameScale, gameScale);
 
     ctx.beginPath();
     ctx.arc(0, 0, SHARED.ARENA_RADIUS, 0, Math.PI * 2);
@@ -1128,9 +1153,10 @@ function render(now) {
     if (isTargetingUltimate && mouseX !== null) {
         const me = players[socket.id];
         const radius = me ? me.stats.ultimateRadius : 90;
+        const world = screenToWorld(mouseX, mouseY);
         ctx.beginPath();
         ctx.setLineDash([8, 6]);
-        ctx.arc(mouseX - canvas.width / 2, mouseY - canvas.height / 2, radius, 0, Math.PI * 2);
+        ctx.arc(world.x, world.y, radius, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
         ctx.lineWidth = 2;
         ctx.stroke();

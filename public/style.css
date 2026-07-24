@@ -812,9 +812,8 @@ html, body {
 }
 
 #storyCanvas {
+    display: block;
     background: linear-gradient(180deg, #2c3e50 0%, #1a1f2b 60%, #0f1319 100%);
-    border-radius: 12px;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
 }
 
 .story-monsters-left {
