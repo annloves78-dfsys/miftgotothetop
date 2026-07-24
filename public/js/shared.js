@@ -155,8 +155,46 @@ const BOSS_LIST = [
     { id: 'boss3', name: '???', locked: true }
 ];
 
+const MONSTER_RADIUS = 16;
+
+// Story-mode monsters -- weaker enemies used on tower floors, distinct from
+// the raid bosses. They don't close all the way to melee range; they hover
+// at preferredDistance and poke from range on a cooldown instead.
+const MONSTERS = {
+    cake_slice: {
+        name: '케이크 조각',
+        color: '#f6a9c9',
+        health: 50,
+        speed: 3,
+        aggroRange: 350, // dormant until the player gets this close, so they're met one at a time
+        preferredDistance: 80, // stops closing in once this near the player
+        attackRange: 110, // still attacks if the player is within this range
+        attackDamage: 5,
+        attackCooldown: 3000,
+        telegraphMs: 400
+    }
+};
+
+// Story-mode floor layouts. Floor 1 is a long bridge stretching left from the
+// start (x=0); the player fights through a line of monsters to clear it.
+// Only floor 1 has content so far -- floors 2+ exist in STORY_FLOOR_DEFS.
+const STORY_FLOOR_DEFS = {
+    1: {
+        levelType: 'bridge',
+        levelLength: 2400, // how far the bridge extends to the left of the start
+        laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
+        monsters: [
+            { type: 'cake_slice', x: -400 },
+            { type: 'cake_slice', x: -800 },
+            { type: 'cake_slice', x: -1200 },
+            { type: 'cake_slice', x: -1600 },
+            { type: 'cake_slice', x: -2000 }
+        ]
+    }
+};
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
 }

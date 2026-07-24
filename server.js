@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS } = require('./public/js/shared.js');
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -357,6 +357,149 @@ function tickRoom(roomId) {
     }
 }
 
+// ---- Story mode (tower floors) ----
+// A parallel, much simpler system from the boss-raid rooms above: solo-only,
+// no matchmaking/ready-check, a line of weak monsters instead of one boss
+// with patterns. Shares the `rooms` dict and reuses leaveRaid/disconnect
+// as-is (a story room always has exactly 1 player, so those generic handlers
+// already clean it up correctly without any story-specific code).
+
+// Same idea as meleeLineHit, but against an arbitrary target position instead
+// of always the world origin (monsters roam, unlike the boss).
+function meleeLineHitPoint(px, py, facingAngle, range, width, targetX, targetY, targetRadius) {
+    if (typeof facingAngle !== 'number' || !Number.isFinite(facingAngle)) return false;
+    const dx = Math.cos(facingAngle), dy = Math.sin(facingAngle);
+    const vx = targetX - px, vy = targetY - py;
+    const proj = vx * dx + vy * dy;
+    if (proj < -targetRadius || proj > range + targetRadius) return false;
+    const perp = Math.abs(vx * dy - vy * dx);
+    return perp <= (width / 2 + targetRadius);
+}
+
+function createStoryRoom(floor) {
+    const roomId = `story${floor}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    rooms[roomId] = {
+        kind: 'story',
+        floor,
+        state: 'fighting',
+        players: {},
+        monsters: {},
+        loopHandle: null
+    };
+    return roomId;
+}
+
+function spawnStoryMonsters(room, floorDef) {
+    floorDef.monsters.forEach((m, i) => {
+        const def = MONSTERS[m.type];
+        room.monsters[`m${i}`] = {
+            type: m.type,
+            x: m.x, y: 0,
+            hp: def.health, maxHp: def.health,
+            alive: true,
+            state: 'idle', // 'idle' | 'telegraph'
+            telegraphStartAt: 0,
+            nextAttackAt: 0
+        };
+    });
+}
+
+function publicMonsters(room) {
+    const out = {};
+    for (const [id, m] of Object.entries(room.monsters)) {
+        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state };
+    }
+    return out;
+}
+
+function endStoryRoom(roomId, result) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.loopHandle) clearInterval(room.loopHandle);
+    room.state = 'ended';
+    io.to(roomId).emit('storyFloorResult', { result, floor: room.floor });
+    delete rooms[roomId];
+}
+
+function applyDamageToStoryPlayer(roomId, playerId, dmg) {
+    const room = rooms[roomId];
+    if (!room) return;
+    const p = room.players[playerId];
+    if (!p || !p.alive) return;
+    p.hp = Math.max(0, p.hp - dmg);
+    if (p.hp <= 0) p.alive = false;
+    io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive });
+    if (!p.alive) endStoryRoom(roomId, 'lose');
+}
+
+function tickStoryRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const now = Date.now();
+
+    const alivePlayers = Object.values(room.players).filter(p => p.alive);
+    if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
+
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        const def = MONSTERS[m.type];
+
+        let nearest = null, nearestDist = Infinity;
+        for (const p of alivePlayers) {
+            const d = Math.hypot(p.x - m.x, p.y - m.y);
+            if (d < nearestDist) { nearestDist = d; nearest = p; }
+        }
+        if (!nearest) continue;
+        if (m.state === 'idle' && nearestDist > def.aggroRange) continue; // dormant until approached
+
+        if (m.state === 'idle') {
+            // Kites the nearest player: closes in if too far, backs off if the
+            // player gets right up next to it, hovering at preferredDistance
+            // instead of standing adjacent like a melee mob would.
+            const step = def.speed * 3; // ~px per 50ms tick
+            if (nearestDist > def.preferredDistance) {
+                const dx = nearest.x - m.x, dy = nearest.y - m.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                const move = Math.min(step, dist - def.preferredDistance);
+                m.x += (dx / dist) * move;
+                m.y += (dy / dist) * move;
+            } else if (nearestDist < def.preferredDistance * 0.7) {
+                const dx = m.x - nearest.x, dy = m.y - nearest.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                m.x += (dx / dist) * step;
+                m.y += (dy / dist) * step;
+            }
+            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            if (floorDef) {
+                if (m.x > 40) m.x = 40;
+                if (m.x < -floorDef.levelLength) m.x = -floorDef.levelLength;
+                if (m.y > floorDef.laneHalfWidth) m.y = floorDef.laneHalfWidth;
+                if (m.y < -floorDef.laneHalfWidth) m.y = -floorDef.laneHalfWidth;
+            }
+
+            if (nearestDist <= def.attackRange && now >= m.nextAttackAt) {
+                m.state = 'telegraph';
+                m.telegraphStartAt = now;
+                io.to(roomId).emit('monsterTelegraph', { id: mid });
+            }
+        } else if (m.state === 'telegraph') {
+            if (now - m.telegraphStartAt >= def.telegraphMs) {
+                m.state = 'idle';
+                m.nextAttackAt = now + def.attackCooldown;
+                const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
+                if (d <= def.attackRange) {
+                    const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
+                    io.to(roomId).emit('monsterAttack', { id: mid });
+                    applyDamageToStoryPlayer(roomId, targetId, def.attackDamage);
+                }
+            }
+        }
+    }
+
+    if (!rooms[roomId]) return; // room may have just ended (player died) mid-loop above
+    io.to(roomId).emit('storyTick', { monsters: publicMonsters(room) });
+}
+
 io.on('connection', (socket) => {
     socket.on('joinRaid', ({ bossId, charType, solo }) => {
         if (!BOSS_DEFS[bossId]) return;
@@ -409,6 +552,77 @@ io.on('connection', (socket) => {
         if (playerList.length >= 2 && playerList.every(pl => pl.ready)) {
             startFight(roomId);
         }
+    });
+
+    socket.on('joinStoryFloor', ({ floor, charType }) => {
+        const floorDef = STORY_FLOOR_DEFS[floor];
+        if (!floorDef) return; // no content for this floor yet
+        const character = CHARACTERS[charType] || CHARACTERS.kicker;
+
+        const roomId = createStoryRoom(floor);
+        const room = rooms[roomId];
+        spawnStoryMonsters(room, floorDef);
+
+        room.players[socket.id] = {
+            x: 0, y: 0,
+            hp: character.health, maxHp: character.health,
+            charType: charType && CHARACTERS[charType] ? charType : 'kicker',
+            facing: Math.PI, // faces left, toward the bridge
+            alive: true, lastAttackTime: 0
+        };
+
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+
+        io.to(roomId).emit('storyFloorStarted', {
+            floor,
+            floorDef: { levelLength: floorDef.levelLength, laneHalfWidth: floorDef.laneHalfWidth },
+            player: room.players[socket.id],
+            monsters: publicMonsters(room)
+        });
+
+        room.loopHandle = setInterval(() => tickStoryRoom(roomId), 50);
+    });
+
+    socket.on('storyPlayerMove', ({ x, y, facing }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const floorDef = STORY_FLOOR_DEFS[room.floor];
+        if (x > 40 || x < -floorDef.levelLength - 1) return; // ignore out-of-bounds claims
+        if (Math.abs(y) > floorDef.laneHalfWidth + 1) return;
+        p.x = x; p.y = y; p.facing = facing;
+    });
+
+    socket.on('storyPlayerAttack', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        const now = Date.now();
+        if (now - p.lastAttackTime < character.attackCooldown) return;
+        p.lastAttackTime = now;
+        if (character.attackType !== 'melee_kick') return;
+
+        let allDead = true;
+        for (const [mid, m] of Object.entries(room.monsters)) {
+            if (!m.alive) continue;
+            if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, m.x, m.y, MONSTER_RADIUS)) {
+                m.hp = Math.max(0, m.hp - character.attackDamage);
+                if (m.hp <= 0) {
+                    m.alive = false;
+                    io.to(roomId).emit('monsterDefeated', { id: mid });
+                } else {
+                    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+            }
+            if (m.alive) allDead = false;
+        }
+        if (allDead) endStoryRoom(roomId, 'win');
     });
 
     socket.on('playerMove', ({ x, y, facing }) => {

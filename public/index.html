@@ -103,6 +103,17 @@
         <button id="back-from-tower-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- Story fight: floor bridge combat -->
+    <div id="story-fight-screen" class="screen hidden">
+        <button id="story-leave-btn" class="back-corner-btn">← 나가기</button>
+        <div id="story-monsters-left" class="story-monsters-left">남은 적: 5</div>
+        <div id="story-my-hp-container" class="hp-container bottom-left">
+            <div class="hp-label">나</div>
+            <div class="hp-bar-bg"><div id="story-my-hp-bar" class="hp-bar-fill mine"></div></div>
+        </div>
+        <canvas id="storyCanvas" width="900" height="420"></canvas>
+    </div>
+
     <!-- Character select -->
     <div id="character-select-screen" class="screen hidden">
         <h2>캐릭터 선택</h2>

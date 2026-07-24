@@ -806,6 +806,29 @@ html, body {
 .hp-bar-fill.mine { background: linear-gradient(90deg, #2980b9, #3498db); }
 .hp-bar-fill.partner { background: linear-gradient(90deg, #27ae60, #2ecc71); }
 
+/* Story fight: floor bridge combat */
+#story-fight-screen {
+    background: #14301d;
+}
+
+#storyCanvas {
+    background: linear-gradient(180deg, #2c3e50 0%, #1a1f2b 60%, #0f1319 100%);
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.story-monsters-left {
+    position: absolute;
+    top: 24px;
+    right: 30px;
+    z-index: 5;
+    font-size: 16px;
+    color: #ecf0f1;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px 16px;
+    border-radius: 8px;
+}
+
 /* Result screen */
 #result-title {
     font-size: 42px;

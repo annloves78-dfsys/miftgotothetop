@@ -7,6 +7,7 @@ const screens = {
     modeSelect: document.getElementById('mode-select-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
+    storyFight: document.getElementById('story-fight-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -225,6 +226,243 @@ function renderTower() {
 }
 
 backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
+
+towerPlayBtn.addEventListener('click', () => {
+    if (towerPlayBtn.disabled) return;
+    if (!SHARED.STORY_FLOOR_DEFS[selectedStoryFloor]) return; // no content for this floor yet
+    socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType: gameData.selectedCharacter || 'kicker' });
+});
+
+// ---- Story fight: floor bridge combat ----
+const storyCanvas = document.getElementById('storyCanvas');
+const storyCtx = storyCanvas.getContext('2d');
+const storyMyHpBar = document.getElementById('story-my-hp-bar');
+const storyMonstersLeftEl = document.getElementById('story-monsters-left');
+const storyLeaveBtn = document.getElementById('story-leave-btn');
+
+let storyFloorDef = null;
+let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime}
+let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
+let storyMouseX = null;
+let storyMouseY = null;
+let storyLoopHandle = null;
+let storyLastMoveEmit = 0;
+
+socket.on('storyFloorStarted', (data) => {
+    storyFloorDef = data.floorDef;
+    storyMonsters = data.monsters;
+    const p = data.player;
+    storyPlayer = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, lastAttackClientTime: -Infinity };
+    updateStoryHpBar();
+    updateStoryMonstersLeft();
+    showScreen('storyFight');
+    startStoryLoop();
+});
+
+socket.on('storyTick', ({ monsters }) => {
+    storyMonsters = monsters;
+    updateStoryMonstersLeft();
+});
+
+socket.on('monsterTelegraph', ({ id }) => {
+    if (storyMonsters[id]) storyMonsters[id].state = 'telegraph';
+});
+
+socket.on('monsterDamaged', ({ id, hp }) => {
+    if (storyMonsters[id]) storyMonsters[id].hp = hp;
+});
+
+socket.on('monsterDefeated', ({ id }) => {
+    if (storyMonsters[id]) { storyMonsters[id].alive = false; storyMonsters[id].hp = 0; }
+    updateStoryMonstersLeft();
+});
+
+socket.on('storyPlayerDamaged', ({ hp, alive }) => {
+    if (!storyPlayer) return;
+    storyPlayer.hp = hp;
+    storyPlayer.alive = alive;
+    updateStoryHpBar();
+});
+
+socket.on('storyFloorResult', ({ result, floor }) => {
+    stopStoryLoop();
+    selectedStoryFloor = floor;
+    if (result === 'win') {
+        resultTitle.textContent = '층 클리어!';
+        resultTitle.style.color = '#2ecc71';
+        resultDesc.textContent = `${floor}층을 클리어했습니다.`;
+        if (!gameData.clearedStoryFloors.includes(floor)) {
+            gameData.clearedStoryFloors.push(floor);
+            saveGameData(gameData);
+        }
+    } else {
+        resultTitle.textContent = '패배...';
+        resultTitle.style.color = '#e74c3c';
+        resultDesc.textContent = '몬스터에게 쓰러졌습니다.';
+    }
+    resultReturnScreen = 'storyTower';
+    showScreen('result');
+});
+
+storyLeaveBtn.addEventListener('click', () => {
+    stopStoryLoop();
+    socket.emit('leaveRaid');
+    renderTower();
+    showScreen('storyTower');
+});
+
+function updateStoryHpBar() {
+    if (!storyPlayer) return;
+    storyMyHpBar.style.width = `${Math.max(0, (storyPlayer.hp / storyPlayer.maxHp) * 100)}%`;
+}
+
+function updateStoryMonstersLeft() {
+    const remaining = Object.values(storyMonsters).filter(m => m.alive).length;
+    storyMonstersLeftEl.textContent = `남은 적: ${remaining}`;
+}
+
+storyCanvas.addEventListener('mousemove', (e) => {
+    const rect = storyCanvas.getBoundingClientRect();
+    const scaleX = storyCanvas.width / rect.width;
+    const scaleY = storyCanvas.height / rect.height;
+    storyMouseX = (e.clientX - rect.left) * scaleX;
+    storyMouseY = (e.clientY - rect.top) * scaleY;
+});
+storyCanvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) tryStoryAttack();
+});
+
+function tryStoryAttack() {
+    if (!storyPlayer || !storyPlayer.alive) return;
+    const now = performance.now();
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    if (now - storyPlayer.lastAttackClientTime < stats.attackCooldown) return;
+    storyPlayer.lastAttackClientTime = now;
+    storyPlayer.attackEffectUntil = now + 180;
+    socket.emit('storyPlayerAttack');
+}
+
+function startStoryLoop() {
+    stopStoryLoop();
+    storyLoopHandle = requestAnimationFrame(storyFrame);
+}
+function stopStoryLoop() {
+    if (storyLoopHandle) cancelAnimationFrame(storyLoopHandle);
+    storyLoopHandle = null;
+}
+
+function storyFrame() {
+    const now = performance.now();
+    if (storyPlayer && storyPlayer.alive) {
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        let dx = 0, dy = 0;
+        if (keys['w'] || keys['W']) dy -= stats.speed;
+        if (keys['s'] || keys['S']) dy += stats.speed;
+        if (keys['a'] || keys['A']) dx -= stats.speed;
+        if (keys['d'] || keys['D']) dx += stats.speed;
+        if (dx !== 0 || dy !== 0) {
+            let nx = storyPlayer.x + dx;
+            let ny = storyPlayer.y + dy;
+            const halfW = storyFloorDef.laneHalfWidth;
+            if (ny > halfW) ny = halfW;
+            if (ny < -halfW) ny = -halfW;
+            if (nx > 40) nx = 40;
+            if (nx < -storyFloorDef.levelLength) nx = -storyFloorDef.levelLength;
+            storyPlayer.x = nx; storyPlayer.y = ny;
+        }
+        if (storyMouseX !== null) {
+            const camX = storyPlayer.x;
+            const worldX = storyMouseX - storyCanvas.width / 2 + camX;
+            const worldY = storyMouseY - storyCanvas.height / 2;
+            storyPlayer.facing = Math.atan2(worldY - storyPlayer.y, worldX - storyPlayer.x);
+        }
+        if (now - storyLastMoveEmit > 33) {
+            socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
+            storyLastMoveEmit = now;
+        }
+    }
+    storyRender(now);
+    storyLoopHandle = requestAnimationFrame(storyFrame);
+}
+
+function storyRender(now) {
+    storyCtx.clearRect(0, 0, storyCanvas.width, storyCanvas.height);
+    storyCtx.save();
+    const camX = storyPlayer ? storyPlayer.x : 0;
+    storyCtx.translate(storyCanvas.width / 2 - camX, storyCanvas.height / 2);
+
+    if (storyFloorDef) {
+        const halfW = storyFloorDef.laneHalfWidth;
+        storyCtx.fillStyle = '#4a3c2f';
+        storyCtx.fillRect(-storyFloorDef.levelLength - 200, -halfW, storyFloorDef.levelLength + 400, halfW * 2);
+        storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+        storyCtx.lineWidth = 2;
+        storyCtx.strokeRect(-storyFloorDef.levelLength - 200, -halfW, storyFloorDef.levelLength + 400, halfW * 2);
+    }
+
+    Object.values(storyMonsters).forEach(m => {
+        if (!m.alive) return;
+        const def = SHARED.MONSTERS[m.type];
+        storyCtx.save();
+        storyCtx.translate(m.x, m.y);
+        if (m.state === 'telegraph') {
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS + 10, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+        }
+        storyCtx.beginPath();
+        storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS, 0, Math.PI * 2);
+        storyCtx.fillStyle = def.color;
+        storyCtx.fill();
+        storyCtx.strokeStyle = '#2c3e50';
+        storyCtx.lineWidth = 2;
+        storyCtx.stroke();
+        storyCtx.restore();
+
+        const barW = 32, barH = 4;
+        storyCtx.fillStyle = '#c0392b';
+        storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW, barH);
+        storyCtx.fillStyle = '#2ecc71';
+        storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW * (m.hp / m.maxHp), barH);
+    });
+
+    if (storyPlayer) {
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        const R = SHARED.PLAYER_RADIUS;
+        storyCtx.save();
+        storyCtx.translate(storyPlayer.x, storyPlayer.y);
+
+        if (now < (storyPlayer.attackEffectUntil || 0)) {
+            storyCtx.save();
+            storyCtx.rotate(storyPlayer.facing);
+            storyCtx.fillStyle = 'rgba(241, 196, 15, 0.35)';
+            storyCtx.fillRect(R, -(stats.attackWidth || 40) / 2, stats.attackRange, stats.attackWidth || 40);
+            storyCtx.strokeStyle = 'rgba(241, 196, 15, 0.9)';
+            storyCtx.lineWidth = 2;
+            storyCtx.strokeRect(R, -(stats.attackWidth || 40) / 2, stats.attackRange, stats.attackWidth || 40);
+            storyCtx.restore();
+        }
+
+        storyCtx.beginPath();
+        storyCtx.arc(0, 0, R, 0, Math.PI * 2);
+        storyCtx.fillStyle = storyPlayer.alive ? stats.color : '#7f8c8d';
+        storyCtx.fill();
+        storyCtx.strokeStyle = '#f1c40f';
+        storyCtx.lineWidth = 3;
+        storyCtx.stroke();
+        storyCtx.restore();
+
+        const barW = 40, barH = 5;
+        storyCtx.fillStyle = '#c0392b';
+        storyCtx.fillRect(storyPlayer.x - barW / 2, storyPlayer.y - R - 8 - barH, barW, barH);
+        storyCtx.fillStyle = '#2ecc71';
+        storyCtx.fillRect(storyPlayer.x - barW / 2, storyPlayer.y - R - 8 - barH, barW * (storyPlayer.hp / storyPlayer.maxHp), barH);
+    }
+
+    storyCtx.restore();
+}
 
 // ---- Boss select ----
 function renderBossList() {
@@ -481,6 +719,8 @@ socket.on('leaveRaidRejected', () => {
     leavePendingBanner.classList.add('hidden');
 });
 
+let resultReturnScreen = 'bossSelect'; // where the result screen's back button sends you
+
 socket.on('raidResult', ({ result }) => {
     stopLoop();
     settingsMenu.classList.add('hidden');
@@ -501,12 +741,18 @@ socket.on('raidResult', ({ result }) => {
         resultTitle.style.color = '#e74c3c';
         resultDesc.textContent = '파티가 전멸했습니다.';
     }
+    resultReturnScreen = 'bossSelect';
     showScreen('result');
 });
 
 resultBackBtn.addEventListener('click', () => {
-    renderBossList();
-    showScreen('bossSelect');
+    if (resultReturnScreen === 'storyTower') {
+        renderTower();
+        showScreen('storyTower');
+    } else {
+        renderBossList();
+        showScreen('bossSelect');
+    }
 });
 
 function updateHpBars() {
