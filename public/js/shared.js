@@ -15,6 +15,7 @@ const CHARACTERS = {
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
         health: 100,
+        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // straight-line hit in the facing direction
         attackRange: 70, // how far the line-shaped kick reaches
@@ -36,6 +37,7 @@ const CHARACTERS = {
         shortName: '고구마', // shown on the lobby's character-select button
         color: '#8e44ad',
         health: 100,
+        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // same straight-line mechanic, just a longer "hook" reach
         attackRange: 150,
@@ -56,6 +58,7 @@ const CHARACTERS = {
         shortName: '시금치', // shown on the lobby's character-select button
         color: '#27ae60',
         health: 100,
+        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // same straight-line mechanic, long reach
         attackRange: 150,

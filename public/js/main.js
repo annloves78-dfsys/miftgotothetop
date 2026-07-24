@@ -104,7 +104,7 @@ function openCharacterDetail(id) {
     const stats = SHARED.CHARACTERS[id];
     charDetailIcon.style.background = stats.color;
     charDetailName.textContent = stats.name;
-    charDetailPower.textContent = '미정'; // combat power isn't calculated yet
+    charDetailPower.textContent = stats.combatPower;
     showScreen('characterDetail');
 }
 
