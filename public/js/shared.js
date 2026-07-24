@@ -156,6 +156,7 @@ const BOSS_LIST = [
 ];
 
 const MONSTER_RADIUS = 16;
+const STAR_RADIUS = 30;
 
 // Story-mode monsters -- weaker enemies used on tower floors, distinct from
 // the raid bosses. They don't close all the way to melee range; they hover
@@ -166,7 +167,7 @@ const MONSTERS = {
         color: '#f6a9c9',
         health: 50,
         speed: 3,
-        aggroRange: 350, // dormant until the player gets this close, so they're met one at a time
+        aggroRange: 500, // dormant until the player gets this close
         preferredDistance: 80, // stops closing in once this near the player
         attackRange: 110, // still attacks if the player is within this range
         attackDamage: 5,
@@ -176,25 +177,32 @@ const MONSTERS = {
 };
 
 // Story-mode floor layouts. Floor 1 is a long bridge stretching left from the
-// start (x=0); the player fights through a line of monsters to clear it.
+// start (x=0). All 5 monsters are clustered together in one room between
+// arenaEntranceX and arenaExitX; once the player enters, an energy shield
+// seals both gates (see server's storyPlayerMove handler) until every
+// monster in the room is dead. Past the (now-open) exit gate, further down
+// the bridge, sits the star -- attacking it clears the floor.
 // Only floor 1 has content so far -- floors 2+ exist in STORY_FLOOR_DEFS.
 const STORY_FLOOR_DEFS = {
     1: {
         levelType: 'bridge',
-        levelLength: 2400, // how far the bridge extends to the left of the start
+        levelLength: 2500, // how far the bridge extends to the left of the start
         laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
+        arenaEntranceX: -900, // shield seals here (blocks retreat) once monsters are engaged
+        arenaExitX: -1500, // shield here blocks progress until the room is cleared
         monsters: [
-            { type: 'cake_slice', x: -400 },
-            { type: 'cake_slice', x: -800 },
-            { type: 'cake_slice', x: -1200 },
-            { type: 'cake_slice', x: -1600 },
-            { type: 'cake_slice', x: -2000 }
-        ]
+            { type: 'cake_slice', x: -1050, y: -35 },
+            { type: 'cake_slice', x: -1050, y: 35 },
+            { type: 'cake_slice', x: -1200, y: 0 },
+            { type: 'cake_slice', x: -1350, y: -35 },
+            { type: 'cake_slice', x: -1350, y: 35 }
+        ],
+        star: { x: -2400, y: 0 }
     }
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
 }

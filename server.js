@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -384,6 +384,8 @@ function createStoryRoom(floor) {
         state: 'fighting',
         players: {},
         monsters: {},
+        starDefeated: false,
+        activeBuffs: [],
         loopHandle: null
     };
     return roomId;
@@ -394,7 +396,7 @@ function spawnStoryMonsters(room, floorDef) {
         const def = MONSTERS[m.type];
         room.monsters[`m${i}`] = {
             type: m.type,
-            x: m.x, y: 0,
+            x: m.x, y: m.y || 0,
             hp: def.health, maxHp: def.health,
             alive: true,
             state: 'idle', // 'idle' | 'telegraph'
@@ -410,6 +412,17 @@ function publicMonsters(room) {
         out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state };
     }
     return out;
+}
+
+function healStoryPlayer(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        const healed = Math.min(p.maxHp, p.hp + amount);
+        if (healed !== p.hp) {
+            p.hp = healed;
+            io.to(roomId).emit('storyPlayerHealed', { id, hp: p.hp });
+        }
+    }
 }
 
 function endStoryRoom(roomId, result) {
@@ -439,6 +452,33 @@ function tickStoryRoom(roomId) {
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
+
+    if (room.activeBuffs && room.activeBuffs.length) {
+        room.activeBuffs = room.activeBuffs.filter(buff => now < buff.endAt);
+        for (const buff of room.activeBuffs) {
+            if (now - buff.lastTickAt < buff.tickMs) continue;
+            buff.lastTickAt += buff.tickMs;
+            if (buff.type === 'team_heal_over_time') {
+                healStoryPlayer(room, roomId, buff.healPerTick);
+            } else if (buff.type === 'story_spin_heal_check' && !buff.triggered) {
+                const caster = room.players[buff.casterId];
+                if (caster && caster.alive) {
+                    for (const [mid, m] of Object.entries(room.monsters)) {
+                        if (!m.alive) continue;
+                        const dist = Math.hypot(caster.x - m.x, caster.y - m.y) - MONSTER_RADIUS;
+                        if (dist <= buff.radius) {
+                            buff.triggered = true;
+                            m.hp = Math.max(0, m.hp - buff.damage);
+                            if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                            else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                            healStoryPlayer(room, roomId, buff.healAmount);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive) continue;
@@ -568,7 +608,7 @@ io.on('connection', (socket) => {
             hp: character.health, maxHp: character.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: Math.PI, // faces left, toward the bridge
-            alive: true, lastAttackTime: 0
+            alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0
         };
 
         socket.join(roomId);
@@ -576,7 +616,13 @@ io.on('connection', (socket) => {
 
         io.to(roomId).emit('storyFloorStarted', {
             floor,
-            floorDef: { levelLength: floorDef.levelLength, laneHalfWidth: floorDef.laneHalfWidth },
+            floorDef: {
+                levelLength: floorDef.levelLength,
+                laneHalfWidth: floorDef.laneHalfWidth,
+                arenaEntranceX: floorDef.arenaEntranceX,
+                arenaExitX: floorDef.arenaExitX,
+                star: floorDef.star
+            },
             player: room.players[socket.id],
             monsters: publicMonsters(room)
         });
@@ -593,6 +639,17 @@ io.on('connection', (socket) => {
         const floorDef = STORY_FLOOR_DEFS[room.floor];
         if (x > 40 || x < -floorDef.levelLength - 1) return; // ignore out-of-bounds claims
         if (Math.abs(y) > floorDef.laneHalfWidth + 1) return;
+
+        // Energy-shield gate: once inside (or moving into) the monster room,
+        // neither gate can be crossed until every monster in it is dead.
+        if (floorDef.arenaEntranceX !== undefined) {
+            const anyMonsterAlive = Object.values(room.monsters).some(m => m.alive);
+            if (anyMonsterAlive && (p.x <= floorDef.arenaEntranceX || x <= floorDef.arenaEntranceX)) {
+                if (x > floorDef.arenaEntranceX) x = floorDef.arenaEntranceX;
+                if (x < floorDef.arenaExitX) x = floorDef.arenaExitX;
+            }
+        }
+
         p.x = x; p.y = y; p.facing = facing;
     });
 
@@ -608,10 +665,11 @@ io.on('connection', (socket) => {
         p.lastAttackTime = now;
         if (character.attackType !== 'melee_kick') return;
 
-        let allDead = true;
+        let anyHit = false;
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
             if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, m.x, m.y, MONSTER_RADIUS)) {
+                anyHit = true;
                 m.hp = Math.max(0, m.hp - character.attackDamage);
                 if (m.hp <= 0) {
                     m.alive = false;
@@ -620,9 +678,114 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
                 }
             }
-            if (m.alive) allDead = false;
         }
-        if (allDead) endStoryRoom(roomId, 'win');
+
+        if (anyHit && character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
+            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+            healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        }
+
+        const floorDef = STORY_FLOOR_DEFS[room.floor];
+        if (floorDef.star && !room.starDefeated) {
+            if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
+                room.starDefeated = true;
+                io.to(roomId).emit('starHit', {});
+                endStoryRoom(roomId, 'win');
+            }
+        }
+    });
+
+    socket.on('storyPlayerSkill', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        if (!character.skillType) return;
+        const now = Date.now();
+        if (now - p.lastSkillTime < character.skillCooldown) return;
+        p.lastSkillTime = now;
+
+        socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
+
+        if (character.skillType === 'spin_kick') {
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                const dist = Math.hypot(p.x - m.x, p.y - m.y) - MONSTER_RADIUS;
+                if (dist <= character.skillRange) {
+                    m.hp = Math.max(0, m.hp - character.skillDamage);
+                    if (m.hp <= 0) {
+                        m.alive = false;
+                        io.to(roomId).emit('monsterDefeated', { id: mid });
+                    } else {
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
+            }
+        } else if (character.skillType === 'spin_heal') {
+            room.activeBuffs.push({
+                type: 'story_spin_heal_check',
+                casterId: socket.id,
+                radius: character.skillRadius,
+                damage: character.skillDamage,
+                healAmount: character.skillHealOnHit,
+                endAt: now + character.skillDurationMs,
+                tickMs: 150,
+                lastTickAt: now,
+                triggered: false
+            });
+        }
+        // speed_boost is purely client-side; nothing more to do here.
+    });
+
+    socket.on('storyPlayerUltimate', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        if (!character.ultimateType) return;
+        const now = Date.now();
+        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        p.lastUltimateTime = now;
+
+        socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
+
+        if (character.ultimateType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
+        } else if (character.ultimateType === 'targeted_aoe') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
+            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+
+            io.to(roomId).emit('storyUltimateImpact', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
+
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(tx - m.x, ty - m.y) <= character.ultimateRadius + MONSTER_RADIUS) {
+                    m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                    if (m.hp <= 0) {
+                        m.alive = false;
+                        io.to(roomId).emit('monsterDefeated', { id: mid });
+                    } else {
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
+            }
+        } else if (character.ultimateType === 'attack_heal_boost') {
+            p.attackHealBoostUntil = now + character.ultimateDurationMs;
+        }
     });
 
     socket.on('playerMove', ({ x, y, facing }) => {

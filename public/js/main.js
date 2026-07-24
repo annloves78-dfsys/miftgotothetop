@@ -237,22 +237,32 @@ towerPlayBtn.addEventListener('click', () => {
 const storyCanvas = document.getElementById('storyCanvas');
 const storyCtx = storyCanvas.getContext('2d');
 const storyMyHpBar = document.getElementById('story-my-hp-bar');
+const storyMySkillCdEl = document.getElementById('story-my-skill-cd');
+const storyMyUltimateCdEl = document.getElementById('story-my-ultimate-cd');
 const storyMonstersLeftEl = document.getElementById('story-monsters-left');
 const storyLeaveBtn = document.getElementById('story-leave-btn');
 
 let storyFloorDef = null;
-let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime}
+let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime,...}
 let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
 let storyMouseX = null;
 let storyMouseY = null;
 let storyLoopHandle = null;
 let storyLastMoveEmit = 0;
+let isStoryTargetingUltimate = false;
+let storyImpactEffects = []; // [{x, y, radius, until}]
 
 socket.on('storyFloorStarted', (data) => {
     storyFloorDef = data.floorDef;
     storyMonsters = data.monsters;
     const p = data.player;
-    storyPlayer = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, lastAttackClientTime: -Infinity };
+    storyPlayer = {
+        x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true,
+        lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
+        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0
+    };
+    isStoryTargetingUltimate = false;
+    storyImpactEffects = [];
     updateStoryHpBar();
     updateStoryMonstersLeft();
     showScreen('storyFight');
@@ -282,6 +292,17 @@ socket.on('storyPlayerDamaged', ({ hp, alive }) => {
     storyPlayer.hp = hp;
     storyPlayer.alive = alive;
     updateStoryHpBar();
+});
+
+socket.on('storyPlayerHealed', ({ hp }) => {
+    if (!storyPlayer) return;
+    storyPlayer.hp = hp;
+    storyPlayer.healEffectUntil = performance.now() + 250;
+    updateStoryHpBar();
+});
+
+socket.on('storyUltimateImpact', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
 });
 
 socket.on('storyFloorResult', ({ result, floor }) => {
@@ -321,6 +342,7 @@ function updateStoryMonstersLeft() {
     storyMonstersLeftEl.textContent = `남은 적: ${remaining}`;
 }
 
+storyCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 storyCanvas.addEventListener('mousemove', (e) => {
     const rect = storyCanvas.getBoundingClientRect();
     const scaleX = storyCanvas.width / rect.width;
@@ -329,8 +351,71 @@ storyCanvas.addEventListener('mousemove', (e) => {
     storyMouseY = (e.clientY - rect.top) * scaleY;
 });
 storyCanvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) tryStoryAttack();
+    if (e.button === 0) {
+        if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
+        else tryStoryAttack();
+    } else if (e.button === 2) {
+        tryStoryUseSkill();
+    }
 });
+
+function storyWorldFromMouse() {
+    const camX = storyPlayer ? storyPlayer.x : 0;
+    return { x: storyMouseX - storyCanvas.width / 2 + camX, y: storyMouseY - storyCanvas.height / 2 };
+}
+
+function storyCanUseSkill(now) {
+    if (!storyPlayer || !storyPlayer.alive) return false;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    return !!stats.skillType && now - storyPlayer.lastSkillClientTime >= stats.skillCooldown;
+}
+
+function storyCanUseUltimate(now) {
+    if (!storyPlayer || !storyPlayer.alive) return false;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    return !!stats.ultimateType && now - storyPlayer.lastUltimateClientTime >= stats.ultimateCooldownMs;
+}
+
+function tryStoryUseSkill() {
+    const now = performance.now();
+    if (!storyCanUseSkill(now)) return;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    storyPlayer.lastSkillClientTime = now;
+    storyPlayer.skillEffectUntil = now + (stats.skillType === 'spin_heal' ? stats.skillDurationMs : 350);
+    if (stats.skillType === 'speed_boost') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
+    socket.emit('storyPlayerSkill');
+}
+
+function tryStoryUseUltimate() {
+    const now = performance.now();
+    if (!storyCanUseUltimate(now)) return;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    storyPlayer.lastUltimateClientTime = now;
+    storyPlayer.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
+    socket.emit('storyPlayerUltimate');
+}
+
+// F does different things depending on the character, mirroring the boss-raid version.
+function storyHandleUltimateKey() {
+    if (!storyPlayer) return;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    if (stats.ultimateType === 'targeted_aoe') {
+        if (isStoryTargetingUltimate) { isStoryTargetingUltimate = false; return; }
+        if (!storyCanUseUltimate(performance.now())) return;
+        isStoryTargetingUltimate = true;
+    } else {
+        tryStoryUseUltimate();
+    }
+}
+
+function confirmStoryUltimateTarget() {
+    isStoryTargetingUltimate = false;
+    if (!storyPlayer || storyMouseX === null) return;
+    if (!storyCanUseUltimate(performance.now())) return;
+    storyPlayer.lastUltimateClientTime = performance.now();
+    const world = storyWorldFromMouse();
+    socket.emit('storyPlayerUltimate', { targetX: world.x, targetY: world.y });
+}
 
 function tryStoryAttack() {
     if (!storyPlayer || !storyPlayer.alive) return;
@@ -351,15 +436,30 @@ function stopStoryLoop() {
     storyLoopHandle = null;
 }
 
+function updateStoryCooldownDisplay(now) {
+    if (!storyPlayer) return;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    if (stats.skillType) {
+        const remain = Math.max(0, stats.skillCooldown - (now - storyPlayer.lastSkillClientTime)) / 1000;
+        storyMySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+    }
+    if (stats.ultimateType) {
+        const remain = Math.max(0, stats.ultimateCooldownMs - (now - storyPlayer.lastUltimateClientTime)) / 1000;
+        storyMyUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+    }
+}
+
 function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        const boosted = stats.skillType === 'speed_boost' && now < storyPlayer.speedBoostUntil;
+        const speed = boosted ? stats.skillSpeedValue : stats.speed;
         let dx = 0, dy = 0;
-        if (keys['w'] || keys['W']) dy -= stats.speed;
-        if (keys['s'] || keys['S']) dy += stats.speed;
-        if (keys['a'] || keys['A']) dx -= stats.speed;
-        if (keys['d'] || keys['D']) dx += stats.speed;
+        if (keys['w'] || keys['W']) dy -= speed;
+        if (keys['s'] || keys['S']) dy += speed;
+        if (keys['a'] || keys['A']) dx -= speed;
+        if (keys['d'] || keys['D']) dx += speed;
         if (dx !== 0 || dy !== 0) {
             let nx = storyPlayer.x + dx;
             let ny = storyPlayer.y + dy;
@@ -368,21 +468,43 @@ function storyFrame() {
             if (ny < -halfW) ny = -halfW;
             if (nx > 40) nx = 40;
             if (nx < -storyFloorDef.levelLength) nx = -storyFloorDef.levelLength;
+            if (storyFloorDef.arenaEntranceX !== undefined && storyAnyMonsterAlive()) {
+                if (storyPlayer.x <= storyFloorDef.arenaEntranceX || nx <= storyFloorDef.arenaEntranceX) {
+                    if (nx > storyFloorDef.arenaEntranceX) nx = storyFloorDef.arenaEntranceX;
+                    if (nx < storyFloorDef.arenaExitX) nx = storyFloorDef.arenaExitX;
+                }
+            }
             storyPlayer.x = nx; storyPlayer.y = ny;
         }
         if (storyMouseX !== null) {
-            const camX = storyPlayer.x;
-            const worldX = storyMouseX - storyCanvas.width / 2 + camX;
-            const worldY = storyMouseY - storyCanvas.height / 2;
-            storyPlayer.facing = Math.atan2(worldY - storyPlayer.y, worldX - storyPlayer.x);
+            const world = storyWorldFromMouse();
+            storyPlayer.facing = Math.atan2(world.y - storyPlayer.y, world.x - storyPlayer.x);
         }
         if (now - storyLastMoveEmit > 33) {
             socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
             storyLastMoveEmit = now;
         }
+        updateStoryCooldownDisplay(now);
     }
     storyRender(now);
     storyLoopHandle = requestAnimationFrame(storyFrame);
+}
+
+function storyAnyMonsterAlive() {
+    return Object.values(storyMonsters).some(m => m.alive);
+}
+
+function drawStarPath(ctx, radius) {
+    const inner = radius * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? radius : inner;
+        const angle = (Math.PI / 5) * i - Math.PI / 2;
+        const x = Math.cos(angle) * r, y = Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
 }
 
 function storyRender(now) {
@@ -398,7 +520,44 @@ function storyRender(now) {
         storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
         storyCtx.lineWidth = 2;
         storyCtx.strokeRect(-storyFloorDef.levelLength - 200, -halfW, storyFloorDef.levelLength + 400, halfW * 2);
+
+        if (storyFloorDef.star) {
+            const sx = storyFloorDef.star.x, sy = storyFloorDef.star.y;
+            const pulse = 4 + Math.sin(now / 200) * 3;
+            storyCtx.save();
+            storyCtx.translate(sx, sy);
+            storyCtx.rotate(now / 1000);
+            drawStarPath(storyCtx, SHARED.STAR_RADIUS + pulse);
+            storyCtx.fillStyle = '#f1c40f';
+            storyCtx.shadowColor = 'rgba(241, 196, 15, 0.9)';
+            storyCtx.shadowBlur = 20;
+            storyCtx.fill();
+            storyCtx.restore();
+        }
+
+        if (storyFloorDef.arenaEntranceX !== undefined && storyAnyMonsterAlive()) {
+            const shieldAlpha = 0.35 + Math.sin(now / 150) * 0.1;
+            [storyFloorDef.arenaEntranceX, storyFloorDef.arenaExitX].forEach(gateX => {
+                storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
+                storyCtx.fillRect(gateX - 6, -halfW, 12, halfW * 2);
+                storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
+                storyCtx.lineWidth = 2;
+                storyCtx.strokeRect(gateX - 6, -halfW, 12, halfW * 2);
+            });
+        }
     }
+
+    storyImpactEffects = storyImpactEffects.filter(fx => now < fx.until);
+    storyImpactEffects.forEach(fx => {
+        const t = 1 - Math.max(0, (fx.until - now) / 400);
+        storyCtx.beginPath();
+        storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        storyCtx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
+        storyCtx.fill();
+        storyCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        storyCtx.lineWidth = 3;
+        storyCtx.stroke();
+    });
 
     Object.values(storyMonsters).forEach(m => {
         if (!m.alive) return;
@@ -445,6 +604,41 @@ function storyRender(now) {
             storyCtx.restore();
         }
 
+        if (now < (storyPlayer.skillEffectUntil || 0)) {
+            if (stats.skillType === 'spin_heal') {
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, stats.skillRadius, 0, Math.PI * 2);
+                storyCtx.fillStyle = 'rgba(39, 174, 96, 0.2)';
+                storyCtx.fill();
+                storyCtx.strokeStyle = 'rgba(39, 174, 96, 0.85)';
+                storyCtx.lineWidth = 3;
+                storyCtx.stroke();
+            } else {
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, R + 26, 0, Math.PI * 2);
+                storyCtx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
+                storyCtx.lineWidth = 6;
+                storyCtx.stroke();
+            }
+        }
+
+        if (now < (storyPlayer.ultimateEffectUntil || 0)) {
+            const pulse = 4 + Math.sin(now / 150) * 3;
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R + 20 + pulse, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(46, 204, 113, 0.7)';
+            storyCtx.lineWidth = 5;
+            storyCtx.stroke();
+        }
+
+        if (now < (storyPlayer.healEffectUntil || 0)) {
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R + 10, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(46, 204, 113, 0.9)';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+        }
+
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
         storyCtx.fillStyle = storyPlayer.alive ? stats.color : '#7f8c8d';
@@ -459,6 +653,18 @@ function storyRender(now) {
         storyCtx.fillRect(storyPlayer.x - barW / 2, storyPlayer.y - R - 8 - barH, barW, barH);
         storyCtx.fillStyle = '#2ecc71';
         storyCtx.fillRect(storyPlayer.x - barW / 2, storyPlayer.y - R - 8 - barH, barW * (storyPlayer.hp / storyPlayer.maxHp), barH);
+    }
+
+    if (isStoryTargetingUltimate && storyMouseX !== null && storyPlayer) {
+        const world = storyWorldFromMouse();
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        storyCtx.beginPath();
+        storyCtx.setLineDash([8, 6]);
+        storyCtx.arc(world.x, world.y, stats.ultimateRadius || 90, 0, Math.PI * 2);
+        storyCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        storyCtx.lineWidth = 2;
+        storyCtx.stroke();
+        storyCtx.setLineDash([]);
     }
 
     storyCtx.restore();
@@ -781,8 +987,15 @@ function updateCooldownDisplay(now) {
 // ---- Input ----
 window.addEventListener('keydown', (e) => {
     keys[e.key] = true;
-    if (e.key === 'f' || e.key === 'F') handleUltimateKey();
-    if (e.key === 'Escape') isTargetingUltimate = false;
+    const inStoryFight = !screens.storyFight.classList.contains('hidden');
+    if (e.key === 'f' || e.key === 'F') {
+        if (inStoryFight) storyHandleUltimateKey();
+        else handleUltimateKey();
+    }
+    if (e.key === 'Escape') {
+        isTargetingUltimate = false;
+        isStoryTargetingUltimate = false;
+    }
 });
 window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
