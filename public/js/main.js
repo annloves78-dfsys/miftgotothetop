@@ -40,9 +40,63 @@ const charDetailElement = document.getElementById('char-detail-element');
 const charDetailRole = document.getElementById('char-detail-role');
 const charDetailAtk = document.getElementById('char-detail-atk');
 const charDetailHp = document.getElementById('char-detail-hp');
+const charDetailAttackIcon = document.getElementById('char-detail-attack-icon');
 const charDetailSkillIcon = document.getElementById('char-detail-skill-icon');
 const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-icon');
+const charDetailDesc = document.getElementById('char-detail-desc');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
+
+function describeAbility(stats, kind) {
+    const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
+    if (kind === 'attack') {
+        let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        if (stats.attackHealOnUse) {
+            text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
+        }
+        return text;
+    }
+    if (kind === 'skill') {
+        const cd = ` (재사용 대기시간 ${sec(stats.skillCooldown)}초)`;
+        switch (stats.skillType) {
+            case 'spin_kick':
+                return `제자리에서 회전하며 반경 ${stats.skillRange}px 내의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
+            case 'speed_boost':
+                return `${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedValue}배 빨라집니다.${cd}`;
+            case 'spin_heal':
+                return `${sec(stats.skillDurationMs)}초 동안 회전하며 반경 ${stats.skillRadius}px 내의 적에게 ${stats.skillDamage}의 피해를 주고, 적중하면 팀 전체를 ${stats.skillHealOnHit}만큼 회복시킵니다.${cd}`;
+            default:
+                return '스킬 정보가 없습니다.';
+        }
+    }
+    if (kind === 'ultimate') {
+        const cd = ` (재사용 대기시간 ${sec(stats.ultimateCooldownMs)}초)`;
+        switch (stats.ultimateType) {
+            case 'team_heal_over_time':
+                return `${sec(stats.ultimateDurationMs)}초 동안 ${sec(stats.ultimateTickMs)}초마다 팀 전체를 ${stats.ultimateHealPerTick}만큼 회복시킵니다.${cd}`;
+            case 'targeted_aoe':
+                return `원하는 지점을 지정해 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다.${cd}`;
+            case 'attack_heal_boost':
+                return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복시킵니다.${cd}`;
+            default:
+                return '궁극기 정보가 없습니다.';
+        }
+    }
+    return '';
+}
+
+function selectCharDetailAbility(kind) {
+    const stats = SHARED.CHARACTERS[viewingCharacterId];
+    charDetailDesc.textContent = describeAbility(stats, kind);
+    [
+        [charDetailAttackIcon, 'attack'],
+        [charDetailSkillIcon, 'skill'],
+        [charDetailUltimateIcon, 'ultimate']
+    ].forEach(([el, k]) => el.classList.toggle('selected', k === kind));
+}
+
+charDetailAttackIcon.addEventListener('click', () => selectCharDetailAbility('attack'));
+charDetailSkillIcon.addEventListener('click', () => selectCharDetailAbility('skill'));
+charDetailUltimateIcon.addEventListener('click', () => selectCharDetailAbility('ultimate'));
 
 const SKILL_ICONS = {
     melee_kick: '🗡',
@@ -133,6 +187,7 @@ function openCharacterDetail(id) {
     charDetailHp.textContent = stats.health != null ? stats.health : '-';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
     charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
+    selectCharDetailAbility('attack');
     showScreen('characterDetail');
 }
 

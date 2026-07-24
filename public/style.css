@@ -706,6 +706,17 @@ html, body {
     align-items: center;
     justify-content: center;
     font-size: 22px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.skill-icon-box:hover {
+    border-color: #7f8c8d;
+}
+
+.skill-icon-box.selected {
+    border-color: #f1c40f;
+    box-shadow: 0 0 10px rgba(241, 196, 15, 0.6);
 }
 
 .leave-party-btn {
