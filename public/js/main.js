@@ -3,6 +3,7 @@ const socket = io();
 // ---- Screens ----
 const screens = {
     lobby: document.getElementById('lobby-screen'),
+    shop: document.getElementById('shop-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
@@ -96,6 +97,36 @@ characterSelectBtn.addEventListener('click', () => {
     showScreen('characterSelect');
 });
 backFromCharacterBtn.addEventListener('click', () => showScreen(characterReturnScreen));
+
+// ---- Shop ----
+const shopBtn = document.getElementById('shop-btn');
+const backFromShopBtn = document.getElementById('back-from-shop-btn');
+const shopContent = document.getElementById('shop-content');
+const shopCatButtons = {
+    currency: document.getElementById('shop-cat-currency'),
+    iap: document.getElementById('shop-cat-iap'),
+    item: document.getElementById('shop-cat-item')
+};
+const SHOP_CATEGORIES = {
+    currency: '아직 판매 중인 재화가 없습니다.',
+    iap: '아직 판매 중인 상품이 없습니다.',
+    item: '아직 판매 중인 아이템이 없습니다.'
+};
+
+function renderShopCategory(key) {
+    Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
+    shopContent.innerHTML = `<p class="shop-empty">${SHOP_CATEGORIES[key]}</p>`;
+}
+
+Object.entries(shopCatButtons).forEach(([key, btn]) => {
+    btn.addEventListener('click', () => renderShopCategory(key));
+});
+
+shopBtn.addEventListener('click', () => {
+    renderShopCategory('currency');
+    showScreen('shop');
+});
+backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
 
 detailChangeCharBtn.addEventListener('click', () => {
     characterReturnScreen = 'bossDetail';

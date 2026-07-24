@@ -10,8 +10,25 @@
     <!-- Lobby -->
     <div id="lobby-screen" class="screen">
         <h1 id="game-title">MIFT GOTOTHETOP</h1>
-        <button id="character-select-btn" class="char-select-btn">🧑 <span id="selected-char-name">캐릭터</span></button>
+        <div class="lobby-left-actions">
+            <button id="character-select-btn" class="char-select-btn">🧑 <span id="selected-char-name">캐릭터</span></button>
+            <button id="shop-btn" class="char-select-btn">🛒 상점</button>
+        </div>
         <button id="play-btn" class="play-btn">▶ 플레이</button>
+    </div>
+
+    <!-- Shop -->
+    <div id="shop-screen" class="screen hidden">
+        <h2>상점</h2>
+        <div class="shop-layout">
+            <div class="shop-categories">
+                <button id="shop-cat-currency" class="shop-cat-btn">재화</button>
+                <button id="shop-cat-iap" class="shop-cat-btn">현질</button>
+                <button id="shop-cat-item" class="shop-cat-btn">아이템</button>
+            </div>
+            <div id="shop-content" class="shop-content"></div>
+        </div>
+        <button id="back-from-shop-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Mode select (story / boss raid) -->

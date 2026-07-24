@@ -66,6 +66,60 @@ html, body {
     position: static;
 }
 
+/* Shop */
+.shop-layout {
+    display: flex;
+    width: 900px;
+    max-width: 90vw;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.shop-categories {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.shop-cat-btn {
+    padding: 16px;
+    font-size: 16px;
+    font-weight: bold;
+    background: #2c3e50;
+    color: white;
+    border: 2px solid #34495e;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.shop-cat-btn:hover {
+    border-color: #f1c40f;
+}
+
+.shop-cat-btn.selected {
+    border-color: #f1c40f;
+    background: #34495e;
+}
+
+.shop-content {
+    flex: 3;
+    background: #22293a;
+    border: 2px solid #34495e;
+    border-radius: 12px;
+    min-height: 360px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shop-empty {
+    color: #7f8c8d;
+    font-size: 15px;
+}
+
 /* Mode select */
 .mode-list {
     display: flex;
@@ -275,10 +329,15 @@ html, body {
     position: static;
 }
 
-.char-select-btn {
+.lobby-left-actions {
     position: absolute;
     left: 30px;
     bottom: 30px;
+    display: flex;
+    gap: 16px;
+}
+
+.char-select-btn {
     padding: 14px 28px;
     font-size: 18px;
     font-weight: bold;
