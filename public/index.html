@@ -14,6 +14,23 @@
         <button id="play-btn" class="play-btn">▶ 플레이</button>
     </div>
 
+    <!-- Mode select (story / boss raid) -->
+    <div id="mode-select-screen" class="screen hidden">
+        <h2>모드 선택</h2>
+        <div class="mode-list">
+            <div id="story-mode-card" class="mode-card locked">
+                <div class="icon">🔒</div>
+                <div class="name">스토리 모드</div>
+                <div class="sub">준비 중</div>
+            </div>
+            <div id="boss-raid-mode-card" class="mode-card">
+                <div class="icon">⚔️</div>
+                <div class="name">보스 레이드</div>
+            </div>
+        </div>
+        <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
     <!-- Character select -->
     <div id="character-select-screen" class="screen hidden">
         <h2>캐릭터 선택</h2>
@@ -28,18 +45,55 @@
         <button id="back-to-lobby-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- Boss detail -->
+    <div id="boss-detail-screen" class="screen hidden">
+        <div class="detail-layout">
+            <div class="detail-left">
+                <div id="detail-char-icon" class="char-icon-circle"></div>
+                <div id="detail-char-name" class="char-name"></div>
+                <button id="detail-change-char-btn" class="secondary-btn">캐릭터 변경</button>
+            </div>
+            <div class="detail-right">
+                <h2 id="detail-boss-name">보스 이름</h2>
+                <div id="detail-boss-icon" class="boss-icon-circle">🗿</div>
+                <div class="detail-specs">
+                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="detail-boss-power">-</span></div>
+                    <div class="spec-row"><span class="spec-label">체력</span><span id="detail-boss-hp">-</span></div>
+                </div>
+                <div class="detail-actions">
+                    <button id="detail-multi-btn" class="play-btn">멀티플레이</button>
+                    <button id="detail-solo-btn" class="play-btn">솔로플레이</button>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-detail-btn" class="secondary-btn">뒤로</button>
+    </div>
+
     <!-- Waiting room -->
     <div id="waiting-screen" class="screen hidden">
         <h2 id="waiting-boss-name">보스 이름</h2>
         <p id="waiting-status">대기 중... (1/2)</p>
         <div class="waiting-actions">
-            <button id="start-solo-btn" class="play-btn">혼자 시작하기</button>
             <button id="cancel-waiting-btn" class="secondary-btn">취소</button>
         </div>
     </div>
 
     <!-- Fight -->
     <div id="fight-screen" class="screen hidden">
+        <button id="settings-btn" class="settings-btn">⚙</button>
+        <div id="settings-menu" class="settings-menu hidden">
+            <button id="leave-raid-btn" class="secondary-btn">나가기</button>
+        </div>
+        <div id="leave-pending-banner" class="leave-banner hidden">파트너에게 나가기 요청을 보냈습니다...</div>
+        <div id="leave-request-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <p>보스레이드를 나갈까요?</p>
+                <div class="modal-actions">
+                    <button id="leave-confirm-yes" class="play-btn">예</button>
+                    <button id="leave-confirm-no" class="secondary-btn">아니요</button>
+                </div>
+            </div>
+        </div>
         <div id="boss-hp-container" class="hp-container top">
             <div class="hp-label" id="boss-hp-label">보스</div>
             <div class="hp-bar-bg"><div id="boss-hp-bar" class="hp-bar-fill boss"></div></div>

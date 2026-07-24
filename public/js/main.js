@@ -3,8 +3,10 @@ const socket = io();
 // ---- Screens ----
 const screens = {
     lobby: document.getElementById('lobby-screen'),
+    modeSelect: document.getElementById('mode-select-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
+    bossDetail: document.getElementById('boss-detail-screen'),
     waiting: document.getElementById('waiting-screen'),
     fight: document.getElementById('fight-screen'),
     result: document.getElementById('result-screen')
@@ -19,11 +21,23 @@ const characterSelectBtn = document.getElementById('character-select-btn');
 const selectedCharNameEl = document.getElementById('selected-char-name');
 const characterListEl = document.getElementById('character-list');
 const backFromCharacterBtn = document.getElementById('back-from-character-btn');
+const backFromModeBtn = document.getElementById('back-from-mode-btn');
+const storyModeCard = document.getElementById('story-mode-card');
+const bossRaidModeCard = document.getElementById('boss-raid-mode-card');
 const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
 const bossListEl = document.getElementById('boss-list');
+const backFromDetailBtn = document.getElementById('back-from-detail-btn');
+const detailCharIcon = document.getElementById('detail-char-icon');
+const detailCharName = document.getElementById('detail-char-name');
+const detailChangeCharBtn = document.getElementById('detail-change-char-btn');
+const detailBossName = document.getElementById('detail-boss-name');
+const detailBossIcon = document.getElementById('detail-boss-icon');
+const detailBossPower = document.getElementById('detail-boss-power');
+const detailBossHp = document.getElementById('detail-boss-hp');
+const detailMultiBtn = document.getElementById('detail-multi-btn');
+const detailSoloBtn = document.getElementById('detail-solo-btn');
 const waitingBossName = document.getElementById('waiting-boss-name');
 const waitingStatus = document.getElementById('waiting-status');
-const startSoloBtn = document.getElementById('start-solo-btn');
 const cancelWaitingBtn = document.getElementById('cancel-waiting-btn');
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -37,6 +51,13 @@ const partnerHpBar = document.getElementById('partner-hp-bar');
 const resultTitle = document.getElementById('result-title');
 const resultDesc = document.getElementById('result-desc');
 const resultBackBtn = document.getElementById('result-back-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsMenu = document.getElementById('settings-menu');
+const leaveRaidBtn = document.getElementById('leave-raid-btn');
+const leavePendingBanner = document.getElementById('leave-pending-banner');
+const leaveRequestModal = document.getElementById('leave-request-modal');
+const leaveConfirmYes = document.getElementById('leave-confirm-yes');
+const leaveConfirmNo = document.getElementById('leave-confirm-no');
 
 let gameData = loadGameData();
 
@@ -46,6 +67,8 @@ function updateSelectedCharLabel() {
     selectedCharNameEl.textContent = stats.shortName || stats.name;
 }
 updateSelectedCharLabel();
+
+let characterReturnScreen = 'lobby'; // where "뒤로"/selecting a character sends you back to
 
 function renderCharacterList() {
     characterListEl.innerHTML = '';
@@ -59,7 +82,8 @@ function renderCharacterList() {
                 gameData.selectedCharacter = id;
                 saveGameData(gameData);
                 updateSelectedCharLabel();
-                showScreen('lobby');
+                if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
+                showScreen(characterReturnScreen);
             });
         }
         characterListEl.appendChild(card);
@@ -67,10 +91,26 @@ function renderCharacterList() {
 }
 
 characterSelectBtn.addEventListener('click', () => {
+    characterReturnScreen = 'lobby';
     renderCharacterList();
     showScreen('characterSelect');
 });
-backFromCharacterBtn.addEventListener('click', () => showScreen('lobby'));
+backFromCharacterBtn.addEventListener('click', () => showScreen(characterReturnScreen));
+
+detailChangeCharBtn.addEventListener('click', () => {
+    characterReturnScreen = 'bossDetail';
+    renderCharacterList();
+    showScreen('characterSelect');
+});
+
+// ---- Mode select ----
+playBtn.addEventListener('click', () => showScreen('modeSelect'));
+backFromModeBtn.addEventListener('click', () => showScreen('lobby'));
+bossRaidModeCard.addEventListener('click', () => {
+    renderBossList();
+    showScreen('bossSelect');
+});
+// storyModeCard is intentionally left without a click handler: locked/unreachable for now.
 
 // ---- Boss select ----
 function renderBossList() {
@@ -79,33 +119,54 @@ function renderBossList() {
         const card = document.createElement('div');
         card.className = 'boss-card' + (b.locked ? ' locked' : '');
         card.innerHTML = `<div class="icon">${b.locked ? '🔒' : '🗿'}</div><div class="name">${b.name}</div>`;
-        if (!b.locked) card.addEventListener('click', () => joinRaid(b.id));
+        if (!b.locked) card.addEventListener('click', () => openBossDetail(b.id));
         bossListEl.appendChild(card);
     });
 }
 
-playBtn.addEventListener('click', () => {
-    renderBossList();
-    showScreen('bossSelect');
-});
-backToLobbyBtn.addEventListener('click', () => showScreen('lobby'));
+backToLobbyBtn.addEventListener('click', () => showScreen('modeSelect'));
+
+// ---- Boss detail ----
+let selectedBossId = null;
+
+function updateDetailCharPreview() {
+    const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
+    detailCharIcon.style.background = stats.color;
+    detailCharName.textContent = stats.name;
+}
+
+function openBossDetail(bossId) {
+    selectedBossId = bossId;
+    const bossDef = SHARED.BOSS_DEFS[bossId];
+    detailBossName.textContent = bossDef.name;
+    detailBossIcon.style.background = bossDef.color || '#7f8c8d';
+    detailBossPower.textContent = '미정';
+    detailBossHp.textContent = `${bossDef.maxHpPerPlayer} (1인 기준)`;
+    updateDetailCharPreview();
+    showScreen('bossDetail');
+}
+
+backFromDetailBtn.addEventListener('click', () => showScreen('bossSelect'));
+detailMultiBtn.addEventListener('click', () => joinRaid(selectedBossId, false));
+detailSoloBtn.addEventListener('click', () => joinRaid(selectedBossId, true));
 
 // ---- Waiting room ----
 let currentRoomState = null; // { roomId, bossId, count, players }
 
-function joinRaid(bossId) {
+function joinRaid(bossId, solo) {
     socket.emit('joinRaid', { bossId, charType: gameData.selectedCharacter || 'kicker' });
+    if (solo) socket.emit('startRaid');
     const bossDef = SHARED.BOSS_DEFS[bossId];
     waitingBossName.textContent = bossDef.name;
     waitingStatus.textContent = '대기 중... (1/2)';
     showScreen('waiting');
 }
 
-startSoloBtn.addEventListener('click', () => socket.emit('startRaid'));
 cancelWaitingBtn.addEventListener('click', () => {
     socket.emit('leaveRaid');
     currentRoomState = null;
-    showScreen('bossSelect');
+    if (selectedBossId) openBossDetail(selectedBossId);
+    else showScreen('bossSelect');
 });
 
 socket.on('raidRoomUpdate', (data) => {
@@ -140,6 +201,9 @@ socket.on('raidStarted', (data) => {
     raidStartAt = performance.now();
     isTargetingUltimate = false;
     impactEffects = [];
+    settingsMenu.classList.add('hidden');
+    leavePendingBanner.classList.add('hidden');
+    leaveRequestModal.classList.add('hidden');
     updateHpBars();
     showScreen('fight');
     startLoop();
@@ -188,8 +252,43 @@ socket.on('playerDamaged', ({ id, hp, alive, x, y }) => {
     updateHpBars();
 });
 
+// ---- Settings / leave raid ----
+settingsBtn.addEventListener('click', () => settingsMenu.classList.toggle('hidden'));
+
+leaveRaidBtn.addEventListener('click', () => {
+    settingsMenu.classList.add('hidden');
+    const hasPartner = Object.keys(players).length > 1;
+    socket.emit('requestLeaveRaid');
+    if (hasPartner) leavePendingBanner.classList.remove('hidden');
+});
+
+socket.on('leaveRaidRequested', () => {
+    leaveRequestModal.classList.remove('hidden');
+});
+
+leaveConfirmYes.addEventListener('click', () => {
+    leaveRequestModal.classList.add('hidden');
+    socket.emit('leaveRaidResponse', { accept: true });
+});
+leaveConfirmNo.addEventListener('click', () => {
+    leaveRequestModal.classList.add('hidden');
+    socket.emit('leaveRaidResponse', { accept: false });
+});
+
+socket.on('leaveRaidRejected', () => {
+    leavePendingBanner.classList.add('hidden');
+});
+
 socket.on('raidResult', ({ result }) => {
     stopLoop();
+    settingsMenu.classList.add('hidden');
+    leavePendingBanner.classList.add('hidden');
+    leaveRequestModal.classList.add('hidden');
+    if (result === 'left') {
+        renderBossList();
+        showScreen('bossSelect');
+        return;
+    }
     if (result === 'win') {
         resultTitle.textContent = '승리!';
         resultTitle.style.color = '#2ecc71';

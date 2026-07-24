@@ -520,6 +520,30 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('requestLeaveRaid', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.state !== 'fighting') return;
+        const otherIds = Object.keys(room.players).filter(id => id !== socket.id);
+        if (otherIds.length === 0) {
+            endRoom(roomId, 'left');
+            return;
+        }
+        otherIds.forEach(id => io.to(id).emit('leaveRaidRequested'));
+    });
+
+    socket.on('leaveRaidResponse', ({ accept }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.state !== 'fighting') return;
+        if (accept) {
+            endRoom(roomId, 'left');
+        } else {
+            const otherIds = Object.keys(room.players).filter(id => id !== socket.id);
+            otherIds.forEach(id => io.to(id).emit('leaveRaidRejected'));
+        }
+    });
+
     socket.on('leaveRaid', () => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
