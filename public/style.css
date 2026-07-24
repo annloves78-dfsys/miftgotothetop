@@ -54,18 +54,13 @@ html, body {
     pointer-events: none;
 }
 
-.tower-top {
-    width: 80%;
-    height: 22px;
-    background: #4a3c2f;
-    clip-path: polygon(0 100%, 0 35%, 14% 35%, 14% 0, 28% 0, 28% 35%, 42% 35%, 42% 0, 58% 0, 58% 35%, 72% 35%, 72% 0, 86% 0, 86% 35%, 100% 35%, 100% 100%);
-}
-
 .tower-body {
+    /* No capped top on purpose -- this tower is lore-infinite, so it fades
+       into the sky instead of ending in a visible roof. */
     width: 15vw;
     min-width: 140px;
     max-width: 220px;
-    height: 62vh;
+    height: 92vh;
     background: linear-gradient(180deg, #7a6552, #4a3c2f 85%);
     border-left: 4px solid #3a2f24;
     border-right: 4px solid #3a2f24;
@@ -73,6 +68,8 @@ html, body {
     flex-direction: column;
     align-items: center;
     justify-content: space-evenly;
+    -webkit-mask-image: linear-gradient(to top, black 50%, transparent 92%);
+    mask-image: linear-gradient(to top, black 50%, transparent 92%);
 }
 
 .tower-window {
