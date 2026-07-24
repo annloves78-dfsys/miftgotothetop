@@ -55,6 +55,31 @@
         <button id="back-from-character-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- Character detail -->
+    <div id="character-detail-screen" class="screen hidden">
+        <button id="char-detail-back-btn" class="back-corner-btn">← 뒤로</button>
+        <div class="detail-layout">
+            <div class="detail-left">
+                <div id="char-detail-icon" class="char-icon-circle large"></div>
+                <div id="char-detail-name" class="char-name"></div>
+            </div>
+            <div class="detail-right">
+                <div class="detail-specs">
+                    <div class="spec-row"><span class="spec-label">전투력</span><span id="char-detail-power">-</span></div>
+                </div>
+                <div class="char-equip-section">
+                    <div class="equip-slot"><span class="equip-label">무기</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot"><span class="equip-label">투구</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot"><span class="equip-label">갑옷</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot"><span class="equip-label">레깅스</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot"><span class="equip-label">부츠</span><span class="equip-value">-</span></div>
+                </div>
+                <div id="char-detail-desc" class="char-desc-box"></div>
+                <button id="char-detail-select-btn" class="play-btn">선택</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Boss select -->
     <div id="boss-select-screen" class="screen hidden">
         <h2>보스 레이드</h2>

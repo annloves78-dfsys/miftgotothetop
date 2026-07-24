@@ -8,6 +8,7 @@ const screens = {
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
+    characterDetail: document.getElementById('character-detail-screen'),
     fight: document.getElementById('fight-screen'),
     result: document.getElementById('result-screen')
 };
@@ -27,6 +28,11 @@ const bossRaidModeCard = document.getElementById('boss-raid-mode-card');
 const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
 const bossListEl = document.getElementById('boss-list');
 const backFromDetailBtn = document.getElementById('back-from-detail-btn');
+const charDetailBackBtn = document.getElementById('char-detail-back-btn');
+const charDetailIcon = document.getElementById('char-detail-icon');
+const charDetailName = document.getElementById('char-detail-name');
+const charDetailPower = document.getElementById('char-detail-power');
+const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
 const detailChangeCharBtn = document.getElementById('detail-change-char-btn');
@@ -78,15 +84,7 @@ function renderCharacterList() {
         const card = document.createElement('div');
         card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === gameData.selectedCharacter ? ' selected' : '');
         card.innerHTML = `<div class="icon">${unlocked ? '🧑' : '🔒'}</div><div class="name">${stats.name}</div>`;
-        if (unlocked) {
-            card.addEventListener('click', () => {
-                gameData.selectedCharacter = id;
-                saveGameData(gameData);
-                updateSelectedCharLabel();
-                if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
-                showScreen(characterReturnScreen);
-            });
-        }
+        if (unlocked) card.addEventListener('click', () => openCharacterDetail(id));
         characterListEl.appendChild(card);
     });
 }
@@ -97,6 +95,28 @@ characterSelectBtn.addEventListener('click', () => {
     showScreen('characterSelect');
 });
 backFromCharacterBtn.addEventListener('click', () => showScreen(characterReturnScreen));
+
+// ---- Character detail (appearance/equipment preview before confirming a pick) ----
+let viewingCharacterId = null;
+
+function openCharacterDetail(id) {
+    viewingCharacterId = id;
+    const stats = SHARED.CHARACTERS[id];
+    charDetailIcon.style.background = stats.color;
+    charDetailName.textContent = stats.name;
+    charDetailPower.textContent = '미정'; // combat power isn't calculated yet
+    showScreen('characterDetail');
+}
+
+charDetailBackBtn.addEventListener('click', () => showScreen('characterSelect'));
+
+charDetailSelectBtn.addEventListener('click', () => {
+    gameData.selectedCharacter = viewingCharacterId;
+    saveGameData(gameData);
+    updateSelectedCharLabel();
+    if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
+    showScreen(characterReturnScreen);
+});
 
 // ---- Shop ----
 const shopBtn = document.getElementById('shop-btn');
