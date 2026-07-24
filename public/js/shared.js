@@ -147,8 +147,8 @@ const BOSS_DEFS = {
 };
 
 const BOSS_LIST = [
-    { id: 'boss1', name: '스톤 골렘', locked: false },
-    { id: 'boss2', name: '시하라얼', locked: false },
+    { id: 'boss1', name: '스톤 골렘', icon: '🗿', locked: false },
+    { id: 'boss2', name: '시하라얼', icon: '🤺', locked: false },
     { id: 'boss3', name: '???', locked: true }
 ];
 

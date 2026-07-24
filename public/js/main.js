@@ -118,7 +118,7 @@ function renderBossList() {
     SHARED.BOSS_LIST.forEach(b => {
         const card = document.createElement('div');
         card.className = 'boss-card' + (b.locked ? ' locked' : '');
-        card.innerHTML = `<div class="icon">${b.locked ? '🔒' : '🗿'}</div><div class="name">${b.name}</div>`;
+        card.innerHTML = `<div class="icon">${b.locked ? '🔒' : (b.icon || '🗿')}</div><div class="name">${b.name}</div>`;
         if (!b.locked) card.addEventListener('click', () => openBossDetail(b.id));
         bossListEl.appendChild(card);
     });
@@ -138,7 +138,9 @@ function updateDetailCharPreview() {
 function openBossDetail(bossId) {
     selectedBossId = bossId;
     const bossDef = SHARED.BOSS_DEFS[bossId];
+    const bossListEntry = SHARED.BOSS_LIST.find(b => b.id === bossId);
     detailBossName.textContent = bossDef.name;
+    detailBossIcon.textContent = (bossListEntry && bossListEntry.icon) || '🗿';
     detailBossIcon.style.background = bossDef.color || '#7f8c8d';
     detailBossPower.textContent = '미정';
     detailBossHp.textContent = `${bossDef.maxHpPerPlayer} (1인 기준)`;
