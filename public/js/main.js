@@ -5,6 +5,8 @@ const screens = {
     lobby: document.getElementById('lobby-screen'),
     shop: document.getElementById('shop-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
+    storyMode: document.getElementById('story-mode-screen'),
+    storyTower: document.getElementById('story-tower-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -161,7 +163,68 @@ bossRaidModeCard.addEventListener('click', () => {
     renderBossList();
     showScreen('bossSelect');
 });
-// storyModeCard is intentionally left without a click handler: locked/unreachable for now.
+storyModeCard.addEventListener('click', () => showScreen('storyMode'));
+
+// ---- Story mode: multi (locked) / solo entry ----
+const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');
+const storySoloBtn = document.getElementById('story-solo-btn');
+const towerFloorListEl = document.getElementById('tower-floor-list');
+const towerFloorPower = document.getElementById('tower-floor-power');
+const towerCharIcon = document.getElementById('tower-char-icon');
+const towerCharName = document.getElementById('tower-char-name');
+const towerPlayBtn = document.getElementById('tower-play-btn');
+const backFromTowerBtn = document.getElementById('back-from-tower-btn');
+
+backFromStoryModeBtn.addEventListener('click', () => showScreen('modeSelect'));
+// story-multi-btn stays permanently disabled -- multiplayer story mode isn't built yet.
+storySoloBtn.addEventListener('click', () => {
+    selectedStoryFloor = 1;
+    renderTower();
+    showScreen('storyTower');
+});
+
+// ---- Story tower: floor select ----
+const STORY_TOTAL_FLOORS = 3;
+let selectedStoryFloor = 1;
+
+function isFloorUnlocked(floor) {
+    if (floor === 1) return true;
+    return gameData.clearedStoryFloors.includes(floor - 1);
+}
+
+function renderTower() {
+    towerFloorListEl.innerHTML = '';
+    let start = selectedStoryFloor - 1;
+    let end = selectedStoryFloor + 1;
+    if (start < 1) { end += (1 - start); start = 1; }
+    if (end > STORY_TOTAL_FLOORS) { start -= (end - STORY_TOTAL_FLOORS); end = STORY_TOTAL_FLOORS; }
+    start = Math.max(1, start);
+    const floors = [];
+    for (let f = start; f <= end; f++) floors.push(f);
+    floors.reverse(); // higher floor number renders toward the top, like a real tower
+
+    floors.forEach(f => {
+        const unlocked = isFloorUnlocked(f);
+        const card = document.createElement('div');
+        card.className = 'floor-card' + (unlocked ? '' : ' locked') + (f === selectedStoryFloor ? ' selected' : '');
+        card.textContent = unlocked ? `${f}층` : `🔒 ${f}층`;
+        if (unlocked) {
+            card.addEventListener('click', () => {
+                selectedStoryFloor = f;
+                renderTower();
+            });
+        }
+        towerFloorListEl.appendChild(card);
+    });
+
+    towerFloorPower.textContent = '미정';
+    const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
+    towerCharIcon.style.background = stats.color;
+    towerCharName.textContent = stats.name;
+    towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor);
+}
+
+backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
 
 // ---- Boss select ----
 function renderBossList() {

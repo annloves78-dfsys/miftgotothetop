@@ -35,10 +35,9 @@
     <div id="mode-select-screen" class="screen hidden">
         <h2>모드 선택</h2>
         <div class="mode-list">
-            <div id="story-mode-card" class="mode-card locked">
-                <div class="icon">🔒</div>
+            <div id="story-mode-card" class="mode-card">
+                <div class="icon">📖</div>
                 <div class="name">스토리 모드</div>
-                <div class="sub">준비 중</div>
             </div>
             <div id="boss-raid-mode-card" class="mode-card">
                 <div class="icon">⚔️</div>
@@ -46,6 +45,37 @@
             </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Story mode: multi (locked) / solo entry -->
+    <div id="story-mode-screen" class="screen hidden">
+        <h2>스토리 모드</h2>
+        <div class="story-mode-actions">
+            <button id="story-multi-btn" class="play-btn" disabled>🔒 멀티플레이</button>
+            <button id="story-solo-btn" class="play-btn">솔로플레이</button>
+        </div>
+        <button id="back-from-story-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Story tower: floor select -->
+    <div id="story-tower-screen" class="screen hidden">
+        <div class="tower-layout">
+            <div class="tower-left"></div>
+            <div class="tower-middle">
+                <div id="tower-floor-list" class="tower-floor-list"></div>
+            </div>
+            <div class="tower-right">
+                <div class="detail-specs">
+                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="tower-floor-power">-</span></div>
+                </div>
+                <div class="char-preview">
+                    <div id="tower-char-icon" class="char-icon-circle small"></div>
+                    <div id="tower-char-name" class="char-name"></div>
+                </div>
+                <button id="tower-play-btn" class="play-btn">플레이</button>
+            </div>
+        </div>
+        <button id="back-from-tower-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Character select -->

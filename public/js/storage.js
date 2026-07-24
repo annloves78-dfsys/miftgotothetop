@@ -4,7 +4,8 @@ const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
-    unlockedCharacters: Object.keys(SHARED.CHARACTERS)
+    unlockedCharacters: Object.keys(SHARED.CHARACTERS),
+    clearedStoryFloors: []
 };
 
 function loadGameData() {
