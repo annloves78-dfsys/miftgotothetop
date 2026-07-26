@@ -559,8 +559,37 @@ html, body {
 
 .cd-header {
     display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cd-header-left {
+    display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+.cd-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.cd-mini-stats {
+    display: flex;
+    gap: 14px;
+}
+
+.cd-mini-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: bold;
+    color: #ecf0f1;
 }
 
 .cd-title-row {
@@ -650,14 +679,6 @@ html, body {
 
 .cd-equip-col {
     flex: 1;
-    justify-content: center;
-}
-
-.cd-stats-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
     justify-content: center;
 }
 

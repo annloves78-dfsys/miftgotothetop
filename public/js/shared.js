@@ -251,7 +251,7 @@ const CHARACTERS = {
         // Shields every teammate for ultimateShieldAmount -- absorbs that much
         // incoming damage before it touches HP, then breaks.
         ultimateType: 'team_shield',
-        ultimateShieldAmount: 10,
+        ultimateShieldAmount: 20,
         ultimateCooldownMs: 30000
     }
 };
