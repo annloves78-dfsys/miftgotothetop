@@ -19,6 +19,9 @@
                 <div id="menu-nickname" class="menu-nickname"></div>
                 <button id="menu-logout-btn" class="menu-item-btn">로그아웃</button>
             </div>
+            <div class="menu-section">
+                <button id="menu-mobile-controls-btn" class="menu-item-btn">📱 모바일 조작 <span id="menu-mobile-controls-status" class="menu-toggle-status">꺼짐</span></button>
+            </div>
         </div>
         <div class="lobby-trees" aria-hidden="true">
             <span class="tree" style="left:3%; bottom:-4%; font-size:88px;">🌲</span>
@@ -163,6 +166,16 @@
             <div class="hp-bar-bg"><div id="story-my-hp-bar" class="hp-bar-fill mine"></div><span id="story-my-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <canvas id="storyCanvas" width="900" height="420"></canvas>
+        <div id="mobile-controls-story" class="mobile-controls hidden">
+            <div id="mc-joystick-story" class="mc-joystick-zone">
+                <div class="mc-joystick-base"><div class="mc-joystick-thumb"></div></div>
+            </div>
+            <div class="mc-actions">
+                <button id="mc-skill-story" class="mc-btn mc-skill">🌀<span class="mc-cd"></span></button>
+                <button id="mc-ultimate-story" class="mc-btn mc-ultimate">🔥<span class="mc-cd"></span></button>
+                <button id="mc-attack-story" class="mc-btn mc-attack">⚔</button>
+            </div>
+        </div>
     </div>
 
     <!-- Character select -->
@@ -292,6 +305,16 @@
             <div class="hp-bar-bg"><div id="partner-hp-bar" class="hp-bar-fill partner"></div><span id="partner-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <canvas id="gameCanvas" width="700" height="700"></canvas>
+        <div id="mobile-controls-fight" class="mobile-controls hidden">
+            <div id="mc-joystick-fight" class="mc-joystick-zone">
+                <div class="mc-joystick-base"><div class="mc-joystick-thumb"></div></div>
+            </div>
+            <div class="mc-actions">
+                <button id="mc-skill-fight" class="mc-btn mc-skill">🌀<span class="mc-cd"></span></button>
+                <button id="mc-ultimate-fight" class="mc-btn mc-ultimate">🔥<span class="mc-cd"></span></button>
+                <button id="mc-attack-fight" class="mc-btn mc-attack">⚔</button>
+            </div>
+        </div>
     </div>
 
     <!-- Result -->

@@ -813,6 +813,134 @@ html, body {
     padding: 4px 0 2px;
 }
 
+.menu-toggle-status {
+    float: right;
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.menu-toggle-status.on {
+    color: #2ecc71;
+}
+
+/* Mobile touch controls (joystick + action buttons), overlaid on the
+   fight/story-fight canvases. Hidden unless the player enables them from
+   the hamburger menu (see menu-mobile-controls-btn). */
+.mobile-controls {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.mc-joystick-zone {
+    position: absolute;
+    left: 24px;
+    bottom: 24px;
+    width: 130px;
+    height: 130px;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.mc-joystick-base {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+}
+
+.mc-joystick-thumb {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    transform: translate(-50%, -50%);
+}
+
+.mc-actions {
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    width: 180px;
+    height: 180px;
+    pointer-events: none;
+}
+
+.mc-btn {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(20, 24, 32, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    color: white;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: pointer;
+}
+
+.mc-skill {
+    top: 0;
+    left: 0;
+    width: 58px;
+    height: 58px;
+    font-size: 24px;
+}
+
+.mc-ultimate {
+    top: 0;
+    right: 0;
+    width: 58px;
+    height: 58px;
+    font-size: 24px;
+    border-color: rgba(231, 76, 60, 0.8);
+}
+
+.mc-attack {
+    right: 15px;
+    bottom: 0;
+    width: 84px;
+    height: 84px;
+    font-size: 30px;
+}
+
+.mc-cd {
+    position: absolute;
+    bottom: -4px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #f1c40f;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.mc-btn.recharging {
+    opacity: 0.45;
+}
+
+/* The joystick and action cluster occupy the bottom corners, where the HP bars
+   normally sit -- so with touch controls on, the HP bars move to the top
+   corners, below the back/settings buttons. */
+body.mc-on .hp-container.bottom-left {
+    bottom: auto;
+    top: 76px;
+    left: 16px;
+}
+
+body.mc-on .hp-container.bottom-right {
+    bottom: auto;
+    top: 76px;
+    right: 16px;
+}
+
 /* Login / Signup */
 #login-screen, #signup-screen {
     background: rgba(10, 14, 20, 0.92);

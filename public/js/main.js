@@ -20,6 +20,7 @@ const screens = {
 function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.add('hidden'));
     screens[name].classList.remove('hidden');
+    applyMobileControlsVisibility();
 }
 
 const playBtn = document.getElementById('play-btn');
@@ -374,6 +375,149 @@ const leaveConfirmNo = document.getElementById('leave-confirm-no');
 
 let gameData = loadGameData();
 
+// ---- Mobile touch controls (joystick + action buttons) ----
+// A device-local UI preference, not part of gameData -- deliberately kept
+// out of the cloud-synced save so it doesn't jump between a phone and a
+// desktop session under the same account.
+const MOBILE_CONTROLS_KEY = 'boss_raid_mobile_controls';
+let mobileControlsEnabled = localStorage.getItem(MOBILE_CONTROLS_KEY) === '1';
+const menuMobileControlsBtn = document.getElementById('menu-mobile-controls-btn');
+const menuMobileControlsStatus = document.getElementById('menu-mobile-controls-status');
+const mobileControlsFight = document.getElementById('mobile-controls-fight');
+const mobileControlsStory = document.getElementById('mobile-controls-story');
+const mcSkillFightEl = document.getElementById('mc-skill-fight');
+const mcUltimateFightEl = document.getElementById('mc-ultimate-fight');
+const mcAttackFightEl = document.getElementById('mc-attack-fight');
+const mcSkillStoryEl = document.getElementById('mc-skill-story');
+const mcUltimateStoryEl = document.getElementById('mc-ultimate-story');
+const mcAttackStoryEl = document.getElementById('mc-attack-story');
+const mcSkillCdFightEl = mcSkillFightEl.querySelector('.mc-cd');
+const mcUltimateCdFightEl = mcUltimateFightEl.querySelector('.mc-cd');
+const mcSkillCdStoryEl = mcSkillStoryEl.querySelector('.mc-cd');
+const mcUltimateCdStoryEl = mcUltimateStoryEl.querySelector('.mc-cd');
+
+function updateMobileControlsMenuLabel() {
+    menuMobileControlsStatus.textContent = mobileControlsEnabled ? '켜짐' : '꺼짐';
+    menuMobileControlsStatus.classList.toggle('on', mobileControlsEnabled);
+}
+function applyMobileControlsVisibility() {
+    if (!mobileControlsFight) return;
+    mobileControlsFight.classList.toggle('hidden', !mobileControlsEnabled);
+    mobileControlsStory.classList.toggle('hidden', !mobileControlsEnabled);
+    document.body.classList.toggle('mc-on', mobileControlsEnabled);
+}
+updateMobileControlsMenuLabel();
+applyMobileControlsVisibility(); // restore the saved preference on load
+menuMobileControlsBtn.addEventListener('click', () => {
+    mobileControlsEnabled = !mobileControlsEnabled;
+    localStorage.setItem(MOBILE_CONTROLS_KEY, mobileControlsEnabled ? '1' : '0');
+    updateMobileControlsMenuLabel();
+    applyMobileControlsVisibility();
+});
+
+// Drives movement through the same keys{} object WASD already feeds into
+// updateLocal()/storyFrame(), snapped to 8 directions -- so no change was
+// needed to the underlying movement math. Also remembers the last push
+// angle for aiming, since there's no mouse to derive facing from on touch.
+let joystickFacing = null;
+let storyJoystickFacing = null;
+function applyJoystickAngle(angle, isStory) {
+    keys['w'] = keys['a'] = keys['s'] = keys['d'] = false;
+    if (angle !== null) {
+        const deg = angle * 180 / Math.PI;
+        if (deg > -22.5 && deg <= 22.5) keys['d'] = true;
+        else if (deg > 22.5 && deg <= 67.5) { keys['d'] = true; keys['s'] = true; }
+        else if (deg > 67.5 && deg <= 112.5) keys['s'] = true;
+        else if (deg > 112.5 && deg <= 157.5) { keys['s'] = true; keys['a'] = true; }
+        else if (deg > 157.5 || deg <= -157.5) keys['a'] = true;
+        else if (deg > -157.5 && deg <= -112.5) { keys['a'] = true; keys['w'] = true; }
+        else if (deg > -112.5 && deg <= -67.5) keys['w'] = true;
+        else { keys['w'] = true; keys['d'] = true; }
+    }
+    if (isStory) storyJoystickFacing = angle; else joystickFacing = angle;
+}
+
+function setupJoystick(zoneEl, isStory) {
+    const thumbEl = zoneEl.querySelector('.mc-joystick-thumb');
+    const maxR = 45;
+    let activePointerId = null;
+    let originX = 0, originY = 0;
+    function handleMove(clientX, clientY) {
+        let dx = clientX - originX;
+        let dy = clientY - originY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
+        thumbEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        const mag = Math.min(1, dist / maxR);
+        applyJoystickAngle(mag > 0.25 ? Math.atan2(dy, dx) : null, isStory);
+    }
+    zoneEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        activePointerId = e.pointerId;
+        zoneEl.setPointerCapture(e.pointerId);
+        const rect = zoneEl.getBoundingClientRect();
+        originX = rect.left + rect.width / 2;
+        originY = rect.top + rect.height / 2;
+        handleMove(e.clientX, e.clientY);
+    });
+    zoneEl.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== activePointerId) return;
+        handleMove(e.clientX, e.clientY);
+    });
+    function release(e) {
+        if (e.pointerId !== activePointerId) return;
+        activePointerId = null;
+        thumbEl.style.transform = 'translate(-50%, -50%)';
+        applyJoystickAngle(null, isStory);
+    }
+    zoneEl.addEventListener('pointerup', release);
+    zoneEl.addEventListener('pointercancel', release);
+}
+setupJoystick(document.getElementById('mc-joystick-fight'), false);
+setupJoystick(document.getElementById('mc-joystick-story'), true);
+
+function mcTap(el, handler) {
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); handler(); });
+}
+// Attack button doubles as the ultimate-target confirm, mirroring how
+// left-click already works on desktop (see the canvas mousedown handlers).
+mcTap(mcAttackFightEl, () => { if (isTargetingUltimate) confirmUltimateTarget(); else tryAttack(); });
+mcTap(mcSkillFightEl, () => tryUseSkill());
+mcTap(mcUltimateFightEl, () => handleUltimateKey());
+mcTap(mcAttackStoryEl, () => { if (isStoryTargetingUltimate) confirmStoryUltimateTarget(); else tryStoryAttack(); });
+mcTap(mcSkillStoryEl, () => tryStoryUseSkill());
+mcTap(mcUltimateStoryEl, () => storyHandleUltimateKey());
+
+// Buttons show the selected cookie's own ability icons, matching the icon row
+// on the character detail screen.
+function syncMobileButtonIcons(charType, isStory) {
+    const stats = SHARED.CHARACTERS[charType] || SHARED.CHARACTERS.kicker;
+    const attackEl = isStory ? mcAttackStoryEl : mcAttackFightEl;
+    const skillEl = isStory ? mcSkillStoryEl : mcSkillFightEl;
+    const ultEl = isStory ? mcUltimateStoryEl : mcUltimateFightEl;
+    const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
+    const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
+    attackEl.textContent = SKILL_ICONS[stats.attackType] || '⚔';
+    skillEl.textContent = SKILL_ICONS[stats.skillType] || '🌀';
+    ultEl.textContent = SKILL_ICONS[stats.ultimateType] || '🔥';
+    skillEl.appendChild(cdSkill);
+    ultEl.appendChild(cdUlt);
+}
+
+// Mirrors the text cooldown readouts into the buttons themselves, and dims a
+// button while its ability is still recharging.
+function syncMobileCooldowns(skillRemain, ultRemain, isStory) {
+    if (!mobileControlsEnabled) return;
+    const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
+    const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
+    const skillEl = isStory ? mcSkillStoryEl : mcSkillFightEl;
+    const ultEl = isStory ? mcUltimateStoryEl : mcUltimateFightEl;
+    cdSkill.textContent = skillRemain > 0.05 ? skillRemain.toFixed(1) : '';
+    cdUlt.textContent = ultRemain > 0.05 ? ultRemain.toFixed(1) : '';
+    skillEl.classList.toggle('recharging', skillRemain > 0.05);
+    ultEl.classList.toggle('recharging', ultRemain > 0.05);
+}
+
 // ---- Character select ----
 function updateSelectedCharLabel() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
@@ -606,6 +750,7 @@ socket.on('storyFloorStarted', (data) => {
     storyMagmaZones = [];
     updateStoryHpBar();
     updateStoryMonstersLeft();
+    syncMobileButtonIcons(p.charType, true);
     showScreen('storyFight');
     startStoryLoop();
 });
@@ -713,6 +858,16 @@ storyCanvas.addEventListener('mousedown', (e) => {
         tryStoryUseSkill();
     }
 });
+// Targeted ultimates (targeted_aoe / magma_zone) need a world position, which
+// on desktop comes from the mouse. On touch, tapping the canvas both sets that
+// position and confirms the cast.
+storyCanvas.addEventListener('pointerdown', (e) => {
+    if (!mobileControlsEnabled || e.pointerType === 'mouse') return;
+    const rect = storyCanvas.getBoundingClientRect();
+    storyMouseX = (e.clientX - rect.left) * (storyCanvas.width / rect.width);
+    storyMouseY = (e.clientY - rect.top) * (storyCanvas.height / rect.height);
+    if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
+});
 
 function storyWorldFromMouse() {
     const camX = storyPlayer ? storyPlayer.x : 0;
@@ -800,14 +955,18 @@ function stopStoryLoop() {
 function updateStoryCooldownDisplay(now) {
     if (!storyPlayer) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    let skillRemain = 0, ultRemain = 0;
     if (stats.skillType) {
         const remain = Math.max(0, stats.skillCooldown - (now - storyPlayer.lastSkillClientTime)) / 1000;
         storyMySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+        skillRemain = remain;
     }
     if (stats.ultimateType) {
         const remain = Math.max(0, stats.ultimateCooldownMs - (now - storyPlayer.lastUltimateClientTime)) / 1000;
         storyMyUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+        ultRemain = remain;
     }
+    syncMobileCooldowns(skillRemain, ultRemain, true);
 }
 
 function storyFrame() {
@@ -841,7 +1000,9 @@ function storyFrame() {
             }
             storyPlayer.x = nx; storyPlayer.y = ny;
         }
-        if (storyMouseX !== null) {
+        if (mobileControlsEnabled) {
+            if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
+        } else if (storyMouseX !== null) {
             const world = storyWorldFromMouse();
             storyPlayer.facing = Math.atan2(world.y - storyPlayer.y, world.x - storyPlayer.x);
         }
@@ -1246,6 +1407,8 @@ socket.on('raidStarted', (data) => {
     leavePendingBanner.classList.add('hidden');
     leaveRequestModal.classList.add('hidden');
     updateHpBars();
+    const mine = players[socket.id];
+    if (mine) syncMobileButtonIcons(mine.charType, false);
     showScreen('fight');
     startLoop();
 });
@@ -1393,14 +1556,18 @@ function updateHpBars() {
 function updateCooldownDisplay(now) {
     const me = players[socket.id];
     if (!me) return;
+    let skillRemain = 0, ultRemain = 0;
     if (me.stats.skillType) {
         const remain = Math.max(0, me.stats.skillCooldown - (now - me.lastSkillClientTime)) / 1000;
         mySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+        skillRemain = remain;
     }
     if (me.stats.ultimateType) {
         const remain = Math.max(0, me.stats.ultimateCooldownMs - (now - me.lastUltimateClientTime)) / 1000;
         myUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
+        ultRemain = remain;
     }
+    syncMobileCooldowns(skillRemain, ultRemain, false);
 }
 
 // ---- Input ----
@@ -1433,6 +1600,14 @@ canvas.addEventListener('mousemove', (e) => {
     const scaleY = canvas.height / rect.height;
     mouseX = (e.clientX - rect.left) * scaleX;
     mouseY = (e.clientY - rect.top) * scaleY;
+});
+// Tap-to-place for targeted ultimates on touch; see the story-mode twin.
+canvas.addEventListener('pointerdown', (e) => {
+    if (!mobileControlsEnabled || e.pointerType === 'mouse') return;
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    if (isTargetingUltimate) confirmUltimateTarget();
 });
 
 // The canvas buffer is resized to fill the viewport (see resizeGameCanvas),
@@ -1518,7 +1693,11 @@ function frame() {
     const me = players[socket.id];
     if (me) {
         me.updateLocal(keys);
-        if (mouseX !== null) {
+        if (mobileControlsEnabled) {
+            // No mouse on touch -- face the direction the joystick is pushed,
+            // keeping the last angle when it's released.
+            if (joystickFacing !== null) me.facing = joystickFacing;
+        } else if (mouseX !== null) {
             const world = screenToWorld(mouseX, mouseY);
             me.aimAt(world.x, world.y);
         }
