@@ -1,12 +1,26 @@
 const STORAGE_KEY = 'boss_raid_save';
 
+// Currency/material holdings. Kept as one bag so a new kind is a single entry
+// here plus a label in CURRENCY_LABELS (main.js) -- see also admin mode, which
+// reports every one of these as unlimited.
+const defaultCurrencies = {
+    coins: 0,
+    diamonds: 0,
+    material: 0,      // 일반 장비강화 재료
+    materialRare: 0,  // 고급 장비강화 재료
+    potion: 0,        // 강화포션
+    potionRare: 0     // 고급 강화포션
+};
+
 const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
     unlockedCharacters: Object.keys(SHARED.CHARACTERS),
     clearedStoryFloors: [],
-    soulStones: {} // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
+    soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
+    currencies: { ...defaultCurrencies },
+    admin: false // 관리자 전용; see admin_gate.js
 };
 
 // `{ ...defaultData }` is a shallow copy, so the nested objects/arrays would be
@@ -28,6 +42,9 @@ function loadGameData() {
             Object.keys(SHARED.CHARACTERS).forEach(id => {
                 if (!data.unlockedCharacters.includes(id)) data.unlockedCharacters.push(id);
             });
+            // Same story for currencies: a save from before a currency existed
+            // would otherwise leave it undefined rather than 0.
+            data.currencies = { ...defaultCurrencies, ...(data.currencies || {}) };
             return data;
         }
     } catch (e) {

@@ -11,16 +11,9 @@
     <div id="lobby-screen" class="screen">
         <button id="menu-btn" class="menu-btn" aria-label="메뉴">☰</button>
         <div id="side-menu" class="side-menu hidden">
-            <div id="menu-guest-section" class="menu-section">
-                <button id="menu-login-btn" class="menu-item-btn">로그인하기</button>
-                <button id="menu-signup-btn" class="menu-item-btn">회원가입</button>
-            </div>
-            <div id="menu-user-section" class="menu-section hidden">
-                <div id="menu-nickname" class="menu-nickname"></div>
-                <button id="menu-logout-btn" class="menu-item-btn">로그아웃</button>
-            </div>
             <div class="menu-section">
-                <button id="menu-mobile-controls-btn" class="menu-item-btn">📱 모바일 조작 <span id="menu-mobile-controls-status" class="menu-toggle-status">꺼짐</span></button>
+                <button id="menu-account-btn" class="menu-item-btn">👤 계정</button>
+                <button id="menu-controls-btn" class="menu-item-btn">🎮 조작</button>
             </div>
         </div>
         <div class="lobby-trees" aria-hidden="true">
@@ -164,6 +157,54 @@
             <p id="signup-error" class="auth-error"></p>
             <button id="signup-submit-btn" class="auth-submit-btn">가입하기</button>
             <button id="signup-goto-login-btn" class="auth-link-btn">이미 계정이 있으신가요? 로그인</button>
+        </div>
+    </div>
+
+    <!-- 계정: login/signup live here now, plus the admin gate -->
+    <div id="account-screen" class="screen hidden">
+        <button id="account-back-btn" class="back-corner-btn">← 뒤로</button>
+        <h2>계정</h2>
+        <div class="settings-panel">
+            <div id="account-guest-block" class="settings-block">
+                <p class="settings-hint">로그인하면 진행 상황이 저장돼요.</p>
+                <button id="account-login-btn" class="menu-item-btn">🔓 로그인하기</button>
+                <button id="account-signup-btn" class="menu-item-btn">📝 회원가입</button>
+            </div>
+            <div id="account-user-block" class="settings-block hidden">
+                <div class="settings-row"><span class="settings-row-label">닉네임</span><span id="account-nickname" class="settings-row-value"></span></div>
+                <div class="settings-row"><span class="settings-row-label">이메일</span><span id="account-email" class="settings-row-value"></span></div>
+                <button id="account-logout-btn" class="menu-item-btn">🚪 로그아웃</button>
+            </div>
+            <div class="settings-block">
+                <button id="admin-open-btn" class="menu-item-btn">🔑 관리자 전용 <span id="admin-status" class="menu-toggle-status">꺼짐</span></button>
+                <div id="admin-form" class="admin-form hidden">
+                    <label class="auth-label">이메일</label>
+                    <input id="admin-email" type="email" class="auth-input" autocomplete="off">
+                    <label class="auth-label">비밀번호</label>
+                    <input id="admin-password" type="password" class="auth-input" autocomplete="off">
+                    <p id="admin-error" class="auth-error"></p>
+                    <button id="admin-submit-btn" class="auth-submit-btn">확인</button>
+                </div>
+                <div id="admin-active" class="admin-active hidden">
+                    <p class="settings-hint">관리자 전용이 켜져 있어요. 모든 난이도 해금 / 모든 재화 무한 / 모든 캐릭터 보유.</p>
+                    <div id="admin-currency-list" class="settings-currency-list"></div>
+                    <button id="admin-off-btn" class="menu-item-btn">관리자 전용 끄기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 조작 -->
+    <div id="controls-screen" class="screen hidden">
+        <button id="controls-back-btn" class="back-corner-btn">← 뒤로</button>
+        <h2>조작</h2>
+        <div class="settings-panel">
+            <div class="settings-block">
+                <button id="controls-mobile-btn" class="menu-item-btn">📱 모바일 조작 <span id="controls-mobile-status" class="menu-toggle-status">꺼짐</span></button>
+                <p class="settings-hint">조이스틱과 버튼이 나오고, 화면 크기도 휴대폰에 맞게 작아져요.</p>
+                <button id="controls-autoaim-btn" class="menu-item-btn">🎯 자동조준 <span id="controls-autoaim-status" class="menu-toggle-status">꺼짐</span></button>
+                <p id="controls-autoaim-hint" class="settings-hint">켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.</p>
+            </div>
         </div>
     </div>
 
@@ -392,6 +433,7 @@
     <script src="js/supabase-config.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="js/shared.js"></script>
+    <script src="js/admin_gate.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/boss.js"></script>
     <script src="js/player.js"></script>

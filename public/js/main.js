@@ -12,6 +12,8 @@ const screens = {
     storyFight: document.getElementById('story-fight-screen'),
     login: document.getElementById('login-screen'),
     signup: document.getElementById('signup-screen'),
+    account: document.getElementById('account-screen'),
+    controls: document.getElementById('controls-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -77,12 +79,18 @@ const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const menuBtn = document.getElementById('menu-btn');
 const sideMenu = document.getElementById('side-menu');
-const menuGuestSection = document.getElementById('menu-guest-section');
-const menuUserSection = document.getElementById('menu-user-section');
-const menuNickname = document.getElementById('menu-nickname');
-const menuLoginBtn = document.getElementById('menu-login-btn');
-const menuSignupBtn = document.getElementById('menu-signup-btn');
-const menuLogoutBtn = document.getElementById('menu-logout-btn');
+// The ☰ menu is now just two entries (계정 / 조작); everything else moved onto
+// those two screens.
+const menuAccountBtn = document.getElementById('menu-account-btn');
+const menuControlsBtn = document.getElementById('menu-controls-btn');
+const accountBackBtn = document.getElementById('account-back-btn');
+const accountGuestBlock = document.getElementById('account-guest-block');
+const accountUserBlock = document.getElementById('account-user-block');
+const accountNicknameEl = document.getElementById('account-nickname');
+const accountEmailEl = document.getElementById('account-email');
+const accountLoginBtn = document.getElementById('account-login-btn');
+const accountSignupBtn = document.getElementById('account-signup-btn');
+const accountLogoutBtn = document.getElementById('account-logout-btn');
 const loginBackBtn = document.getElementById('login-back-btn');
 const loginEmail = document.getElementById('login-email');
 const loginPassword = document.getElementById('login-password');
@@ -111,12 +119,13 @@ function loadAuthSession() {
 
 function updateMenuAuthUI() {
     if (currentUser) {
-        menuGuestSection.classList.add('hidden');
-        menuUserSection.classList.remove('hidden');
-        menuNickname.textContent = currentUser.nickname + '님';
+        accountGuestBlock.classList.add('hidden');
+        accountUserBlock.classList.remove('hidden');
+        accountNicknameEl.textContent = currentUser.nickname + '님';
+        accountEmailEl.textContent = currentUser.email || '-';
     } else {
-        menuGuestSection.classList.remove('hidden');
-        menuUserSection.classList.add('hidden');
+        accountGuestBlock.classList.remove('hidden');
+        accountUserBlock.classList.add('hidden');
     }
 }
 
@@ -127,25 +136,34 @@ document.addEventListener('click', (e) => {
     }
 });
 
-menuLoginBtn.addEventListener('click', () => {
+menuAccountBtn.addEventListener('click', () => {
     sideMenu.classList.add('hidden');
+    openAccountScreen();
+});
+menuControlsBtn.addEventListener('click', () => {
+    sideMenu.classList.add('hidden');
+    updateControlsScreen();
+    showScreen('controls');
+});
+
+accountBackBtn.addEventListener('click', () => showScreen('lobby'));
+accountLoginBtn.addEventListener('click', () => {
     loginError.textContent = '';
     showScreen('login');
 });
-menuSignupBtn.addEventListener('click', () => {
-    sideMenu.classList.add('hidden');
+accountSignupBtn.addEventListener('click', () => {
     signupError.textContent = '';
     showScreen('signup');
 });
-menuLogoutBtn.addEventListener('click', () => {
+accountLogoutBtn.addEventListener('click', () => {
     currentUser = null;
     saveAuthSession();
     updateMenuAuthUI();
-    sideMenu.classList.add('hidden');
 });
 
-loginBackBtn.addEventListener('click', () => showScreen('lobby'));
-signupBackBtn.addEventListener('click', () => showScreen('lobby'));
+// Login/signup are reached from 계정 now, so back returns there rather than to the lobby.
+loginBackBtn.addEventListener('click', () => openAccountScreen());
+signupBackBtn.addEventListener('click', () => openAccountScreen());
 loginGotoSignupBtn.addEventListener('click', () => { signupError.textContent = ''; showScreen('signup'); });
 signupGotoLoginBtn.addEventListener('click', () => { loginError.textContent = ''; showScreen('login'); });
 
@@ -243,6 +261,107 @@ async function restoreAuthSession() {
     }
 }
 restoreAuthSession();
+
+// ---- 관리자 전용 (admin mode) ----
+// The credential check itself lives in admin_gate.js. Turning it on unlocks
+// every difficulty, reports every currency as unlimited, and grants every
+// cookie. See the header comment in admin_gate.js: this is an owner convenience,
+// not a security boundary.
+const adminOpenBtn = document.getElementById('admin-open-btn');
+const adminStatusEl = document.getElementById('admin-status');
+const adminFormEl = document.getElementById('admin-form');
+const adminActiveEl = document.getElementById('admin-active');
+const adminEmailInput = document.getElementById('admin-email');
+const adminPasswordInput = document.getElementById('admin-password');
+const adminErrorEl = document.getElementById('admin-error');
+const adminSubmitBtn = document.getElementById('admin-submit-btn');
+const adminOffBtn = document.getElementById('admin-off-btn');
+const adminCurrencyListEl = document.getElementById('admin-currency-list');
+
+const CURRENCY_LABELS = {
+    coins: '코인',
+    diamonds: '다이아',
+    material: '일반 장비강화 재료',
+    materialRare: '고급 장비강화 재료',
+    potion: '강화포션',
+    potionRare: '고급 강화포션'
+};
+
+function isAdmin() {
+    return !!gameData.admin;
+}
+
+// The single place anything should read a currency from: admin mode makes every
+// balance unlimited, so callers never have to special-case it.
+function currencyAmount(key) {
+    if (isAdmin()) return Infinity;
+    return (gameData.currencies && gameData.currencies[key]) || 0;
+}
+function currencyText(key) {
+    const n = currencyAmount(key);
+    return n === Infinity ? '∞' : n.toLocaleString();
+}
+
+function isCharacterUnlocked(id) {
+    return isAdmin() || gameData.unlockedCharacters.includes(id);
+}
+
+function renderAdminCurrencies() {
+    adminCurrencyListEl.innerHTML = Object.entries(CURRENCY_LABELS).map(([key, label]) =>
+        `<div class="settings-row"><span class="settings-row-label">${label}</span>` +
+        `<span class="settings-row-value">${currencyText(key)}</span></div>`
+    ).join('');
+}
+
+function updateAdminUI() {
+    const on = isAdmin();
+    adminStatusEl.textContent = on ? '켜짐' : '꺼짐';
+    adminStatusEl.classList.toggle('on', on);
+    adminActiveEl.classList.toggle('hidden', !on);
+    if (on) {
+        adminFormEl.classList.add('hidden');
+        renderAdminCurrencies();
+    }
+}
+
+function openAccountScreen() {
+    updateMenuAuthUI();
+    adminErrorEl.textContent = '';
+    adminFormEl.classList.add('hidden');
+    updateAdminUI();
+    showScreen('account');
+}
+
+adminOpenBtn.addEventListener('click', () => {
+    if (isAdmin()) return; // already on -- the off button is what's shown instead
+    adminErrorEl.textContent = '';
+    adminFormEl.classList.toggle('hidden');
+    if (!adminFormEl.classList.contains('hidden')) adminEmailInput.focus();
+});
+
+adminSubmitBtn.addEventListener('click', () => {
+    if (!isAdminCredentialValid(adminEmailInput.value, adminPasswordInput.value)) {
+        adminErrorEl.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+        return;
+    }
+    adminPasswordInput.value = '';
+    adminErrorEl.textContent = '';
+    gameData.admin = true;
+    // Grant every cookie for real (not just visually) so the unlock survives
+    // admin mode being switched back off.
+    Object.keys(SHARED.CHARACTERS).forEach(id => {
+        if (!gameData.unlockedCharacters.includes(id)) gameData.unlockedCharacters.push(id);
+    });
+    saveGameData(gameData);
+    updateAdminUI();
+});
+
+adminOffBtn.addEventListener('click', () => {
+    gameData.admin = false;
+    saveGameData(gameData);
+    updateAdminUI();
+    adminFormEl.classList.add('hidden');
+});
 
 // Passives get their own icon on the detail screen (next to the ultimate), so
 // this is the text for that slot. Cookies without one show 없음.
@@ -451,9 +570,15 @@ let gameData = loadGameData();
 // out of the cloud-synced save so it doesn't jump between a phone and a
 // desktop session under the same account.
 const MOBILE_CONTROLS_KEY = 'boss_raid_mobile_controls';
+const AUTO_AIM_KEY = 'boss_raid_auto_aim'; // same reasoning: device-local, not cloud-synced
 let mobileControlsEnabled = localStorage.getItem(MOBILE_CONTROLS_KEY) === '1';
-const menuMobileControlsBtn = document.getElementById('menu-mobile-controls-btn');
-const menuMobileControlsStatus = document.getElementById('menu-mobile-controls-status');
+let autoAimEnabled = localStorage.getItem(AUTO_AIM_KEY) === '1';
+const controlsMobileBtn = document.getElementById('controls-mobile-btn');
+const controlsMobileStatus = document.getElementById('controls-mobile-status');
+const controlsAutoAimBtn = document.getElementById('controls-autoaim-btn');
+const controlsAutoAimStatus = document.getElementById('controls-autoaim-status');
+const controlsAutoAimHint = document.getElementById('controls-autoaim-hint');
+const controlsBackBtn = document.getElementById('controls-back-btn');
 const mobileControlsFight = document.getElementById('mobile-controls-fight');
 const mobileControlsStory = document.getElementById('mobile-controls-story');
 const mcSkillFightEl = document.getElementById('mc-skill-fight');
@@ -467,9 +592,27 @@ const mcUltimateCdFightEl = mcUltimateFightEl.querySelector('.mc-cd');
 const mcSkillCdStoryEl = mcSkillStoryEl.querySelector('.mc-cd');
 const mcUltimateCdStoryEl = mcUltimateStoryEl.querySelector('.mc-cd');
 
-function updateMobileControlsMenuLabel() {
-    menuMobileControlsStatus.textContent = mobileControlsEnabled ? '켜짐' : '꺼짐';
-    menuMobileControlsStatus.classList.toggle('on', mobileControlsEnabled);
+// The mobile attack button auto-aims by design, so mobile controls force
+// auto-aim on. This is what everything else asks instead of reading
+// autoAimEnabled directly.
+function autoAimActive() {
+    return mobileControlsEnabled || autoAimEnabled;
+}
+
+function updateControlsScreen() {
+    controlsMobileStatus.textContent = mobileControlsEnabled ? '켜짐' : '꺼짐';
+    controlsMobileStatus.classList.toggle('on', mobileControlsEnabled);
+
+    const aimOn = autoAimActive();
+    controlsAutoAimStatus.textContent = aimOn ? '켜짐' : '꺼짐';
+    controlsAutoAimStatus.classList.toggle('on', aimOn);
+    // While mobile controls are on, auto-aim can't be switched off -- the mobile
+    // attack button has no other way to aim -- so the row goes unclickable.
+    controlsAutoAimBtn.disabled = mobileControlsEnabled;
+    controlsAutoAimBtn.classList.toggle('locked', mobileControlsEnabled);
+    controlsAutoAimHint.textContent = mobileControlsEnabled
+        ? '모바일 조작을 켜면 자동조준은 항상 켜져 있어요. 끄려면 먼저 모바일 조작을 꺼주세요.'
+        : '켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.';
 }
 function applyMobileControlsVisibility() {
     if (!mobileControlsFight) return;
@@ -477,14 +620,21 @@ function applyMobileControlsVisibility() {
     mobileControlsStory.classList.toggle('hidden', !mobileControlsEnabled);
     document.body.classList.toggle('mc-on', mobileControlsEnabled);
 }
-updateMobileControlsMenuLabel();
+updateControlsScreen();
 applyMobileControlsVisibility(); // restore the saved preference on load
-menuMobileControlsBtn.addEventListener('click', () => {
+controlsMobileBtn.addEventListener('click', () => {
     mobileControlsEnabled = !mobileControlsEnabled;
     localStorage.setItem(MOBILE_CONTROLS_KEY, mobileControlsEnabled ? '1' : '0');
-    updateMobileControlsMenuLabel();
+    updateControlsScreen();
     applyMobileControlsVisibility();
 });
+controlsAutoAimBtn.addEventListener('click', () => {
+    if (mobileControlsEnabled) return; // locked on; see updateControlsScreen
+    autoAimEnabled = !autoAimEnabled;
+    localStorage.setItem(AUTO_AIM_KEY, autoAimEnabled ? '1' : '0');
+    updateControlsScreen();
+});
+controlsBackBtn.addEventListener('click', () => showScreen('lobby'));
 
 // Drives movement through the same keys{} object WASD already feeds into
 // updateLocal()/storyFrame(), snapped to 8 directions -- so no change was
@@ -770,7 +920,7 @@ function charactersByGradeDesc() {
 function renderCharacterList() {
     characterListEl.innerHTML = '';
     charactersByGradeDesc().forEach(([id, stats]) => {
-        const unlocked = gameData.unlockedCharacters.includes(id);
+        const unlocked = isCharacterUnlocked(id);
         const card = document.createElement('div');
         card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === gameData.selectedCharacter ? ' selected' : '');
         const iconHtml = unlocked
@@ -1078,6 +1228,7 @@ const STORY_TOTAL_FLOORS = 10; // floors 3+ are placeholders until they get real
 let selectedStoryFloor = 1;
 
 function isFloorUnlocked(floor) {
+    if (isAdmin()) return true; // 관리자 전용: every difficulty is open
     if (floor === 1) return true;
     return gameData.clearedStoryFloors.includes(floor - 1);
 }
@@ -1316,6 +1467,9 @@ storyCanvas.addEventListener('mousemove', (e) => {
 storyCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
+        // With 자동조준 on, a click doesn't aim -- it snaps onto the nearest
+        // enemy and swings there (the same path the mobile button uses).
+        else if (autoAimActive()) fireAutoAimedAttack(true);
         else tryStoryAttack();
     } else if (e.button === 2) {
         tryStoryUseSkill();
@@ -1773,13 +1927,22 @@ function storyRender(now) {
 }
 
 // ---- Boss select ----
+// 관리자 전용 opens progress-locked bosses, but NOT ones with no content yet:
+// the server rejects a bossId it has no BOSS_DEFS entry for, so unlocking those
+// would just be a dead end at the waiting screen.
+function isBossUnlocked(b) {
+    if (!SHARED.BOSS_DEFS[b.id]) return false;
+    return !b.locked || isAdmin();
+}
+
 function renderBossList() {
     bossListEl.innerHTML = '';
     SHARED.BOSS_LIST.forEach(b => {
+        const unlocked = isBossUnlocked(b);
         const card = document.createElement('div');
-        card.className = 'boss-card' + (b.locked ? ' locked' : '');
-        card.innerHTML = `<div class="icon">${b.locked ? '🔒' : (b.icon || '🗿')}</div><div class="name">${b.name}</div>`;
-        if (!b.locked) card.addEventListener('click', () => openBossDetail(b.id));
+        card.className = 'boss-card' + (unlocked ? '' : ' locked');
+        card.innerHTML = `<div class="icon">${unlocked ? (b.icon || '🗿') : '🔒'}</div><div class="name">${b.name}</div>`;
+        if (unlocked) card.addEventListener('click', () => openBossDetail(b.id));
         bossListEl.appendChild(card);
     });
 }
@@ -2164,6 +2327,7 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isTargetingUltimate) confirmUltimateTarget();
+        else if (autoAimActive()) fireAutoAimedAttack(false);
         else tryAttack();
     } else if (e.button === 2) {
         tryUseSkill();

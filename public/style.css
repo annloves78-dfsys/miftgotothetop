@@ -1998,3 +1998,110 @@ body.mc-on .gacha-odds-row {
     color: #bdc3c7;
     margin-bottom: 30px;
 }
+
+/* ---- 계정 / 조작 screens (the two entries the ☰ menu was reduced to) ---- */
+.settings-panel {
+    width: 460px;
+    max-width: 92vw;
+    max-height: 74vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.settings-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 2px solid #7f8c8d;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.settings-hint {
+    font-size: 12px;
+    color: #bdc3c7;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+}
+
+.settings-row-label {
+    color: #bdc3c7;
+    flex-shrink: 0;
+}
+
+.settings-row-value {
+    font-weight: bold;
+    text-align: right;
+    word-break: break-all;
+}
+
+.settings-currency-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+/* Auto-aim is forced on while mobile controls are on, so the row is inert. */
+.menu-item-btn.locked,
+.menu-item-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.menu-item-btn.locked:hover,
+.menu-item-btn:disabled:hover {
+    filter: none;
+}
+
+/* The admin credential form reuses the auth-* input styles, so it needs the
+   same light card background for those to read correctly. */
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    color: #222;
+    border-radius: 10px;
+    padding: 6px 14px 16px;
+}
+
+.admin-form .auth-error {
+    margin-bottom: 0;
+}
+
+.admin-active {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+body.mc-on .settings-panel {
+    width: 92vw;
+    max-height: 64vh;
+    gap: 10px;
+}
+
+body.mc-on .settings-block {
+    padding: 10px;
+    gap: 6px;
+}
+
+body.mc-on .settings-row,
+body.mc-on .menu-item-btn {
+    font-size: 12px;
+}
+
+body.mc-on .settings-hint {
+    font-size: 10px;
+}
