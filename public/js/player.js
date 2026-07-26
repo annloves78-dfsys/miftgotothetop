@@ -11,6 +11,7 @@ class Player {
         this.hp = stats.health;
         this.maxHp = stats.health;
         this.alive = true;
+        this.shieldHp = 0; // absorbs incoming damage before HP; see team_shield ultimate
 
         this.lastAttackClientTime = -Infinity;
         this.attackEffectUntil = 0; // performance.now() timestamp for lunge animation

@@ -68,10 +68,18 @@ function healTeam(room, roomId, amount) {
     }
 }
 
+function shieldTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = amount;
+        io.to(roomId).emit('playerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
 function publicPlayers(room) {
     const out = {};
     for (const [id, p] of Object.entries(room.players)) {
-        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive, ready: !!p.ready };
+        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive, ready: !!p.ready, shieldHp: p.shieldHp || 0 };
     }
     return out;
 }
@@ -116,12 +124,18 @@ function endRoom(roomId, result) {
 // Shield-cookie defensive buffs (guard_stance skill, awakening ultimate) both
 // cut incoming damage the same amount; if both happen to be active at once
 // this intentionally doesn't stack, it just stays at the one multiplier.
-function damageReductionMultiplier(character, p, now) {
+// sourceElementMark is whatever mark (if any) the current damage source
+// (the boss, or the specific monster attacking) is currently carrying --
+// board's passive reduces damage taken from a source marked with its element.
+function damageReductionMultiplier(character, p, now, sourceElementMark) {
     if (character.skillType === 'guard_stance' && p.guardStanceUntil && now < p.guardStanceUntil) {
         return character.skillDamageMultiplier;
     }
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil) {
         return character.ultimateDamageMultiplier;
+    }
+    if (character.passiveResistElement && sourceElementMark && sourceElementMark.element === character.passiveResistElement) {
+        return character.passiveResistMultiplier;
     }
     return 1;
 }
@@ -160,10 +174,15 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     const p = room.players[playerId];
     if (!p || !p.alive) return;
     const character = CHARACTERS[p.charType];
-    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now()));
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), room.bossElementMark));
+    if (p.shieldHp > 0) {
+        const absorbed = Math.min(p.shieldHp, dmg);
+        p.shieldHp -= absorbed;
+        dmg -= absorbed;
+    }
     p.hp = Math.max(0, p.hp - dmg);
     if (p.hp <= 0) p.alive = false;
-    io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, ...(extra || {}) });
+    io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0, ...(extra || {}) });
 
     if (Object.values(room.players).every(pl => !pl.alive)) {
         endRoom(roomId, 'lose');
@@ -493,6 +512,14 @@ function healStoryPlayer(room, roomId, amount) {
     }
 }
 
+function shieldStoryTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = amount;
+        io.to(roomId).emit('storyPlayerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
 function endStoryRoom(roomId, result) {
     const room = rooms[roomId];
     if (!room) return;
@@ -502,16 +529,21 @@ function endStoryRoom(roomId, result) {
     delete rooms[roomId];
 }
 
-function applyDamageToStoryPlayer(roomId, playerId, dmg) {
+function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     const room = rooms[roomId];
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
     const character = CHARACTERS[p.charType];
-    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now()));
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), sourceElementMark));
+    if (p.shieldHp > 0) {
+        const absorbed = Math.min(p.shieldHp, dmg);
+        p.shieldHp -= absorbed;
+        dmg -= absorbed;
+    }
     p.hp = Math.max(0, p.hp - dmg);
     if (p.hp <= 0) p.alive = false;
-    io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive });
+    io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
     if (!p.alive) endStoryRoom(roomId, 'lose');
 }
 
@@ -618,7 +650,7 @@ function tickStoryRoom(roomId) {
                 if (d <= def.attackRange) {
                     const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
                     io.to(roomId).emit('monsterAttack', { id: mid });
-                    applyDamageToStoryPlayer(roomId, targetId, def.attackDamage);
+                    applyDamageToStoryPlayer(roomId, targetId, def.attackDamage, m.elementMark);
                 }
             }
         }
@@ -905,6 +937,12 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        } else if (character.skillType === 'self_heal') {
+            const healed = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            }
         }
         // speed_boost is purely client-side; nothing more to do here.
     });
@@ -991,6 +1029,8 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'awakening_rapid') {
             p.rapidStrikeUntil = now + character.ultimateDurationMs;
             p.rapidAttackCount = 0;
+        } else if (character.ultimateType === 'team_shield') {
+            shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
         }
     });
 
@@ -1132,6 +1172,12 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        } else if (character.skillType === 'self_heal') {
+            const healed = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            }
         }
     });
 
@@ -1218,6 +1264,8 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'awakening_rapid') {
             p.rapidStrikeUntil = now + character.ultimateDurationMs;
             p.rapidAttackCount = 0;
+        } else if (character.ultimateType === 'team_shield') {
+            shieldTeam(room, roomId, character.ultimateShieldAmount);
         }
     });
 

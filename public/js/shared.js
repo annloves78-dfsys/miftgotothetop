@@ -223,6 +223,36 @@ const CHARACTERS = {
         ultimateRapidCooldown: 100,
         ultimateAutoKickEvery: 3,
         ultimateCooldownMs: 30000
+    },
+    board: {
+        name: '보드맛 쿠키',
+        shortName: '보드', // shown on the lobby's character-select button
+        color: '#3498db',
+        colorLeft: '#f1c40f', // yellow
+        colorRight: '#3498db', // blue
+        grade: '희귀',
+        element: '물',
+        role: '탱커',
+        health: 115,
+        combatPower: 500, // starting value for every character
+        speed: 2.5, // rides a board -- +0.5 over the baseline 2
+        attackType: 'melee_kick', // board swing, same corridor mechanic
+        attackRange: 90,
+        attackWidth: 40,
+        attackDamage: 2,
+        attackCooldown: 500,
+        // Passive: takes reduced damage from anything currently carrying an
+        // element mark matching passiveResistElement (see damageReductionMultiplier).
+        passiveResistElement: '물',
+        passiveResistMultiplier: 0.9,
+        skillType: 'self_heal',
+        skillHealAmount: 10,
+        skillCooldown: 10000,
+        // Shields every teammate for ultimateShieldAmount -- absorbs that much
+        // incoming damage before it touches HP, then breaks.
+        ultimateType: 'team_shield',
+        ultimateShieldAmount: 10,
+        ultimateCooldownMs: 30000
     }
 };
 

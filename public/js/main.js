@@ -260,6 +260,8 @@ function describeAbility(stats, kind) {
                 return `전방 ${stats.skillRange}px 범위의 적을 걷어차 ${sec(stats.skillStunMs)}초 동안 기절시킵니다. 기절한 동안 상대는 아무 행동도 할 수 없습니다.${cd}`;
             case 'kick':
                 return `전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
+            case 'self_heal':
+                return `자신의 체력을 ${stats.skillHealAmount}만큼 회복합니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -281,6 +283,8 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 대상에게 속성 표식을 남깁니다. 표식이 있는 동안 같은 속성의 캐릭터가 공격하면 피해가 ${stats.ultimateMarkMultiplier}배가 되고, 표식은 ${stats.ultimateMarkUses}회 사용되면 사라집니다. 표식은 중첩됩니다.${cd}`;
             case 'awakening_rapid':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
+            case 'team_shield':
+                return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -329,7 +333,9 @@ const SKILL_ICONS = {
     element_mark: '🌪️',
     alternating_punch: '👊',
     kick: '🦶',
-    awakening_rapid: '⚡'
+    awakening_rapid: '⚡',
+    self_heal: '💗',
+    team_shield: '🔰'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -349,10 +355,12 @@ const ctx = canvas.getContext('2d');
 const bossHpBar = document.getElementById('boss-hp-bar');
 const bossHpLabel = document.getElementById('boss-hp-label');
 const myHpBar = document.getElementById('my-hp-bar');
+const myShieldBadge = document.getElementById('my-shield-badge');
 const mySkillCdEl = document.getElementById('my-skill-cd');
 const myUltimateCdEl = document.getElementById('my-ultimate-cd');
 const partnerHpContainer = document.getElementById('partner-hp-container');
 const partnerHpBar = document.getElementById('partner-hp-bar');
+const partnerShieldBadge = document.getElementById('partner-shield-badge');
 const resultTitle = document.getElementById('result-title');
 const resultDesc = document.getElementById('result-desc');
 const resultBackBtn = document.getElementById('result-back-btn');
@@ -560,6 +568,7 @@ towerPlayBtn.addEventListener('click', () => {
 const storyCanvas = document.getElementById('storyCanvas');
 const storyCtx = storyCanvas.getContext('2d');
 const storyMyHpBar = document.getElementById('story-my-hp-bar');
+const storyMyShieldBadge = document.getElementById('story-my-shield-badge');
 const storyMySkillCdEl = document.getElementById('story-my-skill-cd');
 const storyMyUltimateCdEl = document.getElementById('story-my-ultimate-cd');
 const storyMonstersLeftEl = document.getElementById('story-monsters-left');
@@ -588,7 +597,7 @@ socket.on('storyFloorStarted', (data) => {
     storyMonsters = data.monsters;
     const p = data.player;
     storyPlayer = {
-        x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true,
+        x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0
     };
@@ -619,10 +628,17 @@ socket.on('monsterDefeated', ({ id }) => {
     updateStoryMonstersLeft();
 });
 
-socket.on('storyPlayerDamaged', ({ hp, alive }) => {
+socket.on('storyPlayerDamaged', ({ hp, alive, shieldHp }) => {
     if (!storyPlayer) return;
     storyPlayer.hp = hp;
     storyPlayer.alive = alive;
+    storyPlayer.shieldHp = shieldHp || 0;
+    updateStoryHpBar();
+});
+
+socket.on('storyPlayerShielded', ({ shieldHp }) => {
+    if (!storyPlayer) return;
+    storyPlayer.shieldHp = shieldHp;
     updateStoryHpBar();
 });
 
@@ -672,6 +688,8 @@ storyLeaveBtn.addEventListener('click', () => {
 function updateStoryHpBar() {
     if (!storyPlayer) return;
     storyMyHpBar.style.width = `${Math.max(0, (storyPlayer.hp / storyPlayer.maxHp) * 100)}%`;
+    storyMyShieldBadge.textContent = `🛡${storyPlayer.shieldHp}`;
+    storyMyShieldBadge.classList.toggle('hidden', !storyPlayer.shieldHp);
 }
 
 function updateStoryMonstersLeft() {
@@ -1214,7 +1232,7 @@ socket.on('raidStarted', (data) => {
     players = {};
     Object.entries(data.players).forEach(([id, p]) => {
         const pl = new Player(id, p.charType, p.x, p.y, id === socket.id);
-        pl.hp = p.hp; pl.maxHp = p.maxHp; pl.facing = p.facing; pl.alive = p.alive;
+        pl.hp = p.hp; pl.maxHp = p.maxHp; pl.facing = p.facing; pl.alive = p.alive; pl.shieldHp = p.shieldHp || 0;
         players[id] = pl;
     });
     partnerHpContainer.classList.toggle('hidden', Object.keys(players).length < 2);
@@ -1275,11 +1293,19 @@ socket.on('bossDamaged', ({ bossHp }) => {
     updateHpBars();
 });
 
-socket.on('playerDamaged', ({ id, hp, alive, x, y }) => {
+socket.on('playerDamaged', ({ id, hp, alive, x, y, shieldHp }) => {
     const p = players[id];
     if (!p) return;
     p.hp = hp; p.alive = alive;
+    p.shieldHp = shieldHp || 0;
     if (x !== undefined) { p.x = x; p.y = y; }
+    updateHpBars();
+});
+
+socket.on('playerShielded', ({ id, shieldHp }) => {
+    const p = players[id];
+    if (!p) return;
+    p.shieldHp = shieldHp;
     updateHpBars();
 });
 
@@ -1351,9 +1377,17 @@ function updateHpBars() {
     bossHpBar.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
     bossHpLabel.textContent = `${boss.def.name} (${Math.max(0, Math.ceil(boss.hp))}/${boss.maxHp})`;
     const me = players[socket.id];
-    if (me) myHpBar.style.width = `${Math.max(0, (me.hp / me.maxHp) * 100)}%`;
+    if (me) {
+        myHpBar.style.width = `${Math.max(0, (me.hp / me.maxHp) * 100)}%`;
+        myShieldBadge.textContent = `🛡${me.shieldHp || 0}`;
+        myShieldBadge.classList.toggle('hidden', !me.shieldHp);
+    }
     const partner = Object.values(players).find(p => p.id !== socket.id);
-    if (partner) partnerHpBar.style.width = `${Math.max(0, (partner.hp / partner.maxHp) * 100)}%`;
+    if (partner) {
+        partnerHpBar.style.width = `${Math.max(0, (partner.hp / partner.maxHp) * 100)}%`;
+        partnerShieldBadge.textContent = `🛡${partner.shieldHp || 0}`;
+        partnerShieldBadge.classList.toggle('hidden', !partner.shieldHp);
+    }
 }
 
 function updateCooldownDisplay(now) {
