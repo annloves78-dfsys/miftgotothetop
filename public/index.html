@@ -118,6 +118,10 @@
             <button id="gacha-pull-1-btn" class="play-btn">1회 뽑기</button>
             <button id="gacha-pull-10-btn" class="play-btn">10회 뽑기</button>
         </div>
+        <div class="gacha-odds-section">
+            <div class="gacha-soul-header">확률</div>
+            <div id="gacha-odds-list" class="gacha-odds-list"></div>
+        </div>
         <div class="gacha-soul-section">
             <div class="gacha-soul-header">보유 영혼석</div>
             <div id="gacha-soul-list" class="gacha-soul-list"></div>
@@ -227,7 +231,9 @@
             <div class="mc-actions">
                 <button id="mc-skill-story" class="mc-btn mc-skill">🌀<span class="mc-cd"></span></button>
                 <button id="mc-ultimate-story" class="mc-btn mc-ultimate">🔥<span class="mc-cd"></span></button>
-                <button id="mc-attack-story" class="mc-btn mc-attack">⚔</button>
+                <div id="mc-attack-story" class="mc-aim-zone">
+                    <div class="mc-aim-base"><div class="mc-aim-thumb">⚔</div></div>
+                </div>
             </div>
         </div>
     </div>
@@ -366,7 +372,9 @@
             <div class="mc-actions">
                 <button id="mc-skill-fight" class="mc-btn mc-skill">🌀<span class="mc-cd"></span></button>
                 <button id="mc-ultimate-fight" class="mc-btn mc-ultimate">🔥<span class="mc-cd"></span></button>
-                <button id="mc-attack-fight" class="mc-btn mc-attack">⚔</button>
+                <div id="mc-attack-fight" class="mc-aim-zone">
+                    <div class="mc-aim-base"><div class="mc-aim-thumb">⚔</div></div>
+                </div>
             </div>
         </div>
     </div>

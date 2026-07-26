@@ -484,6 +484,38 @@ html, body {
     cursor: default;
 }
 
+.gacha-odds-section {
+    width: 760px;
+    max-width: 94vw;
+    margin-top: 16px;
+}
+
+.gacha-odds-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+}
+
+.gacha-odds-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: #22293a;
+    border: 1px solid #34495e;
+    border-radius: 14px;
+    font-size: 12px;
+}
+
+.gacha-odds-row.dim {
+    opacity: 0.5;
+}
+
+.gacha-odds-pct {
+    font-weight: bold;
+    color: #f1c40f;
+}
+
 /* Mode select */
 .mode-list {
     display: flex;
@@ -1138,12 +1170,47 @@ html, body {
     border-color: rgba(231, 76, 60, 0.8);
 }
 
-.mc-attack {
-    right: 15px;
+/* The attack control: an aim joystick rather than a plain button. Drag to pick
+   a direction, release to swing that way. */
+.mc-aim-zone {
+    position: absolute;
+    right: 8px;
     bottom: 0;
-    width: 84px;
-    height: 84px;
-    font-size: 30px;
+    width: 96px;
+    height: 96px;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: pointer;
+}
+
+.mc-aim-base {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: rgba(20, 24, 32, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.mc-aim-zone.aiming .mc-aim-base {
+    border-color: #f1c40f;
+    background: rgba(241, 196, 15, 0.18);
+}
+
+.mc-aim-thumb {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(236, 240, 241, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
 }
 
 .mc-cd {
@@ -1172,6 +1239,227 @@ body.mc-on .hp-container.bottom-right {
     bottom: auto;
     top: 76px;
     right: 16px;
+}
+
+/* ---- Mobile sizing ----
+   Turning on the touch controls also means "this is a phone", so everything
+   sized for a desktop window shrinks to fit a small (often landscape) screen.
+   All of it is scoped to body.mc-on so desktop layout is untouched. */
+body.mc-on .mc-joystick-zone {
+    width: 108px;
+    height: 108px;
+    left: 16px;
+    bottom: 16px;
+}
+
+body.mc-on .mc-joystick-thumb {
+    width: 44px;
+    height: 44px;
+}
+
+body.mc-on .mc-actions {
+    width: 148px;
+    height: 148px;
+    right: 16px;
+    bottom: 16px;
+}
+
+body.mc-on .mc-skill,
+body.mc-on .mc-ultimate {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+}
+
+body.mc-on .mc-aim-zone {
+    width: 82px;
+    height: 82px;
+}
+
+body.mc-on .mc-aim-thumb {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+}
+
+/* In-fight HUD */
+body.mc-on .hp-container {
+    width: 150px;
+}
+
+body.mc-on .hp-container.top {
+    width: 260px;
+    top: 12px;
+}
+
+body.mc-on .hp-label,
+body.mc-on .cooldown-row {
+    font-size: 11px;
+}
+
+body.mc-on .back-corner-btn {
+    top: 12px;
+    left: 12px;
+    padding: 7px 14px;
+    font-size: 13px;
+}
+
+body.mc-on .settings-btn {
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+}
+
+body.mc-on .story-monsters-left {
+    font-size: 12px;
+}
+
+/* Menus and full-screen panels */
+body.mc-on h1 {
+    font-size: 30px;
+}
+
+body.mc-on h2 {
+    font-size: 20px;
+}
+
+body.mc-on .play-btn {
+    padding: 11px 24px;
+    font-size: 17px;
+}
+
+body.mc-on .secondary-btn,
+body.mc-on .char-select-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+body.mc-on .menu-btn {
+    top: 14px;
+    right: 14px;
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+}
+
+body.mc-on .side-menu {
+    top: 58px;
+    right: 14px;
+    width: 190px;
+    padding: 10px;
+}
+
+body.mc-on .boss-list {
+    gap: 12px;
+}
+
+body.mc-on #character-list {
+    grid-template-columns: repeat(3, 116px);
+    gap: 10px;
+    max-height: 62vh;
+}
+
+body.mc-on .boss-card {
+    width: 116px;
+    padding: 10px;
+    font-size: 12px;
+}
+
+body.mc-on .boss-card .icon.char-swatch {
+    width: 46px;
+    height: 46px;
+}
+
+/* Character detail */
+body.mc-on .cd-panel {
+    height: 90vh;
+    padding: 14px 16px;
+    gap: 10px;
+}
+
+body.mc-on .cd-name {
+    font-size: 19px;
+}
+
+body.mc-on .cd-power {
+    font-size: 17px;
+}
+
+body.mc-on .char-icon-circle.huge {
+    width: 120px;
+    height: 120px;
+}
+
+body.mc-on .equip-slot {
+    padding: 5px 9px;
+    font-size: 12px;
+}
+
+body.mc-on .equip-icon {
+    font-size: 15px;
+}
+
+body.mc-on .skill-icon-box {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+}
+
+/* Gacha */
+body.mc-on .gacha-banner-list {
+    width: 100%;
+    gap: 9px;
+    margin: 14px 0;
+}
+
+body.mc-on .gacha-banner {
+    padding: 11px 14px;
+}
+
+body.mc-on .gacha-banner-icon {
+    font-size: 24px;
+    width: 30px;
+}
+
+body.mc-on .gacha-banner-name {
+    font-size: 15px;
+}
+
+body.mc-on .gacha-result {
+    min-height: 104px;
+    padding: 10px;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+body.mc-on .gacha-card {
+    width: 86px;
+    padding: 8px 5px;
+}
+
+body.mc-on .gacha-card-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 19px;
+}
+
+body.mc-on .gacha-card-name {
+    font-size: 11px;
+}
+
+body.mc-on .gacha-soul-list {
+    max-height: 22vh;
+}
+
+body.mc-on .gacha-soul-section,
+body.mc-on .gacha-odds-section {
+    margin-top: 10px;
+}
+
+body.mc-on .gacha-odds-row {
+    padding: 4px 8px;
+    font-size: 11px;
 }
 
 /* Login / Signup */

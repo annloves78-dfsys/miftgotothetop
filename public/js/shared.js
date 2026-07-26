@@ -443,17 +443,17 @@ const STORY_FLOOR_DEFS = {
 // and sum to 100, so a grade's listed number IS its real pull rate.
 const GACHA_SOUL_STONE_KEY = '영혼석';
 const GACHA_TABLE = {
-    '영혼석': 59,
-    '일반': 20,
-    '희귀': 15,
-    '에픽': 3,
-    '레전더리': 2,
-    '에이션트': 0.5,
-    '비스트': 0.3,
-    '게스트': 0.2
+    '영혼석': 70,
+    '일반': 16,
+    '희귀': 10,
+    '에픽': 2.5,
+    '레전더리': 1,
+    '에이션트': 0.3,
+    '비스트': 0.15,
+    '게스트': 0.05
 };
-// Soul stones are tracked per cookie -- 20 of one cookie's stones unlocks it.
-const SOUL_STONES_PER_CHARACTER = 20;
+// Soul stones are tracked per cookie -- this many of one cookie's stones unlocks it.
+const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER };

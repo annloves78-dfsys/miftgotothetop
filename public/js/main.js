@@ -493,14 +493,84 @@ setupJoystick(document.getElementById('mc-joystick-story'), true);
 function mcTap(el, handler) {
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); handler(); });
 }
-// Attack button doubles as the ultimate-target confirm, mirroring how
-// left-click already works on desktop (see the canvas mousedown handlers).
-mcTap(mcAttackFightEl, () => { if (isTargetingUltimate) confirmUltimateTarget(); else tryAttack(); });
 mcTap(mcSkillFightEl, () => tryUseSkill());
 mcTap(mcUltimateFightEl, () => handleUltimateKey());
-mcTap(mcAttackStoryEl, () => { if (isStoryTargetingUltimate) confirmStoryUltimateTarget(); else tryStoryAttack(); });
 mcTap(mcSkillStoryEl, () => tryStoryUseSkill());
 mcTap(mcUltimateStoryEl, () => storyHandleUltimateKey());
+
+// The attack control is a second joystick: drag it to aim, release to swing in
+// that direction. A plain tap (never leaving the dead zone) just attacks the way
+// the character is already facing. While held, aiming overrides the movement
+// stick's facing -- standard twin-stick behaviour.
+let aimFacing = null;
+let storyAimFacing = null;
+
+function setupAimJoystick(zoneEl, isStory) {
+    const thumbEl = zoneEl.querySelector('.mc-aim-thumb');
+    const maxR = 34;
+    let activePointerId = null;
+    let originX = 0, originY = 0;
+    let angle = null;
+
+    function update(clientX, clientY) {
+        let dx = clientX - originX;
+        let dy = clientY - originY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
+        thumbEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        angle = dist > 8 ? Math.atan2(dy, dx) : null; // small wobble stays a tap
+        if (isStory) storyAimFacing = angle; else aimFacing = angle;
+    }
+
+    zoneEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        activePointerId = e.pointerId;
+        zoneEl.setPointerCapture(e.pointerId);
+        const rect = zoneEl.getBoundingClientRect();
+        originX = rect.left + rect.width / 2;
+        originY = rect.top + rect.height / 2;
+        zoneEl.classList.add('aiming');
+        update(e.clientX, e.clientY);
+    });
+    zoneEl.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== activePointerId) return;
+        update(e.clientX, e.clientY);
+    });
+    function release(e) {
+        if (e.pointerId !== activePointerId) return;
+        activePointerId = null;
+        thumbEl.style.transform = 'translate(-50%, -50%)';
+        zoneEl.classList.remove('aiming');
+        fireAimedAttack(angle, isStory);
+        angle = null;
+        if (isStory) storyAimFacing = null; else aimFacing = null;
+    }
+    zoneEl.addEventListener('pointerup', release);
+    zoneEl.addEventListener('pointercancel', release);
+}
+
+// Commits the aimed facing to the server BEFORE the attack, since the server
+// judges hits against the facing it last received -- otherwise a fast
+// aim-and-release would swing in the previous direction.
+function fireAimedAttack(angle, isStory) {
+    if (isStory) {
+        if (!storyPlayer || !storyPlayer.alive) return;
+        if (angle !== null) storyPlayer.facing = angle;
+        if (isStoryTargetingUltimate) { confirmStoryUltimateTarget(); return; }
+        socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
+        tryStoryAttack();
+    } else {
+        const me = players[socket.id];
+        if (!me || !me.alive) return;
+        if (angle !== null) me.facing = angle;
+        if (isTargetingUltimate) { confirmUltimateTarget(); return; }
+        socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
+        tryAttack();
+    }
+}
+
+setupAimJoystick(mcAttackFightEl, false);
+setupAimJoystick(mcAttackStoryEl, true);
 
 // Buttons show the selected cookie's own ability icons, matching the icon row
 // on the character detail screen.
@@ -511,7 +581,9 @@ function syncMobileButtonIcons(charType, isStory) {
     const ultEl = isStory ? mcUltimateStoryEl : mcUltimateFightEl;
     const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
     const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
-    attackEl.textContent = SKILL_ICONS[stats.attackType] || '⚔';
+    // The attack control is an aim joystick, so its icon lives on the thumb --
+    // writing to the zone itself would wipe the base/thumb elements.
+    attackEl.querySelector('.mc-aim-thumb').textContent = SKILL_ICONS[stats.attackType] || '⚔';
     skillEl.textContent = SKILL_ICONS[stats.skillType] || '🌀';
     ultEl.textContent = SKILL_ICONS[stats.ultimateType] || '🔥';
     skillEl.appendChild(cdSkill);
@@ -640,6 +712,24 @@ const gachaResultEl = document.getElementById('gacha-result');
 const gachaPull1Btn = document.getElementById('gacha-pull-1-btn');
 const gachaPull10Btn = document.getElementById('gacha-pull-10-btn');
 const gachaSoulListEl = document.getElementById('gacha-soul-list');
+const gachaOddsListEl = document.getElementById('gacha-odds-list');
+
+// Rendered straight from GACHA_TABLE so the displayed odds can never drift from
+// the odds actually rolled.
+function renderGachaOdds() {
+    const soulKey = SHARED.GACHA_SOUL_STONE_KEY;
+    gachaOddsListEl.innerHTML = Object.entries(SHARED.GACHA_TABLE).map(([key, pct]) => {
+        const isSoul = key === soulKey;
+        const noCookieYet = !isSoul && charactersOfGrade(key).length === 0;
+        const label = isSoul
+            ? `💎 ${key}`
+            : `<span class="${gradeClass(key)}">${key}</span>`;
+        return `<div class="gacha-odds-row${noCookieYet ? ' dim' : ''}">
+            <span class="gacha-odds-label">${label}</span>
+            <span class="gacha-odds-pct">${pct}%</span>
+        </div>`;
+    }).join('');
+}
 
 // Draws one outcome key from GACHA_TABLE by walking its cumulative weight, so
 // the table can be edited freely without the code assuming any particular sum.
@@ -774,6 +864,7 @@ gachaBtn.addEventListener('click', () => showScreen('gacha'));
 backFromGachaBtn.addEventListener('click', () => showScreen('lobby'));
 gachaNormalBtn.addEventListener('click', () => {
     gachaResultEl.innerHTML = '<p class="gacha-result-empty">뽑기 버튼을 눌러보세요.</p>';
+    renderGachaOdds();
     renderSoulStones();
     showScreen('gachaPull');
 });
@@ -1182,7 +1273,8 @@ function storyFrame() {
             storyPlayer.x = nx; storyPlayer.y = ny;
         }
         if (mobileControlsEnabled) {
-            if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
+            if (storyAimFacing !== null) storyPlayer.facing = storyAimFacing;
+            else if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
         } else if (storyMouseX !== null) {
             const world = storyWorldFromMouse();
             storyPlayer.facing = Math.atan2(world.y - storyPlayer.y, world.x - storyPlayer.x);
@@ -1918,9 +2010,10 @@ function frame() {
     if (me) {
         me.updateLocal(keys);
         if (mobileControlsEnabled) {
-            // No mouse on touch -- face the direction the joystick is pushed,
-            // keeping the last angle when it's released.
-            if (joystickFacing !== null) me.facing = joystickFacing;
+            // No mouse on touch: the aim stick wins while held, otherwise face
+            // the way the movement stick is pushed.
+            if (aimFacing !== null) me.facing = aimFacing;
+            else if (joystickFacing !== null) me.facing = joystickFacing;
         } else if (mouseX !== null) {
             const world = screenToWorld(mouseX, mouseY);
             me.aimAt(world.x, world.y);
