@@ -260,7 +260,13 @@ function passiveText(stats) {
         parts.push(`기본 공격이 적중하면 대상을 불태워 ${sec(stats.attackBurnIntervalMs)}초마다 ${stats.attackBurnDamage}의 화염 피해를 ${stats.attackBurnTicks}번 추가로 줍니다. (추가 피해 합계 ${total})`);
     }
     if (stats.passiveReviveCount) {
-        parts.push(`쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${Math.round(stats.passiveReviveHpRatio * 100)}%로 부활합니다.`);
+        const hpPct = Math.round(stats.passiveReviveHpRatio * 100);
+        parts.push(hpPct >= 100
+            ? `쓰러져도 전투당 ${stats.passiveReviveCount}번 체력을 모두 채워 완전 부활합니다.`
+            : `쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${hpPct}%로 부활합니다.`);
+        if (stats.passiveReviveEnemySoloRatio) {
+            parts.push(`부활하는 순간 충격파가 퍼져 상대가 한 명이면 그 상대의 체력을 ${Math.round(stats.passiveReviveEnemySoloRatio * 100)}%, 여러 명이면 각각 ${Math.round(stats.passiveReviveEnemyCrowdRatio * 100)}%씩 깎습니다.`);
+        }
     }
     if (stats.passiveResistElement) {
         parts.push(`${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`);
@@ -274,6 +280,9 @@ function describeAbility(stats, kind) {
     if (kind === 'attack') {
         if (stats.attackType === 'alternating_punch') {
             return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
+        if (stats.attackType === 'dual_gun') {
+            return `쌍권총을 오른손, 왼손 순으로 번갈아 쏘며 이를 계속 반복합니다. 몸의 해당 쪽에서 전방 ${stats.attackRange}px를 쏘아 한 발마다 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'combo_two_stage') {
             const [a, b] = stats.attackStages;
@@ -311,6 +320,8 @@ function describeAbility(stats, kind) {
                 return `자신의 체력을 ${stats.skillHealAmount}만큼 회복합니다.${cd}`;
             case 'shield_block':
                 return `방패를 들어 막습니다. ${sec(stats.skillDurationMs)}초 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어들며, 공격해도 풀리지 않습니다.${cd}`;
+            case 'undying_soul':
+                return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 회복합니다. ${sec(stats.skillDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.skillAttackDamage}가 됩니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -334,6 +345,8 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
+            case 'earthquake':
+                return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.ultimateThresholdCount}명 이하면 모든 적에게 ${stats.ultimateDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
             case 'lightning_strike':
                 return `원하는 지점에 번개를 내려 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다. 맞은 적은 ${sec(stats.ultimateStunMs)}초 동안 기절하고, ${sec(stats.ultimateDebuffDurationMs)}초 동안 주는 피해가 ${stats.ultimateDamageDebuffMultiplier}배로 줄어듭니다.${cd}`;
             default:
@@ -391,7 +404,10 @@ const SKILL_ICONS = {
     team_shield: '🔰',
     combo_two_stage: '⚔',
     shield_block: '🛡',
-    lightning_strike: '⚡'
+    lightning_strike: '⚡',
+    dual_gun: '🔫',
+    undying_soul: '👻',
+    earthquake: '🌎'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -1139,6 +1155,7 @@ let storyImpactEffects = []; // [{x, y, radius, until}]
 let storyProjectiles = {};
 let storyProjectileSparks = []; // [{x, y, until}] brief flash where an arrow landed
 let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
+let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 
 socket.on('storyFloorStarted', (data) => {
     storyFloorDef = data.floorDef;
@@ -1148,13 +1165,14 @@ socket.on('storyFloorStarted', (data) => {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
-        comboStage: 0, attackEffectStage: null
+        comboStage: 0, attackEffectStage: null, gunSide: 0, attackEffectSide: 0
     };
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
     storyMagmaZones = [];
     storyProjectiles = {};
     storyProjectileSparks = [];
+    storyQuakeUntil = 0;
     updateStoryHpBar();
     updateStoryMonstersLeft();
     syncMobileButtonIcons(p.charType, true);
@@ -1232,6 +1250,19 @@ socket.on('storyLightningStrike', ({ x, y, radius }) => {
 
 socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs }) => {
     storyMagmaZones.push({ x, y, radius, until: performance.now() + durationMs });
+});
+
+socket.on('storyEarthquake', () => {
+    storyQuakeUntil = performance.now() + QUAKE_DURATION_MS;
+});
+
+// The revive shockwave (lightninghell's passive) -- a big ring off the player.
+socket.on('storyReviveBlast', () => {
+    if (!storyPlayer) return;
+    storyImpactEffects.push({
+        x: storyPlayer.x, y: storyPlayer.y, radius: 220,
+        until: performance.now() + 500, bolt: true
+    });
 });
 
 socket.on('storyFloorResult', ({ result, floor }) => {
@@ -1313,9 +1344,10 @@ function tryStoryUseSkill() {
     if (!storyCanUseSkill(now)) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     storyPlayer.lastSkillClientTime = now;
-    const matchesFullDuration = stats.skillType === 'spin_heal' || stats.skillType === 'guard_stance';
-    storyPlayer.skillEffectUntil = now + (matchesFullDuration ? stats.skillDurationMs : 350);
+    storyPlayer.skillEffectUntil = now
+        + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
+    else if (stats.skillType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.skillDurationMs;
     socket.emit('storyPlayerSkill');
 }
 
@@ -1377,6 +1409,10 @@ function tryStoryAttack() {
         // Mirror the server's stage bookkeeping so the effect draws the right shape.
         storyPlayer.attackEffectStage = stats.attackStages[storyPlayer.comboStage || 0];
         storyPlayer.comboStage = ((storyPlayer.comboStage || 0) + 1) % stats.attackStages.length;
+    } else if (stats.attackType === 'dual_gun') {
+        // Same mirroring for which hand fires (see advanceAttackSequence).
+        storyPlayer.attackEffectSide = storyPlayer.gunSide || 0;
+        storyPlayer.gunSide = (storyPlayer.gunSide || 0) === 0 ? 1 : 0;
     }
     if (stats.skillType === 'guard_stance') storyPlayer.skillEffectUntil = 0; // attacking breaks the guard stance
     socket.emit('storyPlayerAttack');
@@ -1412,9 +1448,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const boosted = stats.skillType === 'speed_boost' && now < storyPlayer.speedBoostUntil;
-        const awakened = stats.ultimateType === 'awakening' && now < storyPlayer.awakenUntil;
-        const speed = boosted ? stats.skillSpeedValue : (awakened ? stats.speed * stats.ultimateSpeedMultiplier : stats.speed);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -1472,11 +1506,26 @@ function drawStarPath(ctx, radius) {
     ctx.closePath();
 }
 
+// Screen shake for the earthquake ultimate. Returns the pixel offset to add to
+// the camera translate; {0,0} once the shake has run out. Decays so it settles
+// instead of cutting off mid-jolt.
+const QUAKE_DURATION_MS = 600;
+function quakeOffset(now, until) {
+    const left = (until || 0) - now;
+    if (left <= 0) return { x: 0, y: 0 };
+    const strength = 9 * (left / QUAKE_DURATION_MS);
+    return {
+        x: Math.sin(now / 18) * strength,
+        y: Math.cos(now / 13) * strength
+    };
+}
+
 function storyRender(now) {
     storyCtx.clearRect(0, 0, storyCanvas.width, storyCanvas.height);
     storyCtx.save();
     const camX = storyPlayer ? storyPlayer.x : 0;
-    storyCtx.translate(storyCanvas.width / 2 - camX, storyCanvas.height / 2);
+    const q = quakeOffset(now, storyQuakeUntil);
+    storyCtx.translate(storyCanvas.width / 2 - camX + q.x, storyCanvas.height / 2 + q.y);
 
     if (storyFloorDef) {
         const halfW = storyFloorDef.laneHalfWidth;
@@ -1648,6 +1697,7 @@ function storyRender(now) {
             const aWidth = (stage ? stage.width : stats.attackWidth) || 40;
             storyCtx.save();
             storyCtx.rotate(storyPlayer.facing);
+            storyCtx.translate(0, attackSideShift(stats, storyPlayer.attackEffectSide));
             storyCtx.fillStyle = 'rgba(241, 196, 15, 0.35)';
             storyCtx.fillRect(R, -aWidth / 2, aRange, aWidth);
             storyCtx.strokeStyle = 'rgba(241, 196, 15, 0.9)';
@@ -1886,6 +1936,7 @@ let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired
 let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
+let raidQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -1902,6 +1953,7 @@ socket.on('raidStarted', (data) => {
     impactEffects = [];
     magmaZones = [];
     bossMark = null;
+    raidQuakeUntil = 0;
     resetDetailActions();
     settingsMenu.classList.add('hidden');
     leavePendingBanner.classList.add('hidden');
@@ -1941,6 +1993,16 @@ socket.on('lightningStrike', ({ x, y, radius }) => {
 
 socket.on('magmaZonePlaced', ({ x, y, radius, durationMs }) => {
     magmaZones.push({ x, y, radius, until: performance.now() + durationMs });
+});
+
+socket.on('earthquake', () => {
+    raidQuakeUntil = performance.now() + QUAKE_DURATION_MS;
+});
+
+socket.on('reviveBlast', ({ id }) => {
+    const p = players[id];
+    if (!p) return;
+    impactEffects.push({ x: p.x, y: p.y, radius: 220, until: performance.now() + 500, bolt: true });
 });
 
 socket.on('bossMarked', ({ element, charges }) => {
@@ -2240,7 +2302,8 @@ function frame() {
 function render(now) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
+    const q = quakeOffset(now, raidQuakeUntil);
+    ctx.translate(canvas.width / 2 + q.x, canvas.height / 2 + q.y);
     ctx.scale(gameScale, gameScale);
 
     ctx.beginPath();

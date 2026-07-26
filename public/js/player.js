@@ -33,6 +33,34 @@ function drawCookieBody(ctx, radius, stats, alive) {
     ctx.fill();
 }
 
+// Skills whose self-aura lasts the whole buff instead of a quick 350ms flash,
+// because the buff being up is information the player needs while fighting.
+const SKILL_FULL_DURATION_EFFECTS = ['spin_heal', 'guard_stance', 'undying_soul'];
+
+// How far off the body centre this swing's corridor sits, in the frame already
+// rotated to `facing` (+y = the player's right). Only dual_gun uses it; keep in
+// step with resolveAttack's originX/originY in server.js.
+function attackSideShift(stats, side) {
+    if (stats.attackType !== 'dual_gun') return 0;
+    return (side || 0) === 0 ? stats.attackSideOffset : -stats.attackSideOffset;
+}
+
+// Current movement speed given the two client-side buff timers. Shared by the
+// raid's Player.updateLocal and story mode's plain-object player (storyFrame in
+// main.js), so a new speed buff only has to be added in one place.
+// speed_boost REPLACES the base speed with an absolute value; undying_soul ADDS
+// to it; awakening multiplies it.
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil) {
+    if (now < (speedBoostUntil || 0)) {
+        if (stats.skillType === 'speed_boost') return stats.skillSpeedValue;
+        if (stats.skillType === 'undying_soul') return stats.speed + stats.skillSpeedBonus;
+    }
+    if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
+        return stats.speed * stats.ultimateSpeedMultiplier;
+    }
+    return stats.speed;
+}
+
 class Player {
     constructor(id, charType, x, y, isLocal) {
         this.id = id;
@@ -60,7 +88,9 @@ class Player {
 
         this.comboStage = 0; // combo_two_stage: which half of the combo comes next
         this.attackEffectStage = null; // the stage the running attack animation is drawing
-        this.speedBoostUntil = 0; // performance.now() timestamp; see triggerSkillEffect()
+        this.gunSide = 0; // dual_gun: 0 = right hand fires next, 1 = left
+        this.attackEffectSide = 0; // the side the running attack animation is drawing
+        this.speedBoostUntil = 0; // performance.now() timestamp; set by any speed-granting skill
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
     }
@@ -99,9 +129,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const boosted = this.stats.skillType === 'speed_boost' && performance.now() < this.speedBoostUntil;
-        const awakened = this.stats.ultimateType === 'awakening' && performance.now() < this.awakenUntil;
-        const speed = boosted ? this.stats.skillSpeedValue : (awakened ? this.stats.speed * this.stats.ultimateSpeedMultiplier : this.stats.speed);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -138,6 +166,9 @@ class Player {
         if (this.stats.attackType === 'combo_two_stage') {
             this.attackEffectStage = this.currentAttackStage;
             this.comboStage = ((this.comboStage || 0) + 1) % this.stats.attackStages.length;
+        } else if (this.stats.attackType === 'dual_gun') {
+            this.attackEffectSide = this.gunSide || 0;
+            this.gunSide = (this.gunSide || 0) === 0 ? 1 : 0;
         }
         if (this.stats.skillType === 'guard_stance') {
             this.skillEffectUntil = 0; // attacking breaks the guard stance
@@ -146,11 +177,13 @@ class Player {
 
     triggerSkillEffect() {
         this.lastSkillClientTime = performance.now();
-        const matchesFullDuration = this.stats.skillType === 'spin_heal' || this.stats.skillType === 'guard_stance';
-        const duration = matchesFullDuration ? this.stats.skillDurationMs : 350;
+        const duration = SKILL_FULL_DURATION_EFFECTS.includes(this.stats.skillType)
+            ? this.stats.skillDurationMs : 350;
         this.skillEffectUntil = performance.now() + duration;
         if (this.stats.skillType === 'speed_boost') {
             this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
+        } else if (this.stats.skillType === 'undying_soul') {
+            this.speedBoostUntil = performance.now() + this.stats.skillDurationMs;
         }
     }
 
@@ -188,6 +221,9 @@ class Player {
             const width = (stage ? stage.width : this.stats.attackWidth) || 40;
             ctx.save();
             ctx.rotate(facingAngle);
+            // dual_gun fires from one side of the body at a time; in this
+            // rotated frame +y is the player's right (see resolveAttack).
+            ctx.translate(0, attackSideShift(this.stats, this.attackEffectSide));
             ctx.fillStyle = 'rgba(241, 196, 15, 0.35)';
             ctx.fillRect(R, -width / 2, range, width);
             ctx.strokeStyle = 'rgba(241, 196, 15, 0.9)';

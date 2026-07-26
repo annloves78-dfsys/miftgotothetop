@@ -154,6 +154,11 @@ function effectiveAttackDamage(character, p, now) {
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil && character.ultimateAttackDamage != null) {
         return character.ultimateAttackDamage;
     }
+    // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
+    if (character.skillType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
+        && character.skillAttackDamage != null) {
+        return character.skillAttackDamage;
+    }
     return character.attackDamage;
 }
 
@@ -176,20 +181,31 @@ function resolveAlternatingPunchDamage(character, p, rapid) {
     return (p.punchSequence % 2 === 1) ? character.attackDamageRight : character.attackDamageLeft;
 }
 
-// Resolves the reach, width and damage of the swing about to happen. Most
-// cookies just use their flat attackRange/attackWidth/attackDamage;
-// combo_two_stage (lightning) alternates between two differently *shaped*
-// stages, while alternating_punch varies only its damage.
+// Resolves the reach, width, damage and origin of the swing about to happen.
+// Most cookies just use their flat attackRange/attackWidth/attackDamage fired
+// straight from the body centre; combo_two_stage (lightning) alternates between
+// two differently *shaped* stages, alternating_punch varies only its damage, and
+// dual_gun (lightninghell) keeps one shape but fires it from alternating sides
+// of the body -- hence originX/originY rather than always using p.x/p.y.
 // Call exactly once per swing -- the alternating_punch path advances state.
 function resolveAttack(character, p, now, rapid) {
     if (character.attackType === 'combo_two_stage') {
         const stage = character.attackStages[p.comboStage || 0];
-        return { range: stage.range, width: stage.width, damage: stage.damage };
+        return { range: stage.range, width: stage.width, damage: stage.damage, originX: p.x, originY: p.y };
+    }
+    let originX = p.x, originY = p.y;
+    if (character.attackType === 'dual_gun') {
+        // Perpendicular to `facing`; +90deg is the player's right on screen
+        // (canvas y grows downward), which is where the first shot comes from.
+        const side = (p.gunSide || 0) === 0 ? 1 : -1;
+        const off = character.attackSideOffset * side;
+        originX += -Math.sin(p.facing) * off;
+        originY += Math.cos(p.facing) * off;
     }
     const damage = character.attackType === 'alternating_punch'
         ? resolveAlternatingPunchDamage(character, p, rapid)
         : effectiveAttackDamage(character, p, now);
-    return { range: character.attackRange, width: character.attackWidth, damage };
+    return { range: character.attackRange, width: character.attackWidth, damage, originX, originY };
 }
 
 // The combo's follow-up thrust opens far sooner than a fresh opening sweep.
@@ -201,9 +217,14 @@ function attackCooldownFor(character, p, rapid) {
     return character.attackCooldown;
 }
 
-function advanceComboStage(character, p) {
-    if (character.attackType !== 'combo_two_stage') return;
-    p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
+// Steps whichever "which swing comes next" counter this attack type keeps.
+// Must run after resolveAttack, which reads that counter.
+function advanceAttackSequence(character, p) {
+    if (character.attackType === 'combo_two_stage') {
+        p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
+    } else if (character.attackType === 'dual_gun') {
+        p.gunSide = (p.gunSide || 0) === 0 ? 1 : 0;
+    }
 }
 
 // lightning_strike leaves its target dealing reduced damage for a while.
@@ -225,6 +246,44 @@ function tryRevive(p, character) {
     p.hp = Math.max(1, Math.round(p.maxHp * character.passiveReviveHpRatio));
     p.alive = true;
     return true;
+}
+
+// Part two of lightninghell's passive: the revive shockwave. Shaves a share of
+// each surviving enemy's CURRENT hp -- a lone enemy loses the solo ratio, a
+// crowd loses the (larger) crowd ratio each. 0 for cookies without the passive.
+function reviveBlastRatio(character, enemyCount) {
+    if (!character.passiveReviveEnemySoloRatio) return 0;
+    if (enemyCount <= 0) return 0;
+    return enemyCount === 1 ? character.passiveReviveEnemySoloRatio : character.passiveReviveEnemyCrowdRatio;
+}
+
+// The boss is always alone in its arena, so the shockwave always uses the
+// solo ratio here.
+function applyReviveBlastToBoss(roomId, room, character, playerId) {
+    const ratio = reviveBlastRatio(character, 1);
+    if (!ratio || room.bossHp <= 0) return;
+    const dmg = Math.max(1, Math.round(room.bossHp * ratio));
+    room.bossHp = Math.max(0, room.bossHp - dmg);
+    io.to(roomId).emit('reviveBlast', { id: playerId, ratio, damage: dmg });
+    io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp });
+    if (room.bossHp <= 0) endRoom(roomId, 'win');
+}
+
+function applyReviveBlastToMonsters(roomId, room, character, playerId) {
+    const alive = Object.entries(room.monsters).filter(([, m]) => m.alive);
+    const ratio = reviveBlastRatio(character, alive.length);
+    if (!ratio) return;
+    io.to(roomId).emit('storyReviveBlast', { id: playerId, ratio, count: alive.length });
+    for (const [mid, m] of alive) {
+        const dmg = Math.max(1, Math.round(m.hp * ratio));
+        m.hp = Math.max(0, m.hp - dmg);
+        if (m.hp <= 0) {
+            m.alive = false;
+            io.to(roomId).emit('monsterDefeated', { id: mid });
+        } else {
+            io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+        }
+    }
 }
 
 function applyDamageToPlayer(roomId, playerId, dmg, extra) {
@@ -250,7 +309,11 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
         if (!revived) p.alive = false;
     }
     io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0, ...(extra || {}) });
-    if (revived) io.to(roomId).emit('playerRevived', { id: playerId, hp: p.hp });
+    if (revived) {
+        io.to(roomId).emit('playerRevived', { id: playerId, hp: p.hp });
+        applyReviveBlastToBoss(roomId, room, character, playerId);
+        return; // this player is back up, so the wipe check below cannot fire
+    }
 
     if (Object.values(room.players).every(pl => !pl.alive)) {
         endRoom(roomId, 'lose');
@@ -683,7 +746,11 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
         if (!revived) p.alive = false;
     }
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
-    if (revived) io.to(roomId).emit('storyPlayerRevived', { id: playerId, hp: p.hp });
+    if (revived) {
+        io.to(roomId).emit('storyPlayerRevived', { id: playerId, hp: p.hp });
+        applyReviveBlastToMonsters(roomId, room, character, playerId);
+        return;
+    }
     if (!p.alive) endStoryRoom(roomId, 'lose');
 }
 
@@ -940,17 +1007,17 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
-            && character.attackType !== 'combo_two_stage') return;
+            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_gun') return;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
         const swing = resolveAttack(character, p, now, rapid);
         const baseAttackDamage = swing.damage;
-        advanceComboStage(character, p);
+        advanceAttackSequence(character, p);
         const floorDef = STORY_FLOOR_DEFS[room.floor];
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
-            if (meleeLineHitPoint(p.x, p.y, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
+            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
                 anyHit = true;
 
                 // Element mark: a matching-element attacker deals bonus
@@ -1018,7 +1085,7 @@ io.on('connection', (socket) => {
             // Must use the resolved swing, not character.attackRange/Width --
             // multi-stage attacks (combo_two_stage) leave those undefined, which
             // made the star impossible to hit.
-            if (meleeLineHitPoint(p.x, p.y, p.facing, swing.range, swing.width, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
+            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
                 room.starDefeated = true;
                 io.to(roomId).emit('starHit', {});
                 endStoryRoom(roomId, 'win');
@@ -1093,6 +1160,15 @@ io.on('connection', (socket) => {
             }
         } else if (character.skillType === 'self_heal') {
             const healed = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            }
+        } else if (character.skillType === 'undying_soul') {
+            // Heals a share of max hp, then the timer is read by
+            // effectiveAttackDamage (the speed part is client-side movement).
+            p.undyingSoulUntil = now + character.skillDurationMs;
+            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
             if (healed !== p.hp) {
                 p.hp = healed;
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
@@ -1211,6 +1287,33 @@ io.on('connection', (socket) => {
             p.rapidAttackCount = 0;
         } else if (character.ultimateType === 'team_shield') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'earthquake') {
+            // No aiming: the whole floor shakes. A small group all takes
+            // ultimateDamage; past ultimateThresholdCount the ground swallows
+            // the single nearest enemy instead.
+            const alive = Object.entries(room.monsters).filter(([, m]) => m.alive);
+            io.to(roomId).emit('storyEarthquake', { id: socket.id, count: alive.length });
+            if (!alive.length) return;
+            if (alive.length <= character.ultimateThresholdCount) {
+                for (const [mid, m] of alive) {
+                    m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                    if (m.hp <= 0) {
+                        m.alive = false;
+                        io.to(roomId).emit('monsterDefeated', { id: mid });
+                    } else {
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
+            } else {
+                let victimId = null, victim = null, best = Infinity;
+                for (const [mid, m] of alive) {
+                    const d = Math.hypot(m.x - p.x, m.y - p.y);
+                    if (d < best) { best = d; victimId = mid; victim = m; }
+                }
+                victim.hp = 0;
+                victim.alive = false;
+                io.to(roomId).emit('monsterDefeated', { id: victimId });
+            }
         }
     });
 
@@ -1242,10 +1345,10 @@ io.on('connection', (socket) => {
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
-            || character.attackType === 'combo_two_stage') {
+            || character.attackType === 'combo_two_stage' || character.attackType === 'dual_gun') {
             const swing = resolveAttack(character, p, now, rapid);
-            advanceComboStage(character, p);
-            if (meleeLineHit(p.x, p.y, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
+            advanceAttackSequence(character, p);
+            if (meleeLineHit(swing.originX, swing.originY, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
                 let dmg = swing.damage;
 
                 // Element mark: a matching-element attacker deals bonus
@@ -1360,6 +1463,13 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             }
+        } else if (character.skillType === 'undying_soul') {
+            p.undyingSoulUntil = now + character.skillDurationMs;
+            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            }
         }
     });
 
@@ -1469,6 +1579,13 @@ io.on('connection', (socket) => {
             p.rapidAttackCount = 0;
         } else if (character.ultimateType === 'team_shield') {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'earthquake') {
+            // A raid only ever has one enemy (the boss), so this always takes
+            // the small-group branch -- the boss is never one-shot.
+            io.to(roomId).emit('earthquake', { id: socket.id, count: 1 });
+            room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
+            io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+            if (room.bossHp <= 0) endRoom(roomId, 'win');
         }
     });
 
