@@ -247,11 +247,18 @@ restoreAuthSession();
 // Passives get their own icon on the detail screen (next to the ultimate), so
 // this is the text for that slot. Cookies without one show 없음.
 function hasPassive(stats) {
-    return !!(stats.passiveReviveCount || stats.passiveResistElement);
+    return !!(stats.passiveReviveCount || stats.passiveResistElement || stats.attackBurnDamage);
 }
 
 function passiveText(stats) {
+    const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
     const parts = [];
+    if (stats.attackBurnDamage) {
+        // The burn is deliberately left out of the attack's damage number (which
+        // stays at attackDamage); it lives here instead.
+        const total = stats.attackBurnDamage * stats.attackBurnTicks;
+        parts.push(`기본 공격이 적중하면 대상을 불태워 ${sec(stats.attackBurnIntervalMs)}초마다 ${stats.attackBurnDamage}의 화염 피해를 ${stats.attackBurnTicks}번 추가로 줍니다. (추가 피해 합계 ${total})`);
+    }
     if (stats.passiveReviveCount) {
         parts.push(`쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${Math.round(stats.passiveReviveHpRatio * 100)}%로 부활합니다.`);
     }
