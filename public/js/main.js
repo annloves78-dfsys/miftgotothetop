@@ -272,6 +272,8 @@ function describeAbility(stats, kind) {
     return '';
 }
 
+const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑' };
+
 function selectCharDetailAbility(kind) {
     const stats = SHARED.CHARACTERS[viewingCharacterId];
     charDetailDesc.textContent = describeAbility(stats, kind);
@@ -770,10 +772,13 @@ function storyFrame() {
             if (ny < -halfW) ny = -halfW;
             if (nx > 40) nx = 40;
             if (nx < -storyFloorDef.levelLength) nx = -storyFloorDef.levelLength;
-            if (storyFloorDef.arenaEntranceX !== undefined && storyAnyMonsterAlive()) {
-                if (storyPlayer.x <= storyFloorDef.arenaEntranceX || nx <= storyFloorDef.arenaEntranceX) {
-                    if (nx > storyFloorDef.arenaEntranceX) nx = storyFloorDef.arenaEntranceX;
-                    if (nx < storyFloorDef.arenaExitX) nx = storyFloorDef.arenaExitX;
+            if (storyFloorDef.gates) {
+                for (const gate of storyFloorDef.gates) {
+                    if (!storyAnyMonsterAliveInRoom(gate.room)) continue;
+                    if (storyPlayer.x <= gate.entranceX || nx <= gate.entranceX) {
+                        if (nx > gate.entranceX) nx = gate.entranceX;
+                        if (nx < gate.exitX) nx = gate.exitX;
+                    }
                 }
             }
             storyPlayer.x = nx; storyPlayer.y = ny;
@@ -792,8 +797,8 @@ function storyFrame() {
     storyLoopHandle = requestAnimationFrame(storyFrame);
 }
 
-function storyAnyMonsterAlive() {
-    return Object.values(storyMonsters).some(m => m.alive);
+function storyAnyMonsterAliveInRoom(roomIndex) {
+    return Object.values(storyMonsters).some(m => m.alive && m.room === roomIndex);
 }
 
 function drawStarPath(ctx, radius) {
@@ -837,14 +842,17 @@ function storyRender(now) {
             storyCtx.restore();
         }
 
-        if (storyFloorDef.arenaEntranceX !== undefined && storyAnyMonsterAlive()) {
+        if (storyFloorDef.gates) {
             const shieldAlpha = 0.35 + Math.sin(now / 150) * 0.1;
-            [storyFloorDef.arenaEntranceX, storyFloorDef.arenaExitX].forEach(gateX => {
-                storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
-                storyCtx.fillRect(gateX - 6, -halfW, 12, halfW * 2);
-                storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
-                storyCtx.lineWidth = 2;
-                storyCtx.strokeRect(gateX - 6, -halfW, 12, halfW * 2);
+            storyFloorDef.gates.forEach(gate => {
+                if (!storyAnyMonsterAliveInRoom(gate.room)) return;
+                [gate.entranceX, gate.exitX].forEach(gateX => {
+                    storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
+                    storyCtx.fillRect(gateX - 6, -halfW, 12, halfW * 2);
+                    storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
+                    storyCtx.lineWidth = 2;
+                    storyCtx.strokeRect(gateX - 6, -halfW, 12, halfW * 2);
+                });
             });
         }
     }
@@ -899,6 +907,17 @@ function storyRender(now) {
         storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW, barH);
         storyCtx.fillStyle = '#2ecc71';
         storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW * (m.hp / m.maxHp), barH);
+
+        if (m.elementMark) {
+            storyCtx.save();
+            storyCtx.font = 'bold 14px sans-serif';
+            storyCtx.textAlign = 'center';
+            storyCtx.fillStyle = '#fff';
+            storyCtx.shadowColor = 'rgba(0,0,0,0.8)';
+            storyCtx.shadowBlur = 3;
+            storyCtx.fillText(`${ELEMENT_ICONS[m.elementMark.element] || '✨'} x${m.elementMark.charges}`, m.x, m.y - SHARED.MONSTER_RADIUS - 14 - barH);
+            storyCtx.restore();
+        }
     });
 
     if (storyPlayer) {
@@ -1147,6 +1166,7 @@ let mouseY = null; // canvas-space; null until the mouse first moves over it
 let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired by left-click
 let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
+let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -1162,6 +1182,7 @@ socket.on('raidStarted', (data) => {
     isTargetingUltimate = false;
     impactEffects = [];
     magmaZones = [];
+    bossMark = null;
     resetDetailActions();
     settingsMenu.classList.add('hidden');
     leavePendingBanner.classList.add('hidden');
@@ -1195,6 +1216,10 @@ socket.on('ultimateImpact', ({ x, y, radius }) => {
 
 socket.on('magmaZonePlaced', ({ x, y, radius, durationMs }) => {
     magmaZones.push({ x, y, radius, until: performance.now() + durationMs });
+});
+
+socket.on('bossMarked', ({ element, charges }) => {
+    bossMark = element ? { element, charges } : null;
 });
 
 socket.on('playerHealed', ({ id, hp }) => {
@@ -1448,6 +1473,17 @@ function render(now) {
     ctx.stroke();
 
     if (boss) boss.draw(ctx, now);
+    if (boss && bossMark) {
+        ctx.save();
+        ctx.translate(0, -SHARED.BOSS_RADIUS - 30);
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(`${ELEMENT_ICONS[bossMark.element] || '✨'} x${bossMark.charges}`, 0, 0);
+        ctx.restore();
+    }
     Object.values(players).forEach(p => p.draw(ctx, now));
 
     impactEffects = impactEffects.filter(fx => now < fx.until);

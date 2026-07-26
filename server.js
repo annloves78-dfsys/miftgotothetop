@@ -440,6 +440,7 @@ function spawnStoryMonsters(room, floorDef) {
             hp: def.health, maxHp: def.health,
             alive: true,
             state: 'idle', // 'idle' | 'telegraph'
+            roomIndex: m.room || 0, // which gate/room this monster belongs to
             elementMark: null, // { element, charges, multiplier } | null
             stunnedUntil: 0,
             telegraphStartAt: 0,
@@ -448,10 +449,16 @@ function spawnStoryMonsters(room, floorDef) {
     });
 }
 
+// Is any (alive) monster belonging to this room/gate index still around?
+// While true, that room's shield gate stays sealed.
+function anyMonsterAliveInRoom(room, roomIndex) {
+    return Object.values(room.monsters).some(m => m.alive && m.roomIndex === roomIndex);
+}
+
 function publicMonsters(room) {
     const out = {};
     for (const [id, m] of Object.entries(room.monsters)) {
-        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state };
+        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark };
     }
     return out;
 }
@@ -681,8 +688,7 @@ io.on('connection', (socket) => {
             floorDef: {
                 levelLength: floorDef.levelLength,
                 laneHalfWidth: floorDef.laneHalfWidth,
-                arenaEntranceX: floorDef.arenaEntranceX,
-                arenaExitX: floorDef.arenaExitX,
+                gates: floorDef.gates,
                 star: floorDef.star
             },
             player: room.players[socket.id],
@@ -702,13 +708,19 @@ io.on('connection', (socket) => {
         if (x > 40 || x < -floorDef.levelLength - 1) return; // ignore out-of-bounds claims
         if (Math.abs(y) > floorDef.laneHalfWidth + 1) return;
 
-        // Energy-shield gate: once inside (or moving into) the monster room,
-        // neither gate can be crossed until every monster in it is dead.
-        if (floorDef.arenaEntranceX !== undefined) {
-            const anyMonsterAlive = Object.values(room.monsters).some(m => m.alive);
-            if (anyMonsterAlive && (p.x <= floorDef.arenaEntranceX || x <= floorDef.arenaEntranceX)) {
-                if (x > floorDef.arenaEntranceX) x = floorDef.arenaEntranceX;
-                if (x < floorDef.arenaExitX) x = floorDef.arenaExitX;
+        // Energy-shield gates: once inside (or moving into) a room, neither
+        // of its edges can be crossed until every monster in that room is
+        // dead. A floor can have several rooms back to back (see `gates`);
+        // each is checked independently against the (possibly already
+        // reclamped) x, since only one room's shield is ever actually up at
+        // any given position.
+        if (floorDef.gates) {
+            for (const gate of floorDef.gates) {
+                if (!anyMonsterAliveInRoom(room, gate.room)) continue;
+                if (p.x <= gate.entranceX || x <= gate.entranceX) {
+                    if (x > gate.entranceX) x = gate.entranceX;
+                    if (x < gate.exitX) x = gate.exitX;
+                }
             }
         }
 
@@ -962,10 +974,12 @@ io.on('connection', (socket) => {
 
                 // Element mark: a matching-element attacker deals bonus
                 // damage vs a marked boss and burns down one charge.
+                let markChanged = false;
                 const mark = room.bossElementMark;
                 if (mark && mark.element === character.element && mark.charges > 0) {
                     dmg = Math.round(dmg * mark.multiplier);
                     mark.charges -= 1;
+                    markChanged = true;
                     if (mark.charges <= 0) room.bossElementMark = null;
                 }
 
@@ -1001,7 +1015,13 @@ io.on('connection', (socket) => {
                     } else {
                         room.bossElementMark = { element: character.element, charges: character.ultimateMarkUses, multiplier: character.ultimateMarkMultiplier };
                     }
-                    io.to(roomId).emit('bossMarked', { element: room.bossElementMark.element, charges: room.bossElementMark.charges });
+                    markChanged = true;
+                }
+
+                if (markChanged) {
+                    io.to(roomId).emit('bossMarked', room.bossElementMark
+                        ? { element: room.bossElementMark.element, charges: room.bossElementMark.charges }
+                        : { element: null, charges: 0 });
                 }
             }
         }

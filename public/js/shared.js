@@ -272,32 +272,80 @@ const MONSTERS = {
         attackDamage: 5,
         attackCooldown: 3000,
         telegraphMs: 400
+    },
+    // A backline archer: hangs back at range and pokes for less, but has very
+    // little health of its own -- meant to be mixed in behind cake_slices.
+    chocolate_cake_slice: {
+        name: '초콜릿 케이크 조각',
+        color: '#6b4226',
+        health: 10,
+        speed: 2,
+        aggroRange: 500,
+        preferredDistance: 220, // hangs back rather than closing to melee range
+        attackRange: 280,
+        attackDamage: 2,
+        attackCooldown: 3000,
+        telegraphMs: 500
     }
 };
 
-// Story-mode floor layouts. Floor 1 is a long bridge stretching left from the
-// start (x=0). All 5 monsters are clustered together in one room between
-// arenaEntranceX and arenaExitX; once the player enters, an energy shield
-// seals both gates (see server's storyPlayerMove handler) until every
-// monster in the room is dead. The star sits just past the (now-open) exit
-// gate -- attacking it clears the floor.
-// Only floor 1 has content so far -- floors 2+ exist in STORY_FLOOR_DEFS.
+// Story-mode floor layouts. Each floor is a bridge stretching left from the
+// start (x=0). A floor is split into one or more sequential "rooms" (see
+// `gates`); monsters are tagged with the room they belong to (`room`, default
+// 0). While any monster in a room is still alive, an energy shield seals that
+// room's entranceX/exitX (see server's storyPlayerMove handler) so the player
+// can't retreat or advance past it. The star sits just past the last gate --
+// attacking it clears the floor.
 const STORY_FLOOR_DEFS = {
     1: {
         levelType: 'bridge',
         levelLength: 1750, // how far the bridge extends to the left of the start
         laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
         recommendedPower: 500, // shown on the tower's floor-select screen
-        arenaEntranceX: -900, // shield seals here (blocks retreat) once monsters are engaged
-        arenaExitX: -1500, // shield here blocks progress until the room is cleared
+        gates: [
+            { entranceX: -900, exitX: -1500, room: 0 }
+        ],
         monsters: [
-            { type: 'cake_slice', x: -1050, y: -35 },
-            { type: 'cake_slice', x: -1050, y: 35 },
-            { type: 'cake_slice', x: -1200, y: 0 },
-            { type: 'cake_slice', x: -1350, y: -35 },
-            { type: 'cake_slice', x: -1350, y: 35 }
+            { type: 'cake_slice', x: -1050, y: -35, room: 0 },
+            { type: 'cake_slice', x: -1050, y: 35, room: 0 },
+            { type: 'cake_slice', x: -1200, y: 0, room: 0 },
+            { type: 'cake_slice', x: -1350, y: -35, room: 0 },
+            { type: 'cake_slice', x: -1350, y: 35, room: 0 }
         ],
         star: { x: -1620, y: 0 } // right past the exit gate, no long walk after clearing
+    },
+    // Two rooms back to back: a mixed front-line/archer room, then a bend in
+    // the bridge into a second room packed with 10 archers. Both are cleared
+    // in sequence before the star (see the `gates` array -- room 1's entrance
+    // is room 0's exit, so the shield only ever blocks the room you're in).
+    2: {
+        levelType: 'bridge',
+        levelLength: 2600,
+        laneHalfWidth: 70,
+        recommendedPower: 600,
+        gates: [
+            { entranceX: -700, exitX: -1150, room: 0 },
+            { entranceX: -1150, exitX: -2450, room: 1 }
+        ],
+        monsters: [
+            // Room 0: 3 cake_slices up front, a chocolate archer behind them.
+            { type: 'cake_slice', x: -850, y: -35, room: 0 },
+            { type: 'cake_slice', x: -850, y: 0, room: 0 },
+            { type: 'cake_slice', x: -850, y: 35, room: 0 },
+            { type: 'chocolate_cake_slice', x: -1050, y: 0, room: 0 },
+            // Room 1: 10 chocolate archers.
+            { type: 'chocolate_cake_slice', x: -1750, y: -50, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1750, y: -15, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1750, y: 15, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1750, y: 50, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1950, y: -60, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1950, y: -20, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1950, y: 20, room: 1 },
+            { type: 'chocolate_cake_slice', x: -1950, y: 60, room: 1 },
+            { type: 'chocolate_cake_slice', x: -2150, y: -30, room: 1 },
+            { type: 'chocolate_cake_slice', x: -2150, y: 30, room: 1 }
+        ],
+        star: { x: -2570, y: 0 }
     }
 };
 
