@@ -274,6 +274,15 @@ function describeAbility(stats, kind) {
 
 const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑' };
 
+// Split-color icon background so similarly-colored cookies stay tellable
+// apart at a glance -- a hard 50/50 split, not a blend.
+function charIconBackground(stats) {
+    if (stats.colorLeft && stats.colorRight) {
+        return `linear-gradient(90deg, ${stats.colorLeft} 50%, ${stats.colorRight} 50%)`;
+    }
+    return stats.color;
+}
+
 function selectCharDetailAbility(kind) {
     const stats = SHARED.CHARACTERS[viewingCharacterId];
     charDetailDesc.textContent = describeAbility(stats, kind);
@@ -372,7 +381,7 @@ let viewingCharacterId = null;
 function openCharacterDetail(id) {
     viewingCharacterId = id;
     const stats = SHARED.CHARACTERS[id];
-    charDetailIcon.style.background = stats.color;
+    charDetailIcon.style.background = charIconBackground(stats);
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
@@ -506,7 +515,7 @@ function renderTower() {
     const floorDef = SHARED.STORY_FLOOR_DEFS[selectedStoryFloor];
     towerFloorPower.textContent = (floorDef && floorDef.recommendedPower) || '미정';
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
-    towerCharIcon.style.background = stats.color;
+    towerCharIcon.style.background = charIconBackground(stats);
     towerCharName.textContent = stats.name;
     towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor);
 }
@@ -1027,7 +1036,7 @@ let searchTimerHandle = null;
 
 function updateDetailCharPreview() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
-    detailCharIcon.style.background = stats.color;
+    detailCharIcon.style.background = charIconBackground(stats);
     detailCharName.textContent = stats.name;
 }
 
@@ -1133,7 +1142,7 @@ socket.on('raidRoomUpdate', (data) => {
         const partnerEntry = Object.entries(data.players).find(([id]) => id !== socket.id);
         if (partnerEntry) {
             const pStats = SHARED.CHARACTERS[partnerEntry[1].charType] || SHARED.CHARACTERS.kicker;
-            detailPartnerIcon.style.background = pStats.color;
+            detailPartnerIcon.style.background = charIconBackground(pStats);
             detailPartnerName.textContent = pStats.name;
             detailPartnerPreview.classList.remove('hidden');
         }

@@ -14,6 +14,8 @@ const CHARACTERS = {
         name: '자두맛 쿠키',
         shortName: '쿠키', // shown on the lobby's character-select button
         color: '#3498db',
+        colorLeft: '#ff6b9d', // pink
+        colorRight: '#e74c3c', // red
         grade: '일반',
         element: '바람',
         role: '힐러',
@@ -39,6 +41,8 @@ const CHARACTERS = {
         name: '자색 고구마맛 쿠키',
         shortName: '고구마', // shown on the lobby's character-select button
         color: '#8e44ad',
+        colorLeft: '#f1c40f', // yellow
+        colorRight: '#8e44ad', // purple
         grade: '희귀',
         element: '어둠',
         role: '대미지 딜러',
@@ -63,6 +67,8 @@ const CHARACTERS = {
         name: '시금치맛 쿠키',
         shortName: '시금치', // shown on the lobby's character-select button
         color: '#27ae60',
+        colorLeft: '#e74c3c', // red
+        colorRight: '#27ae60', // green
         grade: '일반',
         element: '바람',
         role: '힐러',
@@ -91,6 +97,8 @@ const CHARACTERS = {
         name: '레드 드레곤맛 쿠키',
         shortName: '드레곤', // shown on the lobby's character-select button
         color: '#c0392b',
+        colorLeft: '#3498db', // blue
+        colorRight: '#e74c3c', // red
         grade: '에픽',
         element: '불',
         role: '탱커',
@@ -118,6 +126,8 @@ const CHARACTERS = {
         name: '화산맛 쿠키',
         shortName: '화산', // shown on the lobby's character-select button
         color: '#d35400',
+        colorLeft: '#3498db', // blue
+        colorRight: '#e67e22', // orange
         grade: '에픽',
         element: '불',
         role: '대미지 딜러',
@@ -149,6 +159,8 @@ const CHARACTERS = {
         name: '청사과맛 쿠키',
         shortName: '청사과', // shown on the lobby's character-select button
         color: '#8bc34a',
+        colorLeft: '#f1c40f', // yellow
+        colorRight: '#2ecc71', // green
         grade: '희귀',
         element: '바람',
         role: '스트라이커',
