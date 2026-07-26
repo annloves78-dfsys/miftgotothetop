@@ -318,16 +318,27 @@ html, body {
     color: #95a5a6;
 }
 
+/* Three columns: soul stones on the left, the (widest) pull area in the middle,
+   pull buttons stacked vertically on the right. The odds strip sits above,
+   centred, outside this row. */
+.gacha-pull-layout {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    width: 96vw;
+    max-width: 1360px;
+    margin: 14px 0;
+}
+
 .gacha-result {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    align-items: center;
+    align-content: center;
     justify-content: center;
-    width: 760px;
-    max-width: 94vw;
-    min-height: 150px;
-    margin: 18px 0;
+    flex: 1;
+    min-width: 0;
+    min-height: 340px;
     padding: 16px;
     background: #1a1f2b;
     border: 2px solid #34495e;
@@ -384,7 +395,11 @@ html, body {
 
 .gacha-pull-actions {
     display: flex;
+    flex-direction: column;
+    justify-content: center;
     gap: 14px;
+    width: 150px;
+    flex-shrink: 0;
 }
 
 /* .play-btn is absolutely positioned for the lobby's floating play button, so
@@ -392,13 +407,14 @@ html, body {
    last one would be visible. */
 #gacha-pull-screen .play-btn {
     position: static;
-    width: auto;
+    width: 100%; /* fills the vertical button column so both match */
 }
 
 .gacha-soul-section {
-    width: 760px;
-    max-width: 94vw;
-    margin-top: 20px;
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .gacha-soul-header {
@@ -412,8 +428,11 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 30vh;
+    flex: 1;
+    min-height: 0;
+    max-height: 340px;
     overflow-y: auto;
+    padding-right: 2px;
 }
 
 .gacha-soul-row {
@@ -485,15 +504,16 @@ html, body {
 }
 
 .gacha-odds-section {
-    width: 760px;
-    max-width: 94vw;
-    margin-top: 16px;
+    width: 96vw;
+    max-width: 1360px;
+    margin-top: 4px;
 }
 
 .gacha-odds-list {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 10px;
+    justify-content: center;
 }
 
 .gacha-odds-row {
@@ -1426,11 +1446,42 @@ body.mc-on .gacha-banner-name {
     font-size: 15px;
 }
 
-body.mc-on .gacha-result {
-    min-height: 104px;
-    padding: 10px;
+/* The three-column pull layout is too wide for a phone: keep the soul list and
+   the pull buttons side by side under a full-width result area. */
+body.mc-on .gacha-pull-layout {
+    flex-wrap: wrap;
+    width: 98vw;
     gap: 8px;
-    margin: 12px 0;
+    margin: 8px 0;
+}
+
+body.mc-on .gacha-result {
+    order: -1;
+    flex-basis: 100%;
+    min-height: 108px;
+    padding: 8px;
+    gap: 6px;
+}
+
+body.mc-on .gacha-soul-section {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+}
+
+body.mc-on .gacha-soul-list {
+    max-height: 20vh;
+}
+
+body.mc-on .gacha-pull-actions {
+    width: auto;
+    flex-direction: row;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+body.mc-on #gacha-pull-screen .play-btn {
+    width: auto; /* back to content width now that they sit in a row */
 }
 
 body.mc-on .gacha-card {
@@ -1448,13 +1499,8 @@ body.mc-on .gacha-card-name {
     font-size: 11px;
 }
 
-body.mc-on .gacha-soul-list {
-    max-height: 22vh;
-}
-
-body.mc-on .gacha-soul-section,
 body.mc-on .gacha-odds-section {
-    margin-top: 10px;
+    margin-top: 2px;
 }
 
 body.mc-on .gacha-odds-row {

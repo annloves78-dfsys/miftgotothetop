@@ -556,14 +556,12 @@ function fireAimedAttack(angle, isStory) {
     if (isStory) {
         if (!storyPlayer || !storyPlayer.alive) return;
         if (angle !== null) storyPlayer.facing = angle;
-        if (isStoryTargetingUltimate) { confirmStoryUltimateTarget(); return; }
         socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
         tryStoryAttack();
     } else {
         const me = players[socket.id];
         if (!me || !me.alive) return;
         if (angle !== null) me.facing = angle;
-        if (isTargetingUltimate) { confirmUltimateTarget(); return; }
         socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
         tryAttack();
     }
@@ -1130,16 +1128,6 @@ storyCanvas.addEventListener('mousedown', (e) => {
         tryStoryUseSkill();
     }
 });
-// Targeted ultimates (targeted_aoe / magma_zone) need a world position, which
-// on desktop comes from the mouse. On touch, tapping the canvas both sets that
-// position and confirms the cast.
-storyCanvas.addEventListener('pointerdown', (e) => {
-    if (!mobileControlsEnabled || e.pointerType === 'mouse') return;
-    const rect = storyCanvas.getBoundingClientRect();
-    storyMouseX = (e.clientX - rect.left) * (storyCanvas.width / rect.width);
-    storyMouseY = (e.clientY - rect.top) * (storyCanvas.height / rect.height);
-    if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
-});
 
 function storyWorldFromMouse() {
     const camX = storyPlayer ? storyPlayer.x : 0;
@@ -1184,7 +1172,15 @@ function tryStoryUseUltimate() {
 function storyHandleUltimateKey() {
     if (!storyPlayer) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    if (stats.ultimateType === 'targeted_aoe' || stats.ultimateType === 'magma_zone') {
+    if (isTargetedUltimate(stats.ultimateType)) {
+        if (mobileControlsEnabled) {
+            // See mobileUltimateTarget: cast straight ahead, no mouse needed.
+            if (!storyCanUseUltimate(performance.now())) return;
+            storyPlayer.lastUltimateClientTime = performance.now();
+            socket.emit('storyPlayerUltimate',
+                mobileUltimateTarget(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats));
+            return;
+        }
         if (isStoryTargetingUltimate) { isStoryTargetingUltimate = false; return; }
         if (!storyCanUseUltimate(performance.now())) return;
         isStoryTargetingUltimate = true;
@@ -1916,14 +1912,6 @@ canvas.addEventListener('mousemove', (e) => {
     mouseX = (e.clientX - rect.left) * scaleX;
     mouseY = (e.clientY - rect.top) * scaleY;
 });
-// Tap-to-place for targeted ultimates on touch; see the story-mode twin.
-canvas.addEventListener('pointerdown', (e) => {
-    if (!mobileControlsEnabled || e.pointerType === 'mouse') return;
-    const rect = canvas.getBoundingClientRect();
-    mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
-    mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
-    if (isTargetingUltimate) confirmUltimateTarget();
-});
 
 // The canvas buffer is resized to fill the viewport (see resizeGameCanvas),
 // so screen/world conversion needs to account for the resulting scale factor
@@ -1969,12 +1957,31 @@ function tryUseUltimate() {
     socket.emit('playerUltimate');
 }
 
+function isTargetedUltimate(type) {
+    return type === 'targeted_aoe' || type === 'magma_zone';
+}
+
+// Touch has no mouse to place a zone with, so instead of arming a targeting
+// mode the zone is dropped straight ahead of the player -- aim by facing first
+// (either stick sets facing), then tap the ultimate. Offset by the zone's own
+// radius so its near edge sits about on the player.
+function mobileUltimateTarget(x, y, facing, stats) {
+    const dist = stats.ultimateRadius || 90;
+    return { targetX: x + Math.cos(facing) * dist, targetY: y + Math.sin(facing) * dist };
+}
+
 // F does different things depending on the character: instant cast for
 // heal-over-time, or arm targeting mode for a click-to-place AOE.
 function handleUltimateKey() {
     const me = players[socket.id];
     if (!me) return;
-    if (me.stats.ultimateType === 'targeted_aoe' || me.stats.ultimateType === 'magma_zone') {
+    if (isTargetedUltimate(me.stats.ultimateType)) {
+        if (mobileControlsEnabled) {
+            if (!me.canUseUltimate(performance.now())) return;
+            me.markUltimateUsed();
+            socket.emit('playerUltimate', mobileUltimateTarget(me.x, me.y, me.facing, me.stats));
+            return;
+        }
         if (isTargetingUltimate) { isTargetingUltimate = false; return; } // F again cancels
         if (!me.canUseUltimate(performance.now())) return;
         isTargetingUltimate = true;
