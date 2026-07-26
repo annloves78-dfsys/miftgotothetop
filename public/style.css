@@ -842,6 +842,7 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-width: 0; /* long cookie names must shrink, not squeeze out the stats */
 }
 
 .cd-header-right {
@@ -849,6 +850,7 @@ html, body {
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
+    flex-shrink: 0; /* power + atk/hp stay fully visible on narrow screens */
 }
 
 .cd-mini-stats {
@@ -1174,33 +1176,38 @@ html, body {
 }
 
 .mc-skill {
-    top: 0;
+    top: 6px;
     left: 0;
     width: 58px;
     height: 58px;
     font-size: 24px;
 }
 
-.mc-ultimate {
-    top: 0;
-    right: 0;
-    width: 58px;
-    height: 58px;
-    font-size: 24px;
-    border-color: rgba(231, 76, 60, 0.8);
-}
-
-/* The attack control: an aim joystick rather than a plain button. Drag to pick
-   a direction, release to swing that way. */
-.mc-aim-zone {
-    position: absolute;
+/* The attack button auto-aims at the nearest target, so it stays a plain (and
+   large, easy to hit) button. */
+.mc-attack {
     right: 8px;
     bottom: 0;
-    width: 96px;
-    height: 96px;
+    width: 84px;
+    height: 84px;
+    font-size: 30px;
+}
+
+/* The ultimate control is a joystick: drag it to choose where a targeted
+   ultimate lands, release to cast. */
+.mc-aim-zone {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 76px;
+    height: 76px;
     pointer-events: auto;
     touch-action: none;
     cursor: pointer;
+}
+
+.mc-aim-zone.recharging {
+    opacity: 0.45;
 }
 
 .mc-aim-base {
@@ -1284,22 +1291,28 @@ body.mc-on .mc-actions {
     bottom: 16px;
 }
 
-body.mc-on .mc-skill,
-body.mc-on .mc-ultimate {
+body.mc-on .mc-skill {
     width: 48px;
     height: 48px;
     font-size: 20px;
 }
 
+body.mc-on .mc-attack {
+    width: 72px;
+    height: 72px;
+    right: 6px;
+    font-size: 26px;
+}
+
 body.mc-on .mc-aim-zone {
-    width: 82px;
-    height: 82px;
+    width: 66px;
+    height: 66px;
 }
 
 body.mc-on .mc-aim-thumb {
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
 }
 
 /* In-fight HUD */
@@ -1392,14 +1405,26 @@ body.mc-on .boss-card .icon.char-swatch {
 }
 
 /* Character detail */
+/* The "← 뒤로" corner button is absolutely positioned over the screen (z-index
+   5), so on a phone -- where the panel grows to nearly full height -- it lands
+   on top of the header and hid the grade badge. Reserve room above the header
+   for it. */
 body.mc-on .cd-panel {
-    height: 90vh;
-    padding: 14px 16px;
+    height: 88vh;
+    padding: 48px 16px 14px;
+    gap: 10px;
+}
+
+body.mc-on .cd-mini-stats {
     gap: 10px;
 }
 
 body.mc-on .cd-name {
     font-size: 19px;
+    max-width: 46vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 body.mc-on .cd-power {

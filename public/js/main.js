@@ -494,32 +494,78 @@ function mcTap(el, handler) {
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); handler(); });
 }
 mcTap(mcSkillFightEl, () => tryUseSkill());
-mcTap(mcUltimateFightEl, () => handleUltimateKey());
 mcTap(mcSkillStoryEl, () => tryStoryUseSkill());
-mcTap(mcUltimateStoryEl, () => storyHandleUltimateKey());
 
-// The attack control is a second joystick: drag it to aim, release to swing in
-// that direction. A plain tap (never leaving the dead zone) just attacks the way
-// the character is already facing. While held, aiming overrides the movement
-// stick's facing -- standard twin-stick behaviour.
-let aimFacing = null;
-let storyAimFacing = null;
+// Aiming by hand on a touchscreen is fiddly, so the attack button auto-aims:
+// it snaps the character to face the nearest live target before swinging.
+// Returns the chosen angle, or null when there's nothing to aim at (then the
+// current facing is kept).
+function nearestTargetAngle(x, y, isStory) {
+    if (!isStory) return Math.atan2(-y, -x); // boss raid: the boss is always at the origin
+    let best = null, bestDist = Infinity;
+    for (const m of Object.values(storyMonsters)) {
+        if (!m.alive) continue;
+        const d = Math.hypot(m.x - x, m.y - y);
+        if (d < bestDist) { bestDist = d; best = m; }
+    }
+    return best ? Math.atan2(best.y - y, best.x - x) : null;
+}
 
-function setupAimJoystick(zoneEl, isStory) {
+// The server judges hits against the facing it last received, so the auto-aimed
+// facing has to reach it BEFORE the attack does.
+function fireAutoAimedAttack(isStory) {
+    if (isStory) {
+        if (!storyPlayer || !storyPlayer.alive) return;
+        const angle = nearestTargetAngle(storyPlayer.x, storyPlayer.y, true);
+        if (angle !== null) storyPlayer.facing = angle;
+        socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
+        tryStoryAttack();
+    } else {
+        const me = players[socket.id];
+        if (!me || !me.alive) return;
+        const angle = nearestTargetAngle(me.x, me.y, false);
+        if (angle !== null) me.facing = angle;
+        socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
+        tryAttack();
+    }
+}
+mcTap(mcAttackFightEl, () => fireAutoAimedAttack(false));
+mcTap(mcAttackStoryEl, () => fireAutoAimedAttack(true));
+
+// The ultimate control is a joystick for the cookies whose ultimate needs a
+// position (targeted_aoe / magma_zone): drag to pick where it lands, release to
+// cast. For every other cookie it behaves as a plain button. `ultimateAim` is
+// the current push as a fraction of the stick's travel, which maps to distance.
+let ultimateAim = null;        // {angle, mag} | null -- boss raid
+let storyUltimateAim = null;   // {angle, mag} | null -- story
+const ULTIMATE_AIM_MAX_RANGE = 260; // px at full stick deflection
+
+function ultimateNeedsAim(isStory) {
+    if (isStory) {
+        if (!storyPlayer) return false;
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        return isTargetedUltimate(stats.ultimateType);
+    }
+    const me = players[socket.id];
+    return !!me && isTargetedUltimate(me.stats.ultimateType);
+}
+
+function setupUltimateJoystick(zoneEl, isStory) {
     const thumbEl = zoneEl.querySelector('.mc-aim-thumb');
-    const maxR = 34;
+    const maxR = 30;
     let activePointerId = null;
     let originX = 0, originY = 0;
-    let angle = null;
+    let aim = null;
 
     function update(clientX, clientY) {
         let dx = clientX - originX;
         let dy = clientY - originY;
         const dist = Math.hypot(dx, dy);
+        const clamped = Math.min(dist, maxR);
         if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
         thumbEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        angle = dist > 8 ? Math.atan2(dy, dx) : null; // small wobble stays a tap
-        if (isStory) storyAimFacing = angle; else aimFacing = angle;
+        aim = dist > 6 ? { angle: Math.atan2(dy, dx), mag: clamped / maxR } : null;
+        if (isStory) storyUltimateAim = aim; else ultimateAim = aim;
     }
 
     zoneEl.addEventListener('pointerdown', (e) => {
@@ -529,11 +575,17 @@ function setupAimJoystick(zoneEl, isStory) {
         const rect = zoneEl.getBoundingClientRect();
         originX = rect.left + rect.width / 2;
         originY = rect.top + rect.height / 2;
-        zoneEl.classList.add('aiming');
-        update(e.clientX, e.clientY);
+        // Only show the aiming preview for ultimates that actually take a spot,
+        // and only while it's off cooldown.
+        if (ultimateNeedsAim(isStory) && (isStory ? storyCanUseUltimate(performance.now())
+                                                 : !!players[socket.id] && players[socket.id].canUseUltimate(performance.now()))) {
+            zoneEl.classList.add('aiming');
+            update(e.clientX, e.clientY);
+        }
     });
     zoneEl.addEventListener('pointermove', (e) => {
         if (e.pointerId !== activePointerId) return;
+        if (!zoneEl.classList.contains('aiming')) return;
         update(e.clientX, e.clientY);
     });
     function release(e) {
@@ -541,34 +593,68 @@ function setupAimJoystick(zoneEl, isStory) {
         activePointerId = null;
         thumbEl.style.transform = 'translate(-50%, -50%)';
         zoneEl.classList.remove('aiming');
-        fireAimedAttack(angle, isStory);
-        angle = null;
-        if (isStory) storyAimFacing = null; else aimFacing = null;
+        castUltimateFromStick(aim, isStory);
+        aim = null;
+        if (isStory) storyUltimateAim = null; else ultimateAim = null;
     }
     zoneEl.addEventListener('pointerup', release);
     zoneEl.addEventListener('pointercancel', release);
 }
 
-// Commits the aimed facing to the server BEFORE the attack, since the server
-// judges hits against the facing it last received -- otherwise a fast
-// aim-and-release would swing in the previous direction.
-function fireAimedAttack(angle, isStory) {
+// Where a stick push lands the zone. A tap (no push) drops it just ahead of the
+// player, matching mobileUltimateTarget.
+// Dashed landing circle for a targeted ultimate. Passing the caster's position
+// also draws a guide line from them to the spot, which is what makes the
+// stick-aimed cast readable.
+function drawUltimatePreview(c, x, y, radius, fromX, fromY) {
+    c.save();
+    c.setLineDash([8, 6]);
+    if (fromX !== undefined) {
+        c.beginPath();
+        c.moveTo(fromX, fromY);
+        c.lineTo(x, y);
+        c.strokeStyle = 'rgba(142, 68, 173, 0.55)';
+        c.lineWidth = 2;
+        c.stroke();
+    }
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+    c.lineWidth = 2;
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = 'rgba(142, 68, 173, 0.15)';
+    c.fill();
+    c.restore();
+}
+
+function ultimateAimPoint(x, y, facing, stats, aim) {
+    if (!aim) return mobileUltimateTarget(x, y, facing, stats);
+    const dist = Math.max(stats.ultimateRadius || 90, aim.mag * ULTIMATE_AIM_MAX_RANGE);
+    return { targetX: x + Math.cos(aim.angle) * dist, targetY: y + Math.sin(aim.angle) * dist };
+}
+
+function castUltimateFromStick(aim, isStory) {
     if (isStory) {
-        if (!storyPlayer || !storyPlayer.alive) return;
-        if (angle !== null) storyPlayer.facing = angle;
-        socket.emit('storyPlayerMove', { x: storyPlayer.x, y: storyPlayer.y, facing: storyPlayer.facing });
-        tryStoryAttack();
+        if (!storyPlayer) return;
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        if (!isTargetedUltimate(stats.ultimateType)) { storyHandleUltimateKey(); return; }
+        if (!storyCanUseUltimate(performance.now())) return;
+        storyPlayer.lastUltimateClientTime = performance.now();
+        socket.emit('storyPlayerUltimate',
+            ultimateAimPoint(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats, aim));
     } else {
         const me = players[socket.id];
-        if (!me || !me.alive) return;
-        if (angle !== null) me.facing = angle;
-        socket.emit('playerMove', { x: me.x, y: me.y, facing: me.facing });
-        tryAttack();
+        if (!me) return;
+        if (!isTargetedUltimate(me.stats.ultimateType)) { handleUltimateKey(); return; }
+        if (!me.canUseUltimate(performance.now())) return;
+        me.markUltimateUsed();
+        socket.emit('playerUltimate', ultimateAimPoint(me.x, me.y, me.facing, me.stats, aim));
     }
 }
 
-setupAimJoystick(mcAttackFightEl, false);
-setupAimJoystick(mcAttackStoryEl, true);
+setupUltimateJoystick(mcUltimateFightEl, false);
+setupUltimateJoystick(mcUltimateStoryEl, true);
 
 // Buttons show the selected cookie's own ability icons, matching the icon row
 // on the character detail screen.
@@ -579,13 +665,14 @@ function syncMobileButtonIcons(charType, isStory) {
     const ultEl = isStory ? mcUltimateStoryEl : mcUltimateFightEl;
     const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
     const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
-    // The attack control is an aim joystick, so its icon lives on the thumb --
-    // writing to the zone itself would wipe the base/thumb elements.
-    attackEl.querySelector('.mc-aim-thumb').textContent = SKILL_ICONS[stats.attackType] || '⚔';
+    attackEl.textContent = SKILL_ICONS[stats.attackType] || '⚔';
     skillEl.textContent = SKILL_ICONS[stats.skillType] || '🌀';
-    ultEl.textContent = SKILL_ICONS[stats.ultimateType] || '🔥';
     skillEl.appendChild(cdSkill);
-    ultEl.appendChild(cdUlt);
+    // The ultimate control is an aim joystick, so its icon lives on the thumb --
+    // writing to the zone itself would wipe the base/thumb elements.
+    const ultThumb = ultEl.querySelector('.mc-aim-thumb');
+    ultThumb.textContent = SKILL_ICONS[stats.ultimateType] || '🔥';
+    ultThumb.appendChild(cdUlt);
 }
 
 // Mirrors the text cooldown readouts into the buttons themselves, and dims a
@@ -1269,8 +1356,7 @@ function storyFrame() {
             storyPlayer.x = nx; storyPlayer.y = ny;
         }
         if (mobileControlsEnabled) {
-            if (storyAimFacing !== null) storyPlayer.facing = storyAimFacing;
-            else if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
+            if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
         } else if (storyMouseX !== null) {
             const world = storyWorldFromMouse();
             storyPlayer.facing = Math.atan2(world.y - storyPlayer.y, world.x - storyPlayer.x);
@@ -1521,13 +1607,14 @@ function storyRender(now) {
     if (isStoryTargetingUltimate && storyMouseX !== null && storyPlayer) {
         const world = storyWorldFromMouse();
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        storyCtx.beginPath();
-        storyCtx.setLineDash([8, 6]);
-        storyCtx.arc(world.x, world.y, stats.ultimateRadius || 90, 0, Math.PI * 2);
-        storyCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
-        storyCtx.lineWidth = 2;
-        storyCtx.stroke();
-        storyCtx.setLineDash([]);
+        drawUltimatePreview(storyCtx, world.x, world.y, stats.ultimateRadius || 90);
+    }
+
+    // Live preview while the ultimate stick is being pushed on touch.
+    if (storyUltimateAim && storyPlayer) {
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        const pt = ultimateAimPoint(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats, storyUltimateAim);
+        drawUltimatePreview(storyCtx, pt.targetX, pt.targetY, stats.ultimateRadius || 90, storyPlayer.x, storyPlayer.y);
     }
 
     storyCtx.restore();
@@ -2016,10 +2103,9 @@ function frame() {
     if (me) {
         me.updateLocal(keys);
         if (mobileControlsEnabled) {
-            // No mouse on touch: the aim stick wins while held, otherwise face
-            // the way the movement stick is pushed.
-            if (aimFacing !== null) me.facing = aimFacing;
-            else if (joystickFacing !== null) me.facing = joystickFacing;
+            // No mouse on touch -- face the way the movement stick is pushed.
+            // The attack button auto-aims separately (see fireAutoAimedAttack).
+            if (joystickFacing !== null) me.facing = joystickFacing;
         } else if (mouseX !== null) {
             const world = screenToWorld(mouseX, mouseY);
             me.aimAt(world.x, world.y);
@@ -2088,15 +2174,17 @@ function render(now) {
 
     if (isTargetingUltimate && mouseX !== null) {
         const me = players[socket.id];
-        const radius = me ? me.stats.ultimateRadius : 90;
         const world = screenToWorld(mouseX, mouseY);
-        ctx.beginPath();
-        ctx.setLineDash([8, 6]);
-        ctx.arc(world.x, world.y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.setLineDash([]);
+        drawUltimatePreview(ctx, world.x, world.y, me ? me.stats.ultimateRadius : 90);
+    }
+
+    // Live preview while the ultimate stick is being pushed on touch.
+    if (ultimateAim) {
+        const me = players[socket.id];
+        if (me) {
+            const pt = ultimateAimPoint(me.x, me.y, me.facing, me.stats, ultimateAim);
+            drawUltimatePreview(ctx, pt.targetX, pt.targetY, me.stats.ultimateRadius || 90, me.x, me.y);
+        }
     }
 
     ctx.restore();
