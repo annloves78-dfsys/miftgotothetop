@@ -30,6 +30,8 @@ function showScreen(name) {
 const playBtn = document.getElementById('play-btn');
 const characterSelectBtn = document.getElementById('character-select-btn');
 const selectedCharNameEl = document.getElementById('selected-char-name');
+const lobbyCharBody = document.getElementById('lobby-char-body');
+const lobbyCharName = document.getElementById('lobby-char-name');
 const characterListEl = document.getElementById('character-list');
 const backFromCharacterBtn = document.getElementById('back-from-character-btn');
 const backFromModeBtn = document.getElementById('back-from-mode-btn');
@@ -897,9 +899,13 @@ function syncMobileCooldowns(skillRemain, ultRemain, isStory) {
 }
 
 // ---- Character select ----
+// Keeps both places the selection is shown in sync: the lobby's bottom-left
+// button and the lobby centrepiece.
 function updateSelectedCharLabel() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     selectedCharNameEl.textContent = stats.shortName || stats.name;
+    lobbyCharBody.style.background = charIconBackground(stats);
+    lobbyCharName.textContent = stats.name;
 }
 updateSelectedCharLabel();
 
@@ -1629,6 +1635,11 @@ function storyFrame() {
         }
         if (mobileControlsEnabled) {
             if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
+        } else if (autoAimEnabled) {
+            // See the matching branch in frame(): the aim has to be held every
+            // frame, not just set on the click, or this loop overwrites it.
+            const angle = nearestTargetAngle(storyPlayer.x, storyPlayer.y, true);
+            if (angle !== null) storyPlayer.facing = angle;
         } else if (storyMouseX !== null) {
             const world = storyWorldFromMouse();
             storyPlayer.facing = Math.atan2(world.y - storyPlayer.y, world.x - storyPlayer.x);
@@ -2447,6 +2458,13 @@ function frame() {
             // No mouse on touch -- face the way the movement stick is pushed.
             // The attack button auto-aims separately (see fireAutoAimedAttack).
             if (joystickFacing !== null) me.facing = joystickFacing;
+        } else if (autoAimEnabled) {
+            // 자동조준: hold the aim on the target every frame. Doing it only at
+            // the moment of the click wasn't enough -- this loop would re-aim at
+            // the mouse on the very next frame, so the swing was drawn (and the
+            // next move emitted) pointing at the cursor again.
+            const angle = nearestTargetAngle(me.x, me.y, false);
+            if (angle !== null) me.facing = angle;
         } else if (mouseX !== null) {
             const world = screenToWorld(mouseX, mouseY);
             me.aimAt(world.x, world.y);

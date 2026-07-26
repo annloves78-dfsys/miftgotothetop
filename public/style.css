@@ -43,140 +43,29 @@ html, body {
     filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.45));
 }
 
-.lobby-tower {
-    position: absolute;
-    left: 50%;
-    bottom: 0;
-    transform: translateX(-50%);
+/* Lobby centrepiece: the currently selected cookie. Drawn with the same hard
+   50/50 colour split its icon and in-game body use (see charIconBackground). */
+.lobby-char {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 18px;
     pointer-events: none;
 }
 
-.tower-body {
-    /* No capped top on purpose -- this tower is lore-infinite, so it fades
-       into the sky instead of ending in a visible roof. */
-    width: 17vw;
-    min-width: 160px;
-    max-width: 240px;
-    height: 92vh;
-    background:
-        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 3px, transparent 3px 22px),
-        repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 3px, transparent 3px 26px),
-        linear-gradient(180deg, #8a7562, #4a3c2f 85%);
-    border-left: 5px solid #3a2f24;
-    border-right: 5px solid #3a2f24;
-    box-shadow: inset 6px 0 10px rgba(0, 0, 0, 0.35), inset -6px 0 10px rgba(0, 0, 0, 0.35);
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    -webkit-mask-image: linear-gradient(to top, black 50%, transparent 92%);
-    mask-image: linear-gradient(to top, black 50%, transparent 92%);
+.lobby-char-body {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    border: 5px solid #f1c40f;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(241, 196, 15, 0.2);
 }
 
-.tower-segment {
-    flex: 1;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom: 4px solid rgba(0, 0, 0, 0.4);
-    box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.07);
-}
-
-.tower-segment::before,
-.tower-segment::after {
-    /* small stone ledge caps poking out at each floor boundary */
-    content: '';
-    position: absolute;
-    bottom: -4px;
-    width: 12px;
-    height: 8px;
-    background: #3a2f24;
-    border-radius: 2px;
-}
-
-.tower-segment::before { left: -9px; }
-.tower-segment::after { right: -9px; }
-
-/* Every other floor gets a wider stone ring band jutting out around the
-   whole tower instead of the small corner ledge caps. */
-.tower-segment:nth-child(2n)::before {
-    display: none;
-}
-.tower-segment:nth-child(2n)::after {
-    left: -18px;
-    right: -18px;
-    width: auto;
-    height: 12px;
-    bottom: -6px;
-    background: linear-gradient(180deg, #6b5847, #2e241c);
-    border-radius: 3px;
-    box-shadow: 0 5px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.tower-window {
-    position: relative;
-    width: 34%;
-    aspect-ratio: 2 / 3;
-    background: radial-gradient(circle at 50% 35%, #fff3c4, #f1c40f 70%);
-    opacity: 0.7;
-    border-radius: 50% 50% 8% 8%;
-    box-shadow: 0 0 16px rgba(241, 196, 15, 0.55), inset 0 -4px 6px rgba(0, 0, 0, 0.25);
-}
-
-.tower-window::before {
-    /* small stone awning jutting out above each window */
-    content: '';
-    position: absolute;
-    top: -9px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 9px solid transparent;
-    border-right: 9px solid transparent;
-    border-bottom: 7px solid #2e241c;
-    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
-}
-
-.tower-buttress {
-    position: absolute;
-    bottom: 0;
-    width: 30px;
-    height: 24%;
-    background: linear-gradient(180deg, #6b5847, #2e241c);
-    box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.45);
-}
-
-.tower-buttress.left {
-    left: -26px;
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
-}
-
-.tower-buttress.right {
-    right: -26px;
-    clip-path: polygon(0 0, 100% 100%, 0 100%);
-}
-
-.tower-base {
-    width: 130%;
-    height: 34px;
-    background:
-        repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0 3px, transparent 3px 28px),
-        #3a2f24;
-    border-radius: 4px;
-    margin-top: -2px;
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.4);
-}
-
-#game-title {
-    font-size: 48px;
-    letter-spacing: 4px;
-    margin-bottom: 40px;
-    color: #f1c40f;
-    text-shadow: 0 0 20px rgba(241, 196, 15, 0.4);
+.lobby-char-name {
+    font-size: 26px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
 }
 
 .play-btn {
@@ -1367,6 +1256,20 @@ body.mc-on h1 {
 
 body.mc-on h2 {
     font-size: 20px;
+}
+
+body.mc-on .lobby-char {
+    gap: 12px;
+}
+
+body.mc-on .lobby-char-body {
+    width: 110px;
+    height: 110px;
+    border-width: 4px;
+}
+
+body.mc-on .lobby-char-name {
+    font-size: 18px;
 }
 
 body.mc-on .play-btn {
