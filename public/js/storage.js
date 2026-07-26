@@ -5,15 +5,23 @@ const defaultData = {
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
     unlockedCharacters: Object.keys(SHARED.CHARACTERS),
-    clearedStoryFloors: []
+    clearedStoryFloors: [],
+    soulStones: {} // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
 };
+
+// `{ ...defaultData }` is a shallow copy, so the nested objects/arrays would be
+// shared with defaultData itself -- mutating gameData.soulStones would then
+// quietly pollute the defaults for any later load in the same session.
+function freshDefaults() {
+    return JSON.parse(JSON.stringify(defaultData));
+}
 
 function loadGameData() {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
             const parsed = JSON.parse(saved);
-            const data = { ...defaultData, ...parsed };
+            const data = { ...freshDefaults(), ...parsed };
             // Saves made before a cookie existed won't have it in their stored
             // unlockedCharacters array (the merge above just keeps the old
             // array) — there's no unlock system yet, so patch every cookie in.
@@ -25,7 +33,7 @@ function loadGameData() {
     } catch (e) {
         console.error("Failed to load save data", e);
     }
-    return { ...defaultData };
+    return freshDefaults();
 }
 
 let cloudSyncHandler = null;
@@ -44,7 +52,7 @@ function saveGameData(data) {
 
 function resetGameData() {
     localStorage.removeItem(STORAGE_KEY);
-    return { ...defaultData };
+    return freshDefaults();
 }
 
 function recordClear(bossId, clearTimeMs) {

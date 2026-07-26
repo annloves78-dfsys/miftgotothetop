@@ -4,6 +4,8 @@ const socket = io();
 const screens = {
     lobby: document.getElementById('lobby-screen'),
     shop: document.getElementById('shop-screen'),
+    gacha: document.getElementById('gacha-screen'),
+    gachaPull: document.getElementById('gacha-pull-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
@@ -47,10 +49,22 @@ const charDetailAwakenSlot = document.getElementById('char-detail-awaken-slot');
 
 // Cookie Run Kingdom-style rarity ladder. From 에이션트 up, cookies get an
 // extra "각성" (awakening) equipment slot above their weapon slot.
-const GRADE_ORDER = ['일반', '희귀', '에픽', '에이션트', '비스트', '게스트'];
+const GRADE_ORDER = ['일반', '희귀', '에픽', '레전더리', '에이션트', '비스트', '게스트'];
 function hasAwakenSlot(grade) {
     const idx = GRADE_ORDER.indexOf(grade);
     return idx >= GRADE_ORDER.indexOf('에이션트');
+}
+// Badge colour per grade; shared by the character detail screen and gacha results.
+const GRADE_CLASSES = {
+    '희귀': 'rare',
+    '에픽': 'epic',
+    '레전더리': 'legendary',
+    '에이션트': 'ancient',
+    '비스트': 'beast',
+    '게스트': 'guest'
+};
+function gradeClass(grade) {
+    return 'grade-badge ' + (GRADE_CLASSES[grade] || 'common');
 }
 const charDetailAttackIcon = document.getElementById('char-detail-attack-icon');
 const charDetailSkillIcon = document.getElementById('char-detail-skill-icon');
@@ -146,7 +160,7 @@ setCloudSyncHandler(syncGameDataToCloud);
 
 async function applyCloudGameData(cloudData) {
     if (cloudData && typeof cloudData === 'object' && Object.keys(cloudData).length > 0) {
-        gameData = { ...defaultData, ...cloudData };
+        gameData = { ...freshDefaults(), ...cloudData };
         Object.keys(SHARED.CHARACTERS).forEach(id => {
             if (!gameData.unlockedCharacters.includes(id)) gameData.unlockedCharacters.push(id);
         });
@@ -559,8 +573,7 @@ function openCharacterDetail(id) {
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
-    const GRADE_CLASSES = { '희귀': 'rare', '에픽': 'epic', '에이션트': 'ancient', '비스트': 'ancient', '게스트': 'ancient' };
-    charDetailGrade.className = 'grade-badge ' + (GRADE_CLASSES[stats.grade] || 'common');
+    charDetailGrade.className = gradeClass(stats.grade);
     charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
@@ -617,6 +630,154 @@ shopBtn.addEventListener('click', () => {
     showScreen('shop');
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- Gacha ----
+const gachaBtn = document.getElementById('gacha-btn');
+const backFromGachaBtn = document.getElementById('back-from-gacha-btn');
+const gachaNormalBtn = document.getElementById('gacha-normal-btn');
+const gachaPullBackBtn = document.getElementById('gacha-pull-back-btn');
+const gachaResultEl = document.getElementById('gacha-result');
+const gachaPull1Btn = document.getElementById('gacha-pull-1-btn');
+const gachaPull10Btn = document.getElementById('gacha-pull-10-btn');
+const gachaSoulListEl = document.getElementById('gacha-soul-list');
+
+// Picks a grade from GACHA_GRADE_WEIGHTS. Walks the cumulative weight rather
+// than assuming they sum to any particular number.
+function pickGachaGrade() {
+    const entries = Object.entries(SHARED.GACHA_GRADE_WEIGHTS);
+    const total = entries.reduce((sum, [, w]) => sum + w, 0);
+    let r = Math.random() * total;
+    for (const [grade, w] of entries) {
+        if (r < w) return grade;
+        r -= w;
+    }
+    return entries[entries.length - 1][0]; // float rounding safety net
+}
+
+function charactersOfGrade(grade) {
+    return Object.keys(SHARED.CHARACTERS).filter(id => SHARED.CHARACTERS[id].grade === grade);
+}
+
+// One pull: soul stone, a cookie, or -- for a grade that has no cookies yet
+// (레전더리/비스트/게스트) -- an "empty grade" result reported honestly rather
+// than silently redrawn, so the real rates stay observable while testing.
+function rollGachaOnce() {
+    if (Math.random() < SHARED.GACHA_SOUL_STONE_RATE) {
+        const ids = Object.keys(SHARED.CHARACTERS);
+        return { kind: 'soul', charType: ids[Math.floor(Math.random() * ids.length)] };
+    }
+    const grade = pickGachaGrade();
+    const pool = charactersOfGrade(grade);
+    if (pool.length === 0) return { kind: 'emptyGrade', grade };
+    return { kind: 'char', grade, charType: pool[Math.floor(Math.random() * pool.length)] };
+}
+
+function applyGachaResults(results) {
+    let changed = false;
+    for (const r of results) {
+        if (r.kind === 'soul') {
+            gameData.soulStones[r.charType] = (gameData.soulStones[r.charType] || 0) + 1;
+            changed = true;
+        } else if (r.kind === 'char' && !gameData.unlockedCharacters.includes(r.charType)) {
+            gameData.unlockedCharacters.push(r.charType);
+            changed = true;
+        }
+    }
+    if (changed) saveGameData(gameData);
+}
+
+function renderGachaResults(results) {
+    gachaResultEl.innerHTML = results.map(r => {
+        if (r.kind === 'emptyGrade') {
+            return `<div class="gacha-card empty-grade">
+                <span class="${gradeClass(r.grade)}">${r.grade}</span>
+                <div class="gacha-card-name">아직 이 등급의 쿠키가 없습니다</div>
+            </div>`;
+        }
+        const stats = SHARED.CHARACTERS[r.charType];
+        if (r.kind === 'soul') {
+            const have = gameData.soulStones[r.charType] || 0;
+            return `<div class="gacha-card soul">
+                <div class="gacha-card-icon soul-icon" style="background: ${charIconBackground(stats)}">💎</div>
+                <div class="gacha-card-name">${stats.name}의 영혼석</div>
+                <div class="gacha-card-sub">${have} / ${SHARED.SOUL_STONES_PER_CHARACTER}</div>
+            </div>`;
+        }
+        return `<div class="gacha-card">
+            <div class="gacha-card-icon" style="background: ${charIconBackground(stats)}"></div>
+            <span class="${gradeClass(stats.grade)}">${stats.grade}</span>
+            <div class="gacha-card-name">${stats.name}</div>
+        </div>`;
+    }).join('');
+}
+
+function renderSoulStones() {
+    const owned = Object.keys(SHARED.CHARACTERS)
+        .map(id => ({ id, count: gameData.soulStones[id] || 0 }))
+        .filter(e => e.count > 0)
+        .sort((a, b) => b.count - a.count);
+    if (owned.length === 0) {
+        gachaSoulListEl.innerHTML = '<p class="gacha-result-empty">아직 모은 영혼석이 없습니다.</p>';
+        return;
+    }
+    const need = SHARED.SOUL_STONES_PER_CHARACTER;
+    gachaSoulListEl.innerHTML = owned.map(({ id, count }) => {
+        const stats = SHARED.CHARACTERS[id];
+        const ready = count >= need;
+        const pct = Math.min(100, (count / need) * 100);
+        return `<div class="gacha-soul-row">
+            <div class="gacha-soul-icon" style="background: ${charIconBackground(stats)}"></div>
+            <div class="gacha-soul-info">
+                <div class="gacha-soul-name">${stats.name}</div>
+                <div class="gacha-soul-bar-bg"><div class="gacha-soul-bar" style="width:${pct}%"></div></div>
+            </div>
+            <div class="gacha-soul-count">${count} / ${need}</div>
+            <button class="gacha-claim-btn" data-char="${id}" ${ready ? '' : 'disabled'}>${ready ? '획득' : '부족'}</button>
+        </div>`;
+    }).join('');
+}
+
+// Spends a full set of one cookie's soul stones to unlock it.
+function claimCharacterFromSoulStones(charType) {
+    const need = SHARED.SOUL_STONES_PER_CHARACTER;
+    const have = gameData.soulStones[charType] || 0;
+    if (have < need) return;
+    gameData.soulStones[charType] = have - need;
+    if (!gameData.unlockedCharacters.includes(charType)) gameData.unlockedCharacters.push(charType);
+    saveGameData(gameData);
+    renderSoulStones();
+    const stats = SHARED.CHARACTERS[charType];
+    gachaResultEl.innerHTML = `<div class="gacha-card">
+        <div class="gacha-card-icon" style="background: ${charIconBackground(stats)}"></div>
+        <span class="${gradeClass(stats.grade)}">${stats.grade}</span>
+        <div class="gacha-card-name">${stats.name} 획득!</div>
+    </div>`;
+}
+
+gachaSoulListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.gacha-claim-btn');
+    if (btn && !btn.disabled) claimCharacterFromSoulStones(btn.dataset.char);
+});
+
+function doGachaPull(count) {
+    const results = [];
+    for (let i = 0; i < count; i++) results.push(rollGachaOnce());
+    applyGachaResults(results);
+    renderGachaResults(results);
+    renderSoulStones();
+}
+
+gachaPull1Btn.addEventListener('click', () => doGachaPull(1));
+gachaPull10Btn.addEventListener('click', () => doGachaPull(10));
+
+gachaBtn.addEventListener('click', () => showScreen('gacha'));
+backFromGachaBtn.addEventListener('click', () => showScreen('lobby'));
+gachaNormalBtn.addEventListener('click', () => {
+    gachaResultEl.innerHTML = '<p class="gacha-result-empty">뽑기 버튼을 눌러보세요.</p>';
+    renderSoulStones();
+    showScreen('gachaPull');
+});
+gachaPullBackBtn.addEventListener('click', () => showScreen('gacha'));
 
 detailChangeCharBtn.addEventListener('click', () => {
     characterReturnScreen = 'bossDetail';

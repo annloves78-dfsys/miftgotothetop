@@ -52,6 +52,7 @@
         <div class="lobby-left-actions">
             <button id="character-select-btn" class="char-select-btn">🧑 <span id="selected-char-name">캐릭터</span></button>
             <button id="shop-btn" class="char-select-btn">🛒 상점</button>
+            <button id="gacha-btn" class="char-select-btn">🎲 뽑기</button>
         </div>
         <button id="play-btn" class="play-btn">▶ 플레이</button>
     </div>
@@ -68,6 +69,59 @@
             <div id="shop-content" class="shop-content"></div>
         </div>
         <button id="back-from-shop-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Gacha: banner list -->
+    <div id="gacha-screen" class="screen hidden">
+        <h2>뽑기</h2>
+        <div class="gacha-banner-list">
+            <button id="gacha-normal-btn" class="gacha-banner">
+                <span class="gacha-banner-icon">🎲</span>
+                <span class="gacha-banner-text">
+                    <span class="gacha-banner-name">일반 뽑기</span>
+                    <span class="gacha-banner-desc">티켓 없이 뽑기 (테스트 중)</span>
+                </span>
+            </button>
+            <button class="gacha-banner locked" disabled>
+                <span class="gacha-banner-icon">🌸</span>
+                <span class="gacha-banner-text">
+                    <span class="gacha-banner-name">시즌 뽑기</span>
+                    <span class="gacha-banner-desc">준비중</span>
+                </span>
+            </button>
+            <button class="gacha-banner locked" disabled>
+                <span class="gacha-banner-icon">😈</span>
+                <span class="gacha-banner-text">
+                    <span class="gacha-banner-name">악마 뽑기</span>
+                    <span class="gacha-banner-desc">준비중</span>
+                </span>
+            </button>
+            <button class="gacha-banner locked" disabled>
+                <span class="gacha-banner-icon">✨</span>
+                <span class="gacha-banner-text">
+                    <span class="gacha-banner-name">에이션트 뽑기</span>
+                    <span class="gacha-banner-desc">준비중</span>
+                </span>
+            </button>
+        </div>
+        <button id="back-from-gacha-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Gacha: normal banner pull -->
+    <div id="gacha-pull-screen" class="screen hidden">
+        <button id="gacha-pull-back-btn" class="back-corner-btn">← 뒤로</button>
+        <h2>일반 뽑기</h2>
+        <div id="gacha-result" class="gacha-result">
+            <p class="gacha-result-empty">뽑기 버튼을 눌러보세요.</p>
+        </div>
+        <div class="gacha-pull-actions">
+            <button id="gacha-pull-1-btn" class="play-btn">1회 뽑기</button>
+            <button id="gacha-pull-10-btn" class="play-btn">10회 뽑기</button>
+        </div>
+        <div class="gacha-soul-section">
+            <div class="gacha-soul-header">보유 영혼석</div>
+            <div id="gacha-soul-list" class="gacha-soul-list"></div>
+        </div>
     </div>
 
     <!-- Login -->

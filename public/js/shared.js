@@ -426,8 +426,26 @@ const STORY_FLOOR_DEFS = {
     }
 };
 
+// Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
+// pulls give a soul stone, and the remainder is a cookie whose grade is drawn
+// from GACHA_GRADE_WEIGHTS. Those weights are percentages *within* that
+// remainder (they sum to 100), so a grade's true rate is
+// weight% * (1 - GACHA_SOUL_STONE_RATE) -- e.g. 일반 = 50% * 70% = 35%.
+const GACHA_SOUL_STONE_RATE = 0.30;
+const GACHA_GRADE_WEIGHTS = {
+    '일반': 50,
+    '희귀': 30,
+    '에픽': 8,
+    '레전더리': 5,
+    '에이션트': 4,
+    '비스트': 2,
+    '게스트': 1
+};
+// Soul stones are tracked per cookie -- 20 of one cookie's stones unlocks it.
+const SOUL_STONES_PER_CHARACTER = 20;
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_RATE, GACHA_GRADE_WEIGHTS, SOUL_STONES_PER_CHARACTER };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_RATE, GACHA_GRADE_WEIGHTS, SOUL_STONES_PER_CHARACTER };
 }
