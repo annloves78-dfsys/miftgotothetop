@@ -290,7 +290,7 @@ const MONSTERS = {
     chocolate_cake_slice: {
         name: '초콜릿 케이크 조각',
         color: '#6b4226',
-        health: 10,
+        health: 20,
         speed: 2,
         aggroRange: 500,
         preferredDistance: 220, // hangs back rather than closing to melee range
