@@ -253,6 +253,43 @@ const CHARACTERS = {
         ultimateType: 'team_shield',
         ultimateShieldAmount: 20,
         ultimateCooldownMs: 30000
+    },
+    lightning: {
+        name: '번개전사맛 쿠키',
+        shortName: '번개전사', // shown on the lobby's character-select button
+        color: '#e74c3c',
+        colorLeft: '#e67e22', // orange
+        colorRight: '#e74c3c', // red
+        grade: '레전더리',
+        element: '빛',
+        role: '대미지 딜러',
+        health: 120,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        // Shield + fire sword, as a two-hit combo. Stage 0 is a wide sweep with
+        // only medium reach; stage 1 is a long, narrow thrust that opens
+        // comboFollowupCooldown after the sweep instead of the full cooldown.
+        attackType: 'combo_two_stage',
+        attackStages: [
+            { range: 100, width: 90, damage: 8 }, // sweep: long sideways, medium forward
+            { range: 190, width: 40, damage: 5 }  // thrust: long forward
+        ],
+        attackCooldown: 500,
+        comboFollowupCooldown: 200,
+        // Like guard_stance but it is NOT broken by attacking.
+        skillType: 'shield_block',
+        skillDurationMs: 5000,
+        skillDamageMultiplier: 0.95, // incoming damage while blocking
+        skillCooldown: 10000,
+        // Placed like targeted_aoe. Damages, stuns, and then leaves whatever it
+        // hit dealing reduced damage for a while.
+        ultimateType: 'lightning_strike',
+        ultimateRadius: 60,
+        ultimateDamage: 15,
+        ultimateStunMs: 2000,
+        ultimateDamageDebuffMultiplier: 0.8,
+        ultimateDebuffDurationMs: 10000,
+        ultimateCooldownMs: 30000
     }
 };
 

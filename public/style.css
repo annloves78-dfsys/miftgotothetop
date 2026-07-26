@@ -855,7 +855,14 @@ html, body {
 
 .cd-mini-stats {
     display: flex;
-    gap: 14px;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 2px;
+}
+
+.cd-mini-label {
+    color: #95a5a6;
+    font-weight: normal;
 }
 
 .cd-mini-stat {

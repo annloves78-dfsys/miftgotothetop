@@ -128,7 +128,10 @@ function endRoom(roomId, result) {
 // (the boss, or the specific monster attacking) is currently carrying --
 // board's passive reduces damage taken from a source marked with its element.
 function damageReductionMultiplier(character, p, now, sourceElementMark) {
-    if (character.skillType === 'guard_stance' && p.guardStanceUntil && now < p.guardStanceUntil) {
+    // guard_stance and shield_block share the timer field; they differ only in
+    // that guard_stance ends early when its owner attacks.
+    if ((character.skillType === 'guard_stance' || character.skillType === 'shield_block')
+        && p.guardStanceUntil && now < p.guardStanceUntil) {
         return character.skillDamageMultiplier;
     }
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil) {
@@ -168,13 +171,56 @@ function resolveAlternatingPunchDamage(character, p, rapid) {
     return (p.punchSequence % 2 === 1) ? character.attackDamageRight : character.attackDamageLeft;
 }
 
+// Resolves the reach, width and damage of the swing about to happen. Most
+// cookies just use their flat attackRange/attackWidth/attackDamage;
+// combo_two_stage (lightning) alternates between two differently *shaped*
+// stages, while alternating_punch varies only its damage.
+// Call exactly once per swing -- the alternating_punch path advances state.
+function resolveAttack(character, p, now, rapid) {
+    if (character.attackType === 'combo_two_stage') {
+        const stage = character.attackStages[p.comboStage || 0];
+        return { range: stage.range, width: stage.width, damage: stage.damage };
+    }
+    const damage = character.attackType === 'alternating_punch'
+        ? resolveAlternatingPunchDamage(character, p, rapid)
+        : effectiveAttackDamage(character, p, now);
+    return { range: character.attackRange, width: character.attackWidth, damage };
+}
+
+// The combo's follow-up thrust opens far sooner than a fresh opening sweep.
+function attackCooldownFor(character, p, rapid) {
+    if (rapid) return character.ultimateRapidCooldown;
+    if (character.attackType === 'combo_two_stage' && (p.comboStage || 0) === 1) {
+        return character.comboFollowupCooldown;
+    }
+    return character.attackCooldown;
+}
+
+function advanceComboStage(character, p) {
+    if (character.attackType !== 'combo_two_stage') return;
+    p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
+}
+
+// lightning_strike leaves its target dealing reduced damage for a while.
+// Returns the multiplier to apply to whatever damage that target is dealing.
+function outgoingDamageMultiplier(target, now) {
+    if (target && target.damageDebuffUntil && now < target.damageDebuffUntil) {
+        return target.damageDebuffMultiplier;
+    }
+    return 1;
+}
+
 function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     const room = rooms[roomId];
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
     const character = CHARACTERS[p.charType];
-    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), room.bossElementMark));
+    // Every caller of this is boss damage, so the boss's own lightning_strike
+    // damage debuff applies here rather than at each pattern's call site.
+    const bossDebuff = (room.bossDamageDebuffUntil && Date.now() < room.bossDamageDebuffUntil)
+        ? room.bossDamageDebuffMultiplier : 1;
+    dmg = Math.round(dmg * bossDebuff * damageReductionMultiplier(character, p, Date.now(), room.bossElementMark));
     if (p.shieldHp > 0) {
         const absorbed = Math.min(p.shieldHp, dmg);
         p.shieldHp -= absorbed;
@@ -525,7 +571,7 @@ function spawnStoryProjectile(room, roomId, monsterId, m, def, targetX, targetY)
         vx: (dx / dist) * speed,
         vy: (dy / dist) * speed,
         angle: Math.atan2(dy, dx),
-        damage: def.attackDamage,
+        damage: def.attackDamage * outgoingDamageMultiplier(m, Date.now()),
         elementMark: m.elementMark,
         bornAt: Date.now()
     };
@@ -722,7 +768,8 @@ function tickStoryRoom(roomId) {
                 } else if (d <= def.attackRange) {
                     const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
                     io.to(roomId).emit('monsterAttack', { id: mid });
-                    applyDamageToStoryPlayer(roomId, targetId, def.attackDamage, m.elementMark);
+                    applyDamageToStoryPlayer(roomId, targetId,
+                        def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
                 }
             }
         }
@@ -862,20 +909,21 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
-        const cooldown = rapid ? character.ultimateRapidCooldown : character.attackCooldown;
+        const cooldown = attackCooldownFor(character, p, rapid);
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
-        if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch') return;
+        if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
+            && character.attackType !== 'combo_two_stage') return;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
-        const baseAttackDamage = character.attackType === 'alternating_punch'
-            ? resolveAlternatingPunchDamage(character, p, rapid)
-            : effectiveAttackDamage(character, p, now);
+        const swing = resolveAttack(character, p, now, rapid);
+        const baseAttackDamage = swing.damage;
+        advanceComboStage(character, p);
         const floorDef = STORY_FLOOR_DEFS[room.floor];
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
-            if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, m.x, m.y, MONSTER_RADIUS)) {
+            if (meleeLineHitPoint(p.x, p.y, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
                 anyHit = true;
 
                 // Element mark: a matching-element attacker deals bonus
@@ -989,7 +1037,8 @@ io.on('connection', (socket) => {
                 lastTickAt: now,
                 triggered: false
             });
-        } else if (character.skillType === 'guard_stance') {
+        } else if (character.skillType === 'guard_stance' || character.skillType === 'shield_block') {
+            // Same timer; only guard_stance is broken early by attacking.
             p.guardStanceUntil = now + character.skillDurationMs;
         } else if (character.skillType === 'flying_kick') {
             for (const [mid, m] of Object.entries(room.monsters)) {
@@ -1066,6 +1115,32 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        } else if (character.ultimateType === 'lightning_strike') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
+            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+
+            io.to(roomId).emit('storyLightningStrike', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
+
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(tx - m.x, ty - m.y) > character.ultimateRadius + MONSTER_RADIUS) continue;
+                m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                if (m.hp <= 0) {
+                    m.alive = false;
+                    io.to(roomId).emit('monsterDefeated', { id: mid });
+                    continue;
+                }
+                io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                m.stunnedUntil = now + character.ultimateStunMs;
+                io.to(roomId).emit('monsterStunned', { id: mid });
+                // ...and it hits softer for a while afterwards.
+                m.damageDebuffUntil = now + character.ultimateDebuffDurationMs;
+                m.damageDebuffMultiplier = character.ultimateDamageDebuffMultiplier;
+            }
         } else if (character.ultimateType === 'attack_heal_boost') {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
         } else if (character.ultimateType === 'awakening') {
@@ -1131,16 +1206,17 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
-        const cooldown = rapid ? character.ultimateRapidCooldown : character.attackCooldown;
+        const cooldown = attackCooldownFor(character, p, rapid);
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
-        if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch') {
-            if (meleeLineHit(p.x, p.y, p.facing, character.attackRange, character.attackWidth, BOSS_RADIUS)) {
-                let dmg = character.attackType === 'alternating_punch'
-                    ? resolveAlternatingPunchDamage(character, p, rapid)
-                    : effectiveAttackDamage(character, p, now);
+        if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
+            || character.attackType === 'combo_two_stage') {
+            const swing = resolveAttack(character, p, now, rapid);
+            advanceComboStage(character, p);
+            if (meleeLineHit(p.x, p.y, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
+                let dmg = swing.damage;
 
                 // Element mark: a matching-element attacker deals bonus
                 // damage vs a marked boss and burns down one charge.
@@ -1234,7 +1310,8 @@ io.on('connection', (socket) => {
                 lastTickAt: now,
                 triggered: false
             });
-        } else if (character.skillType === 'guard_stance') {
+        } else if (character.skillType === 'guard_stance' || character.skillType === 'shield_block') {
+            // Same timer; only guard_stance is broken early by attacking.
             p.guardStanceUntil = now + character.skillDurationMs;
         } else if (character.skillType === 'flying_kick') {
             if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
@@ -1297,6 +1374,27 @@ io.on('connection', (socket) => {
                 room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
+        } else if (character.ultimateType === 'lightning_strike') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const dist = Math.hypot(targetX, targetY);
+            const clampedDist = Math.min(dist, ARENA_RADIUS);
+            const scale = dist > 0 ? clampedDist / dist : 0;
+            const tx = targetX * scale, ty = targetY * scale;
+
+            io.to(roomId).emit('lightningStrike', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
+
+            if (Math.hypot(tx, ty) <= character.ultimateRadius + BOSS_RADIUS) {
+                room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                // Freeze the boss mid-pattern, then leave it hitting softer.
+                room.bossStunnedUntil = now + character.ultimateStunMs;
+                io.to(roomId).emit('bossStunned', { until: room.bossStunnedUntil });
+                room.bossDamageDebuffUntil = now + character.ultimateDebuffDurationMs;
+                room.bossDamageDebuffMultiplier = character.ultimateDamageDebuffMultiplier;
             }
         } else if (character.ultimateType === 'attack_heal_boost') {
             // Read by the playerAttack handler for the duration of the buff.

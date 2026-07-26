@@ -249,6 +249,12 @@ function describeAbility(stats, kind) {
         if (stats.attackType === 'alternating_punch') {
             return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
+        if (stats.attackType === 'combo_two_stage') {
+            const [a, b] = stats.attackStages;
+            return `1타는 좌우로 넓게 휘둘러 (가로 ${a.width}px, 전방 ${a.range}px) ${a.damage}의 피해를 줍니다.`
+                + ` 1타 후 ${sec(stats.comboFollowupCooldown)}초 만에 2타를 이어서 쓸 수 있고, 2타는 전방으로 길게 (${b.range}px) 찔러 ${b.damage}의 피해를 줍니다.`
+                + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse) {
             text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
@@ -277,6 +283,8 @@ function describeAbility(stats, kind) {
                 return `전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             case 'self_heal':
                 return `자신의 체력을 ${stats.skillHealAmount}만큼 회복합니다.${cd}`;
+            case 'shield_block':
+                return `방패를 들어 막습니다. ${sec(stats.skillDurationMs)}초 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어들며, 공격해도 풀리지 않습니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -300,6 +308,8 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
+            case 'lightning_strike':
+                return `원하는 지점에 번개를 내려 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다. 맞은 적은 ${sec(stats.ultimateStunMs)}초 동안 기절하고, ${sec(stats.ultimateDebuffDurationMs)}초 동안 주는 피해가 ${stats.ultimateDamageDebuffMultiplier}배로 줄어듭니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -350,7 +360,10 @@ const SKILL_ICONS = {
     kick: '🦶',
     awakening_rapid: '⚡',
     self_heal: '💗',
-    team_shield: '🔰'
+    team_shield: '🔰',
+    combo_two_stage: '⚔',
+    shield_block: '🛡',
+    lightning_strike: '⚡'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -698,9 +711,21 @@ updateSelectedCharLabel();
 
 let characterReturnScreen = 'lobby'; // where "뒤로"/selecting a character sends you back to
 
+// Highest grade first; within a grade the most recently added cookie comes
+// first, which is its position in the CHARACTERS roster (appended in order).
+function charactersByGradeDesc() {
+    const order = Object.keys(SHARED.CHARACTERS);
+    return Object.entries(SHARED.CHARACTERS).sort(([idA, a], [idB, b]) => {
+        const ga = GRADE_ORDER.indexOf(a.grade);
+        const gb = GRADE_ORDER.indexOf(b.grade);
+        if (ga !== gb) return gb - ga;
+        return order.indexOf(idB) - order.indexOf(idA);
+    });
+}
+
 function renderCharacterList() {
     characterListEl.innerHTML = '';
-    Object.entries(SHARED.CHARACTERS).forEach(([id, stats]) => {
+    charactersByGradeDesc().forEach(([id, stats]) => {
         const unlocked = gameData.unlockedCharacters.includes(id);
         const card = document.createElement('div');
         card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === gameData.selectedCharacter ? ' selected' : '');
@@ -723,6 +748,18 @@ backFromCharacterBtn.addEventListener('click', () => showScreen(characterReturnS
 // ---- Character detail (appearance/equipment preview before confirming a pick) ----
 let viewingCharacterId = null;
 
+// Not every cookie has a single flat attackDamage: multi-hit attacks list each
+// hit instead, which is why 에이션트/레전더리 cookies showed nothing before.
+function attackDamageText(stats) {
+    if (Array.isArray(stats.attackStages)) {
+        return stats.attackStages.map(s => s.damage).join(' / ');
+    }
+    if (stats.attackDamageRight != null && stats.attackDamageLeft != null) {
+        return `${stats.attackDamageRight} / ${stats.attackDamageLeft}`;
+    }
+    return stats.attackDamage != null ? String(stats.attackDamage) : '-';
+}
+
 function openCharacterDetail(id) {
     viewingCharacterId = id;
     const stats = SHARED.CHARACTERS[id];
@@ -734,11 +771,7 @@ function openCharacterDetail(id) {
     charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
-    if (stats.attackDamageRight != null && stats.attackDamageLeft != null) {
-        charDetailAtk.textContent = `${stats.attackDamageRight}~${stats.attackDamageLeft}`;
-    } else {
-        charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
-    }
+    charDetailAtk.textContent = attackDamageText(stats);
     charDetailHp.textContent = stats.health != null ? stats.health : '-';
     charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
@@ -1085,7 +1118,8 @@ socket.on('storyFloorStarted', (data) => {
     storyPlayer = {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
-        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0
+        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
+        comboStage: 0, attackEffectStage: null
     };
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
@@ -1153,6 +1187,10 @@ socket.on('storyPlayerHealed', ({ hp }) => {
 
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+socket.on('storyLightningStrike', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 400, bolt: true });
 });
 
 socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs }) => {
@@ -1290,10 +1328,19 @@ function tryStoryAttack() {
     const now = performance.now();
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     const rapid = stats.ultimateType === 'awakening_rapid' && now < storyPlayer.rapidStrikeUntil;
-    const cooldown = rapid ? stats.ultimateRapidCooldown : stats.attackCooldown;
+    let cooldown = stats.attackCooldown;
+    if (rapid) cooldown = stats.ultimateRapidCooldown;
+    else if (stats.attackType === 'combo_two_stage' && storyPlayer.comboStage === 1) {
+        cooldown = stats.comboFollowupCooldown; // follow-up thrust opens sooner
+    }
     if (now - storyPlayer.lastAttackClientTime < cooldown) return;
     storyPlayer.lastAttackClientTime = now;
     storyPlayer.attackEffectUntil = now + 180;
+    if (stats.attackType === 'combo_two_stage') {
+        // Mirror the server's stage bookkeeping so the effect draws the right shape.
+        storyPlayer.attackEffectStage = stats.attackStages[storyPlayer.comboStage || 0];
+        storyPlayer.comboStage = ((storyPlayer.comboStage || 0) + 1) % stats.attackStages.length;
+    }
     if (stats.skillType === 'guard_stance') storyPlayer.skillEffectUntil = 0; // attacking breaks the guard stance
     socket.emit('storyPlayerAttack');
 }
@@ -1434,13 +1481,28 @@ function storyRender(now) {
     storyImpactEffects = storyImpactEffects.filter(fx => now < fx.until);
     storyImpactEffects.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400);
+        // Lightning uses a yellow flash plus a bolt dropping in from above.
+        const rgb = fx.bolt ? '241, 196, 15' : '142, 68, 173';
         storyCtx.beginPath();
         storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
-        storyCtx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
+        storyCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
         storyCtx.fill();
-        storyCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        storyCtx.strokeStyle = `rgba(${rgb}, 0.9)`;
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
+        if (fx.bolt) {
+            storyCtx.save();
+            storyCtx.strokeStyle = `rgba(255, 255, 200, ${1 - t})`;
+            storyCtx.lineWidth = 4;
+            storyCtx.beginPath();
+            storyCtx.moveTo(fx.x, fx.y - 260);
+            storyCtx.lineTo(fx.x + 14, fx.y - 160);
+            storyCtx.lineTo(fx.x - 12, fx.y - 90);
+            storyCtx.lineTo(fx.x + 8, fx.y - 30);
+            storyCtx.lineTo(fx.x, fx.y);
+            storyCtx.stroke();
+            storyCtx.restore();
+        }
     });
 
     storyMagmaZones = storyMagmaZones.filter(z => now < z.until);
@@ -1544,13 +1606,16 @@ function storyRender(now) {
         storyCtx.translate(storyPlayer.x, storyPlayer.y);
 
         if (now < (storyPlayer.attackEffectUntil || 0)) {
+            const stage = storyPlayer.attackEffectStage;
+            const aRange = stage ? stage.range : stats.attackRange;
+            const aWidth = (stage ? stage.width : stats.attackWidth) || 40;
             storyCtx.save();
             storyCtx.rotate(storyPlayer.facing);
             storyCtx.fillStyle = 'rgba(241, 196, 15, 0.35)';
-            storyCtx.fillRect(R, -(stats.attackWidth || 40) / 2, stats.attackRange, stats.attackWidth || 40);
+            storyCtx.fillRect(R, -aWidth / 2, aRange, aWidth);
             storyCtx.strokeStyle = 'rgba(241, 196, 15, 0.9)';
             storyCtx.lineWidth = 2;
-            storyCtx.strokeRect(R, -(stats.attackWidth || 40) / 2, stats.attackRange, stats.attackWidth || 40);
+            storyCtx.strokeRect(R, -aWidth / 2, aRange, aWidth);
             storyCtx.restore();
         }
 
@@ -1833,6 +1898,10 @@ socket.on('ultimateImpact', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 400 });
 });
 
+socket.on('lightningStrike', ({ x, y, radius }) => {
+    impactEffects.push({ x, y, radius, until: performance.now() + 400, bolt: true });
+});
+
 socket.on('magmaZonePlaced', ({ x, y, radius, durationMs }) => {
     magmaZones.push({ x, y, radius, until: performance.now() + durationMs });
 });
@@ -2045,7 +2114,7 @@ function tryUseUltimate() {
 }
 
 function isTargetedUltimate(type) {
-    return type === 'targeted_aoe' || type === 'magma_zone';
+    return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike';
 }
 
 // Touch has no mouse to place a zone with, so instead of arming a targeting
@@ -2151,13 +2220,27 @@ function render(now) {
     impactEffects = impactEffects.filter(fx => now < fx.until);
     impactEffects.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400); // 0 -> 1 as it fades
+        const rgb = fx.bolt ? '241, 196, 15' : '142, 68, 173';
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
+        ctx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        ctx.strokeStyle = `rgba(${rgb}, 0.9)`;
         ctx.lineWidth = 3;
         ctx.stroke();
+        if (fx.bolt) {
+            ctx.save();
+            ctx.strokeStyle = `rgba(255, 255, 200, ${1 - t})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(fx.x, fx.y - 260);
+            ctx.lineTo(fx.x + 14, fx.y - 160);
+            ctx.lineTo(fx.x - 12, fx.y - 90);
+            ctx.lineTo(fx.x + 8, fx.y - 30);
+            ctx.lineTo(fx.x, fx.y);
+            ctx.stroke();
+            ctx.restore();
+        }
     });
 
     magmaZones = magmaZones.filter(z => now < z.until);

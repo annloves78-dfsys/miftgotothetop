@@ -58,6 +58,8 @@ class Player {
         this.ultimateEffectUntil = 0;
         this.healEffectUntil = 0;
 
+        this.comboStage = 0; // combo_two_stage: which half of the combo comes next
+        this.attackEffectStage = null; // the stage the running attack animation is drawing
         this.speedBoostUntil = 0; // performance.now() timestamp; see triggerSkillEffect()
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
@@ -70,8 +72,19 @@ class Player {
     canAttack(now) {
         if (!this.alive) return false;
         const rapid = this.stats.ultimateType === 'awakening_rapid' && now < this.rapidStrikeUntil;
-        const cooldown = rapid ? this.stats.ultimateRapidCooldown : this.stats.attackCooldown;
+        let cooldown = this.stats.attackCooldown;
+        if (rapid) cooldown = this.stats.ultimateRapidCooldown;
+        else if (this.stats.attackType === 'combo_two_stage' && this.comboStage === 1) {
+            cooldown = this.stats.comboFollowupCooldown; // follow-up thrust opens sooner
+        }
         return now - this.lastAttackClientTime >= cooldown;
+    }
+
+    // Mirrors the server's stage bookkeeping so the local effect draws the right
+    // shape (see resolveAttack/advanceComboStage in server.js).
+    get currentAttackStage() {
+        if (this.stats.attackType !== 'combo_two_stage') return null;
+        return this.stats.attackStages[this.comboStage || 0];
     }
 
     canUseSkill(now) {
@@ -122,6 +135,10 @@ class Player {
     triggerAttackEffect() {
         this.lastAttackClientTime = performance.now();
         this.attackEffectUntil = performance.now() + 180;
+        if (this.stats.attackType === 'combo_two_stage') {
+            this.attackEffectStage = this.currentAttackStage;
+            this.comboStage = ((this.comboStage || 0) + 1) % this.stats.attackStages.length;
+        }
         if (this.stats.skillType === 'guard_stance') {
             this.skillEffectUntil = 0; // attacking breaks the guard stance
         }
@@ -166,8 +183,9 @@ class Player {
 
         if (now < this.attackEffectUntil) {
             // Straight-line kick corridor, drawn extending forward from the body.
-            const range = this.stats.attackRange;
-            const width = this.stats.attackWidth || 40;
+            const stage = this.attackEffectStage;
+            const range = stage ? stage.range : this.stats.attackRange;
+            const width = (stage ? stage.width : this.stats.attackWidth) || 40;
             ctx.save();
             ctx.rotate(facingAngle);
             ctx.fillStyle = 'rgba(241, 196, 15, 0.35)';
