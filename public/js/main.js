@@ -641,14 +641,14 @@ const gachaPull1Btn = document.getElementById('gacha-pull-1-btn');
 const gachaPull10Btn = document.getElementById('gacha-pull-10-btn');
 const gachaSoulListEl = document.getElementById('gacha-soul-list');
 
-// Picks a grade from GACHA_GRADE_WEIGHTS. Walks the cumulative weight rather
-// than assuming they sum to any particular number.
-function pickGachaGrade() {
-    const entries = Object.entries(SHARED.GACHA_GRADE_WEIGHTS);
+// Draws one outcome key from GACHA_TABLE by walking its cumulative weight, so
+// the table can be edited freely without the code assuming any particular sum.
+function pickGachaOutcome() {
+    const entries = Object.entries(SHARED.GACHA_TABLE);
     const total = entries.reduce((sum, [, w]) => sum + w, 0);
     let r = Math.random() * total;
-    for (const [grade, w] of entries) {
-        if (r < w) return grade;
+    for (const [key, w] of entries) {
+        if (r < w) return key;
         r -= w;
     }
     return entries[entries.length - 1][0]; // float rounding safety net
@@ -662,14 +662,14 @@ function charactersOfGrade(grade) {
 // (레전더리/비스트/게스트) -- an "empty grade" result reported honestly rather
 // than silently redrawn, so the real rates stay observable while testing.
 function rollGachaOnce() {
-    if (Math.random() < SHARED.GACHA_SOUL_STONE_RATE) {
+    const outcome = pickGachaOutcome();
+    if (outcome === SHARED.GACHA_SOUL_STONE_KEY) {
         const ids = Object.keys(SHARED.CHARACTERS);
         return { kind: 'soul', charType: ids[Math.floor(Math.random() * ids.length)] };
     }
-    const grade = pickGachaGrade();
-    const pool = charactersOfGrade(grade);
-    if (pool.length === 0) return { kind: 'emptyGrade', grade };
-    return { kind: 'char', grade, charType: pool[Math.floor(Math.random() * pool.length)] };
+    const pool = charactersOfGrade(outcome);
+    if (pool.length === 0) return { kind: 'emptyGrade', grade: outcome };
+    return { kind: 'char', grade: outcome, charType: pool[Math.floor(Math.random() * pool.length)] };
 }
 
 function applyGachaResults(results) {
@@ -895,6 +895,11 @@ let storyLoopHandle = null;
 let storyLastMoveEmit = 0;
 let isStoryTargetingUltimate = false;
 let storyImpactEffects = []; // [{x, y, radius, until}]
+// Arrows in flight (ranged monsters). Held as id -> {x,y,vx,vy,angle,at} where
+// `at` is when that position was received, so the render can dead-reckon
+// between the server's 50ms ticks instead of visibly stepping.
+let storyProjectiles = {};
+let storyProjectileSparks = []; // [{x, y, until}] brief flash where an arrow landed
 let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 
 socket.on('storyFloorStarted', (data) => {
@@ -909,6 +914,8 @@ socket.on('storyFloorStarted', (data) => {
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
     storyMagmaZones = [];
+    storyProjectiles = {};
+    storyProjectileSparks = [];
     updateStoryHpBar();
     updateStoryMonstersLeft();
     syncMobileButtonIcons(p.charType, true);
@@ -916,9 +923,22 @@ socket.on('storyFloorStarted', (data) => {
     startStoryLoop();
 });
 
-socket.on('storyTick', ({ monsters }) => {
+socket.on('storyTick', ({ monsters, projectiles }) => {
     storyMonsters = monsters;
+    const at = performance.now();
+    const next = {};
+    for (const [id, pr] of Object.entries(projectiles || {})) next[id] = { ...pr, at };
+    storyProjectiles = next;
     updateStoryMonstersLeft();
+});
+
+socket.on('storyProjectileFired', ({ id, x, y, vx, vy, angle }) => {
+    storyProjectiles[id] = { x, y, vx, vy, angle, at: performance.now() };
+});
+
+socket.on('storyProjectileGone', ({ id, hit, x, y }) => {
+    delete storyProjectiles[id];
+    if (hit) storyProjectileSparks.push({ x, y, until: performance.now() + 220 });
 });
 
 socket.on('monsterTelegraph', ({ id }) => {
@@ -1298,6 +1318,49 @@ function storyRender(now) {
             storyCtx.fillText(`${ELEMENT_ICONS[m.elementMark.element] || '✨'} x${m.elementMark.charges}`, m.x, m.y - SHARED.MONSTER_RADIUS - 14 - barH);
             storyCtx.restore();
         }
+    });
+
+    // Arrows, extrapolated from the last server position so they glide.
+    Object.values(storyProjectiles).forEach(pr => {
+        const t = (now - pr.at) / 1000;
+        const x = pr.x + pr.vx * t;
+        const y = pr.y + pr.vy * t;
+        storyCtx.save();
+        storyCtx.translate(x, y);
+        storyCtx.rotate(pr.angle);
+        // Shaft
+        storyCtx.strokeStyle = '#f5deb3';
+        storyCtx.lineWidth = 3;
+        storyCtx.beginPath();
+        storyCtx.moveTo(-11, 0);
+        storyCtx.lineTo(7, 0);
+        storyCtx.stroke();
+        // Head
+        storyCtx.fillStyle = '#5d4037';
+        storyCtx.beginPath();
+        storyCtx.moveTo(12, 0);
+        storyCtx.lineTo(5, -4.5);
+        storyCtx.lineTo(5, 4.5);
+        storyCtx.closePath();
+        storyCtx.fill();
+        // Fletching
+        storyCtx.strokeStyle = '#e74c3c';
+        storyCtx.lineWidth = 2;
+        storyCtx.beginPath();
+        storyCtx.moveTo(-11, 0); storyCtx.lineTo(-7, -4);
+        storyCtx.moveTo(-11, 0); storyCtx.lineTo(-7, 4);
+        storyCtx.stroke();
+        storyCtx.restore();
+    });
+
+    storyProjectileSparks = storyProjectileSparks.filter(s => now < s.until);
+    storyProjectileSparks.forEach(s => {
+        const life = (s.until - now) / 220;
+        storyCtx.beginPath();
+        storyCtx.arc(s.x, s.y, 6 + (1 - life) * 10, 0, Math.PI * 2);
+        storyCtx.strokeStyle = `rgba(231, 76, 60, ${life})`;
+        storyCtx.lineWidth = 3;
+        storyCtx.stroke();
     });
 
     if (storyPlayer) {

@@ -387,6 +387,14 @@ html, body {
     gap: 14px;
 }
 
+/* .play-btn is absolutely positioned for the lobby's floating play button, so
+   without this both pull buttons would stack at the same corner and only the
+   last one would be visible. */
+#gacha-pull-screen .play-btn {
+    position: static;
+    width: auto;
+}
+
 .gacha-soul-section {
     width: 760px;
     max-width: 94vw;

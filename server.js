@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -462,6 +462,8 @@ function createStoryRoom(floor) {
         state: 'fighting',
         players: {},
         monsters: {},
+        projectiles: {}, // id -> arrow in flight; see spawnStoryProjectile
+        nextProjectileId: 0,
         starDefeated: false,
         activeBuffs: [],
         loopHandle: null
@@ -499,6 +501,71 @@ function publicMonsters(room) {
         out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark };
     }
     return out;
+}
+
+// vx/vy go out with each arrow so the client can dead-reckon between the 50ms
+// ticks instead of visibly stepping.
+function publicProjectiles(room) {
+    const out = {};
+    for (const [id, pr] of Object.entries(room.projectiles || {})) {
+        out[id] = { x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy, angle: pr.angle };
+    }
+    return out;
+}
+
+// Fires an arrow from a monster toward a fixed point (where the target stood at
+// release), so moving aside after the shot dodges it.
+function spawnStoryProjectile(room, roomId, monsterId, m, def, targetX, targetY) {
+    const dx = targetX - m.x, dy = targetY - m.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const speed = def.projectileSpeed;
+    const id = `pr${room.nextProjectileId++}`;
+    const pr = {
+        x: m.x, y: m.y,
+        vx: (dx / dist) * speed,
+        vy: (dy / dist) * speed,
+        angle: Math.atan2(dy, dx),
+        damage: def.attackDamage,
+        elementMark: m.elementMark,
+        bornAt: Date.now()
+    };
+    room.projectiles[id] = pr;
+    io.to(roomId).emit('storyProjectileFired', { id, monsterId, ...publicProjectiles(room)[id] });
+    return id;
+}
+
+// Advances every arrow and resolves hits. Returns once the room may have ended.
+function tickStoryProjectiles(roomId, room, alivePlayers, dtMs) {
+    const floorDef = STORY_FLOOR_DEFS[room.floor];
+    const now = Date.now();
+    const dt = dtMs / 1000;
+    for (const [id, pr] of Object.entries(room.projectiles)) {
+        pr.x += pr.vx * dt;
+        pr.y += pr.vy * dt;
+
+        let hitPlayerId = null;
+        for (const p of alivePlayers) {
+            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= PLAYER_RADIUS + PROJECTILE_RADIUS) {
+                hitPlayerId = Object.keys(room.players).find(pid => room.players[pid] === p);
+                break;
+            }
+        }
+
+        const expired = now - pr.bornAt >= PROJECTILE_MAX_LIFETIME_MS;
+        const outOfBounds = floorDef && (
+            pr.x > 200 || pr.x < -floorDef.levelLength - 200 ||
+            Math.abs(pr.y) > floorDef.laneHalfWidth + 200
+        );
+
+        if (hitPlayerId || expired || outOfBounds) {
+            delete room.projectiles[id];
+            io.to(roomId).emit('storyProjectileGone', { id, hit: !!hitPlayerId, x: pr.x, y: pr.y });
+            if (hitPlayerId) {
+                applyDamageToStoryPlayer(roomId, hitPlayerId, pr.damage, pr.elementMark);
+                if (!rooms[roomId]) return; // player died; room already torn down
+            }
+        }
+    }
 }
 
 function healStoryPlayer(room, roomId, amount) {
@@ -647,7 +714,12 @@ function tickStoryRoom(roomId) {
                 m.state = 'idle';
                 m.nextAttackAt = now + def.attackCooldown;
                 const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
-                if (d <= def.attackRange) {
+                if (def.projectileSpeed) {
+                    // Archers release an arrow regardless of current range: it
+                    // flies to where the player was and can be sidestepped.
+                    io.to(roomId).emit('monsterAttack', { id: mid });
+                    spawnStoryProjectile(room, roomId, mid, m, def, nearest.x, nearest.y);
+                } else if (d <= def.attackRange) {
                     const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
                     io.to(roomId).emit('monsterAttack', { id: mid });
                     applyDamageToStoryPlayer(roomId, targetId, def.attackDamage, m.elementMark);
@@ -657,7 +729,9 @@ function tickStoryRoom(roomId) {
     }
 
     if (!rooms[roomId]) return; // room may have just ended (player died) mid-loop above
-    io.to(roomId).emit('storyTick', { monsters: publicMonsters(room) });
+    tickStoryProjectiles(roomId, room, alivePlayers, 50);
+    if (!rooms[roomId]) return; // an arrow may have just killed the last player
+    io.to(roomId).emit('storyTick', { monsters: publicMonsters(room), projectiles: publicProjectiles(room) });
 }
 
 io.on('connection', (socket) => {
@@ -743,7 +817,8 @@ io.on('connection', (socket) => {
                 star: floorDef.star
             },
             player: room.players[socket.id],
-            monsters: publicMonsters(room)
+            monsters: publicMonsters(room),
+            projectiles: publicProjectiles(room)
         });
 
         room.loopHandle = setInterval(() => tickStoryRoom(roomId), 50);

@@ -333,6 +333,8 @@ const BOSS_LIST = [
 
 const MONSTER_RADIUS = 16;
 const STAR_RADIUS = 30;
+const PROJECTILE_RADIUS = 6; // arrow hitbox; see projectileSpeed on MONSTERS
+const PROJECTILE_MAX_LIFETIME_MS = 4000; // despawn stray arrows that never connect
 
 // Story-mode monsters -- weaker enemies used on tower floors, distinct from
 // the raid bosses. They don't close all the way to melee range; they hover
@@ -359,6 +361,11 @@ const MONSTERS = {
         speed: 2,
         aggroRange: 500,
         preferredDistance: 220, // hangs back rather than closing to melee range
+        // Fires a real arrow instead of applying damage instantly: it is aimed
+        // at wherever the player stood when it was released, so sidestepping
+        // after the shot dodges it. Any monster given projectileSpeed shoots
+        // this way; monsters without it keep the instant-hit behaviour.
+        projectileSpeed: 380, // px per second
         attackRange: 280,
         attackDamage: 2,
         attackCooldown: 3000,
@@ -431,21 +438,25 @@ const STORY_FLOOR_DEFS = {
 // from GACHA_GRADE_WEIGHTS. Those weights are percentages *within* that
 // remainder (they sum to 100), so a grade's true rate is
 // weight% * (1 - GACHA_SOUL_STONE_RATE) -- e.g. 일반 = 50% * 70% = 35%.
-const GACHA_SOUL_STONE_RATE = 0.30;
-const GACHA_GRADE_WEIGHTS = {
-    '일반': 50,
-    '희귀': 30,
-    '에픽': 8,
-    '레전더리': 5,
-    '에이션트': 4,
-    '비스트': 2,
-    '게스트': 1
+// One flat table over every possible outcome of a normal-banner pull: the soul
+// stone entry plus one entry per cookie grade. Values are absolute percentages
+// and sum to 100, so a grade's listed number IS its real pull rate.
+const GACHA_SOUL_STONE_KEY = '영혼석';
+const GACHA_TABLE = {
+    '영혼석': 59,
+    '일반': 20,
+    '희귀': 15,
+    '에픽': 3,
+    '레전더리': 2,
+    '에이션트': 0.5,
+    '비스트': 0.3,
+    '게스트': 0.2
 };
 // Soul stones are tracked per cookie -- 20 of one cookie's stones unlocks it.
 const SOUL_STONES_PER_CHARACTER = 20;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_RATE, GACHA_GRADE_WEIGHTS, SOUL_STONES_PER_CHARACTER };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_RATE, GACHA_GRADE_WEIGHTS, SOUL_STONES_PER_CHARACTER };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER };
 }
