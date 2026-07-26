@@ -281,8 +281,8 @@ function describeAbility(stats, kind) {
         if (stats.attackType === 'alternating_punch') {
             return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
-        if (stats.attackType === 'dual_gun') {
-            return `쌍권총을 오른손, 왼손 순으로 번갈아 쏘며 이를 계속 반복합니다. 몸의 해당 쪽에서 전방 ${stats.attackRange}px를 쏘아 한 발마다 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        if (stats.attackType === 'dual_spear') {
+            return `창 두 개를 오른손, 왼손 순으로 번갈아 찌르며 이를 계속 반복합니다. 몸의 해당 쪽에서 전방 ${stats.attackRange}px를 찔러 한 번마다 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'combo_two_stage') {
             const [a, b] = stats.attackStages;
@@ -320,8 +320,8 @@ function describeAbility(stats, kind) {
                 return `자신의 체력을 ${stats.skillHealAmount}만큼 회복합니다.${cd}`;
             case 'shield_block':
                 return `방패를 들어 막습니다. ${sec(stats.skillDurationMs)}초 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어들며, 공격해도 풀리지 않습니다.${cd}`;
-            case 'undying_soul':
-                return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 회복합니다. ${sec(stats.skillDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.skillAttackDamage}가 됩니다.${cd}`;
+            case 'earthquake':
+                return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.skillThresholdCount}명 이하면 모든 적에게 ${stats.skillDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -345,8 +345,8 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
-            case 'earthquake':
-                return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.ultimateThresholdCount}명 이하면 모든 적에게 ${stats.ultimateDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
+            case 'undying_soul':
+                return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복합니다. ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다.${cd}`;
             case 'lightning_strike':
                 return `원하는 지점에 번개를 내려 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다. 맞은 적은 ${sec(stats.ultimateStunMs)}초 동안 기절하고, ${sec(stats.ultimateDebuffDurationMs)}초 동안 주는 피해가 ${stats.ultimateDamageDebuffMultiplier}배로 줄어듭니다.${cd}`;
             default:
@@ -405,7 +405,7 @@ const SKILL_ICONS = {
     combo_two_stage: '⚔',
     shield_block: '🛡',
     lightning_strike: '⚡',
-    dual_gun: '🔫',
+    dual_spear: '🔱',
     undying_soul: '👻',
     earthquake: '🌎'
 };
@@ -1165,7 +1165,7 @@ socket.on('storyFloorStarted', (data) => {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
-        comboStage: 0, attackEffectStage: null, gunSide: 0, attackEffectSide: 0
+        comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0
     };
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
@@ -1347,7 +1347,6 @@ function tryStoryUseSkill() {
     storyPlayer.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
-    else if (stats.skillType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.skillDurationMs;
     socket.emit('storyPlayerSkill');
 }
 
@@ -1359,6 +1358,7 @@ function tryStoryUseUltimate() {
     storyPlayer.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
     if (stats.ultimateType === 'awakening') storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.ultimateDurationMs;
     socket.emit('storyPlayerUltimate');
 }
 
@@ -1409,10 +1409,10 @@ function tryStoryAttack() {
         // Mirror the server's stage bookkeeping so the effect draws the right shape.
         storyPlayer.attackEffectStage = stats.attackStages[storyPlayer.comboStage || 0];
         storyPlayer.comboStage = ((storyPlayer.comboStage || 0) + 1) % stats.attackStages.length;
-    } else if (stats.attackType === 'dual_gun') {
+    } else if (stats.attackType === 'dual_spear') {
         // Same mirroring for which hand fires (see advanceAttackSequence).
-        storyPlayer.attackEffectSide = storyPlayer.gunSide || 0;
-        storyPlayer.gunSide = (storyPlayer.gunSide || 0) === 0 ? 1 : 0;
+        storyPlayer.attackEffectSide = storyPlayer.spearSide || 0;
+        storyPlayer.spearSide = (storyPlayer.spearSide || 0) === 0 ? 1 : 0;
     }
     if (stats.skillType === 'guard_stance') storyPlayer.skillEffectUntil = 0; // attacking breaks the guard stance
     socket.emit('storyPlayerAttack');

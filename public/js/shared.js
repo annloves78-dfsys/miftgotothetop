@@ -299,19 +299,20 @@ const CHARACTERS = {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
         color: '#8e44ad',
-        colorLeft: '#2c3e50', // near-black
-        colorRight: '#8e44ad', // purple
+        colorLeft: '#8e44ad', // purple
+        colorRight: '#f1c40f', // yellow
         grade: '게스트',
         element: '어둠',
         role: '대미지 딜러',
         health: 140,
         combatPower: 500, // starting value for every character
         speed: 2,
-        // 쌍권총: fires from the right hand, then the left, then repeats. Same
+        // 창 두 개: thrusts with the right-hand spear, then the left, then
+        // repeats -- one spear per hand, never both at once. Same
         // straight-line corridor as melee_kick, but the corridor starts
         // attackSideOffset px off to that side of the body instead of dead
         // centre, so the two shots really do cover different ground.
-        attackType: 'dual_gun',
+        attackType: 'dual_spear',
         attackRange: 85, // "자두맛보다 살짝 더 긴 정도" -- kicker reaches 70
         attackWidth: 40,
         attackSideOffset: 22,
@@ -325,20 +326,20 @@ const CHARACTERS = {
         passiveReviveHpRatio: 1,
         passiveReviveEnemySoloRatio: 0.3,
         passiveReviveEnemyCrowdRatio: 0.4,
-        // 죽지않는 영혼: heals for a share of max HP, then for skillDurationMs
-        // moves faster and swaps in a stronger basic attack.
-        skillType: 'undying_soul',
-        skillHealRatio: 0.4,
-        skillSpeedBonus: 1, // added to `speed`, not multiplied
-        skillAttackDamage: 6, // replaces attackDamage while the buff is up
-        skillDurationMs: 10000,
-        skillCooldown: 20000,
         // 지진: shakes the whole floor, no aiming. Against a small group every
-        // enemy takes ultimateDamage; against a bigger crowd the ground
-        // swallows the nearest one outright instead.
-        ultimateType: 'earthquake',
-        ultimateDamage: 15,
-        ultimateThresholdCount: 3,
+        // enemy takes skillDamage; against a bigger crowd the ground swallows
+        // the nearest one outright instead.
+        skillType: 'earthquake',
+        skillDamage: 15,
+        skillThresholdCount: 3,
+        skillCooldown: 10000,
+        // 죽지않는 영혼: heals for a share of max HP, then for ultimateDurationMs
+        // moves faster and swaps in a stronger basic attack.
+        ultimateType: 'undying_soul',
+        ultimateHealRatio: 0.4,
+        ultimateSpeedBonus: 1, // added to `speed`, not multiplied
+        ultimateAttackDamage: 6, // replaces attackDamage while the buff is up
+        ultimateDurationMs: 10000,
         ultimateCooldownMs: 30000
     }
 };

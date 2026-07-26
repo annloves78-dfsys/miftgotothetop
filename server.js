@@ -155,9 +155,9 @@ function effectiveAttackDamage(character, p, now) {
         return character.ultimateAttackDamage;
     }
     // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
-    if (character.skillType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
-        && character.skillAttackDamage != null) {
-        return character.skillAttackDamage;
+    if (character.ultimateType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
+        && character.ultimateAttackDamage != null) {
+        return character.ultimateAttackDamage;
     }
     return character.attackDamage;
 }
@@ -185,7 +185,7 @@ function resolveAlternatingPunchDamage(character, p, rapid) {
 // Most cookies just use their flat attackRange/attackWidth/attackDamage fired
 // straight from the body centre; combo_two_stage (lightning) alternates between
 // two differently *shaped* stages, alternating_punch varies only its damage, and
-// dual_gun (lightninghell) keeps one shape but fires it from alternating sides
+// dual_spear (lightninghell) keeps one shape but fires it from alternating sides
 // of the body -- hence originX/originY rather than always using p.x/p.y.
 // Call exactly once per swing -- the alternating_punch path advances state.
 function resolveAttack(character, p, now, rapid) {
@@ -194,10 +194,10 @@ function resolveAttack(character, p, now, rapid) {
         return { range: stage.range, width: stage.width, damage: stage.damage, originX: p.x, originY: p.y };
     }
     let originX = p.x, originY = p.y;
-    if (character.attackType === 'dual_gun') {
+    if (character.attackType === 'dual_spear') {
         // Perpendicular to `facing`; +90deg is the player's right on screen
         // (canvas y grows downward), which is where the first shot comes from.
-        const side = (p.gunSide || 0) === 0 ? 1 : -1;
+        const side = (p.spearSide || 0) === 0 ? 1 : -1;
         const off = character.attackSideOffset * side;
         originX += -Math.sin(p.facing) * off;
         originY += Math.cos(p.facing) * off;
@@ -222,8 +222,8 @@ function attackCooldownFor(character, p, rapid) {
 function advanceAttackSequence(character, p) {
     if (character.attackType === 'combo_two_stage') {
         p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
-    } else if (character.attackType === 'dual_gun') {
-        p.gunSide = (p.gunSide || 0) === 0 ? 1 : 0;
+    } else if (character.attackType === 'dual_spear') {
+        p.spearSide = (p.spearSide || 0) === 0 ? 1 : 0;
     }
 }
 
@@ -1007,7 +1007,7 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
-            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_gun') return;
+            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
@@ -1164,14 +1164,32 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             }
-        } else if (character.skillType === 'undying_soul') {
-            // Heals a share of max hp, then the timer is read by
-            // effectiveAttackDamage (the speed part is client-side movement).
-            p.undyingSoulUntil = now + character.skillDurationMs;
-            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
-            if (healed !== p.hp) {
-                p.hp = healed;
-                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+        } else if (character.skillType === 'earthquake') {
+            // No aiming: the whole floor shakes. A small group all takes
+            // skillDamage; past skillThresholdCount the ground swallows the
+            // single nearest enemy instead.
+            const alive = Object.entries(room.monsters).filter(([, m]) => m.alive);
+            io.to(roomId).emit('storyEarthquake', { id: socket.id, count: alive.length });
+            if (!alive.length) return;
+            if (alive.length <= character.skillThresholdCount) {
+                for (const [mid, m] of alive) {
+                    m.hp = Math.max(0, m.hp - character.skillDamage);
+                    if (m.hp <= 0) {
+                        m.alive = false;
+                        io.to(roomId).emit('monsterDefeated', { id: mid });
+                    } else {
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
+            } else {
+                let victimId = null, victim = null, best = Infinity;
+                for (const [mid, m] of alive) {
+                    const d = Math.hypot(m.x - p.x, m.y - p.y);
+                    if (d < best) { best = d; victimId = mid; victim = m; }
+                }
+                victim.hp = 0;
+                victim.alive = false;
+                io.to(roomId).emit('monsterDefeated', { id: victimId });
             }
         }
         // speed_boost is purely client-side; nothing more to do here.
@@ -1287,32 +1305,14 @@ io.on('connection', (socket) => {
             p.rapidAttackCount = 0;
         } else if (character.ultimateType === 'team_shield') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
-        } else if (character.ultimateType === 'earthquake') {
-            // No aiming: the whole floor shakes. A small group all takes
-            // ultimateDamage; past ultimateThresholdCount the ground swallows
-            // the single nearest enemy instead.
-            const alive = Object.entries(room.monsters).filter(([, m]) => m.alive);
-            io.to(roomId).emit('storyEarthquake', { id: socket.id, count: alive.length });
-            if (!alive.length) return;
-            if (alive.length <= character.ultimateThresholdCount) {
-                for (const [mid, m] of alive) {
-                    m.hp = Math.max(0, m.hp - character.ultimateDamage);
-                    if (m.hp <= 0) {
-                        m.alive = false;
-                        io.to(roomId).emit('monsterDefeated', { id: mid });
-                    } else {
-                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
-                    }
-                }
-            } else {
-                let victimId = null, victim = null, best = Infinity;
-                for (const [mid, m] of alive) {
-                    const d = Math.hypot(m.x - p.x, m.y - p.y);
-                    if (d < best) { best = d; victimId = mid; victim = m; }
-                }
-                victim.hp = 0;
-                victim.alive = false;
-                io.to(roomId).emit('monsterDefeated', { id: victimId });
+        } else if (character.ultimateType === 'undying_soul') {
+            // Heals a share of max hp, then the timer is read by
+            // effectiveAttackDamage (the speed part is client-side movement).
+            p.undyingSoulUntil = now + character.ultimateDurationMs;
+            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             }
         }
     });
@@ -1345,7 +1345,7 @@ io.on('connection', (socket) => {
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
-            || character.attackType === 'combo_two_stage' || character.attackType === 'dual_gun') {
+            || character.attackType === 'combo_two_stage' || character.attackType === 'dual_spear') {
             const swing = resolveAttack(character, p, now, rapid);
             advanceAttackSequence(character, p);
             if (meleeLineHit(swing.originX, swing.originY, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
@@ -1463,13 +1463,13 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             }
-        } else if (character.skillType === 'undying_soul') {
-            p.undyingSoulUntil = now + character.skillDurationMs;
-            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
-            if (healed !== p.hp) {
-                p.hp = healed;
-                io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
-            }
+        } else if (character.skillType === 'earthquake') {
+            // A raid only ever has one enemy (the boss), so this always takes
+            // the small-group branch -- the boss is never one-shot.
+            io.to(roomId).emit('earthquake', { id: socket.id, count: 1 });
+            room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+            io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+            if (room.bossHp <= 0) endRoom(roomId, 'win');
         }
     });
 
@@ -1579,13 +1579,13 @@ io.on('connection', (socket) => {
             p.rapidAttackCount = 0;
         } else if (character.ultimateType === 'team_shield') {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
-        } else if (character.ultimateType === 'earthquake') {
-            // A raid only ever has one enemy (the boss), so this always takes
-            // the small-group branch -- the boss is never one-shot.
-            io.to(roomId).emit('earthquake', { id: socket.id, count: 1 });
-            room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
-            io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
-            if (room.bossHp <= 0) endRoom(roomId, 'win');
+        } else if (character.ultimateType === 'undying_soul') {
+            p.undyingSoulUntil = now + character.ultimateDurationMs;
+            const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
+            if (healed !== p.hp) {
+                p.hp = healed;
+                io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            }
         }
     });
 
