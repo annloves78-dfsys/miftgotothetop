@@ -1,3 +1,38 @@
+// Fills the cookie's body with the same hard 50/50 two-colour split its icon
+// uses (see charIconBackground in main.js): left half colorLeft, right half
+// colorRight. Assumes the context is already translated to the body centre and
+// NOT rotated, so the split stays vertical on screen like the icon's does.
+// Falls back to the flat `color` for any cookie without both halves defined.
+function drawCookieBody(ctx, radius, stats, alive) {
+    if (!alive) {
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#7f8c8d';
+        ctx.fill();
+        return;
+    }
+    if (!stats.colorLeft || !stats.colorRight) {
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fillStyle = stats.color;
+        ctx.fill();
+        return;
+    }
+    // Canvas angles: 0 = right, PI/2 = down, PI = left. Sweeping down->up the
+    // short way covers the left half; up->down covers the right half.
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, Math.PI / 2, Math.PI * 1.5);
+    ctx.closePath();
+    ctx.fillStyle = stats.colorLeft;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, -Math.PI / 2, Math.PI / 2);
+    ctx.closePath();
+    ctx.fillStyle = stats.colorRight;
+    ctx.fill();
+}
+
 class Player {
     constructor(id, charType, x, y, isLocal) {
         this.id = id;
@@ -180,11 +215,11 @@ class Player {
             ctx.stroke();
         }
 
+        ctx.globalAlpha = this.alive ? 1 : 0.5;
+        drawCookieBody(ctx, R, this.stats, this.alive);
+        // Outline needs its own path now that the body is two filled halves.
         ctx.beginPath();
         ctx.arc(0, 0, R, 0, Math.PI * 2);
-        ctx.fillStyle = this.alive ? this.stats.color : '#7f8c8d';
-        ctx.globalAlpha = this.alive ? 1 : 0.5;
-        ctx.fill();
         ctx.lineWidth = this.isLocal ? 4 : 2;
         ctx.strokeStyle = this.isLocal ? '#f1c40f' : '#2c3e50';
         ctx.stroke();

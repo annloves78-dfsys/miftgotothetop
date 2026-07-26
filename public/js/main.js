@@ -1507,10 +1507,9 @@ function storyRender(now) {
             storyCtx.stroke();
         }
 
+        drawCookieBody(storyCtx, R, stats, storyPlayer.alive);
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
-        storyCtx.fillStyle = storyPlayer.alive ? stats.color : '#7f8c8d';
-        storyCtx.fill();
         storyCtx.strokeStyle = '#f1c40f';
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
