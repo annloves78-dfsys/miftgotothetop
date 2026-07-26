@@ -10,7 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // rooms[roomId] = {
 //   bossId, state: 'waiting'|'fighting'|'ended',
-//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil } },
+//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil, guardStanceUntil, awakenUntil } },
 //   bossHp, bossMaxHp, bossState: 'idle'|'telegraph'|'active',
 //   bossPattern, bossPatternStartAt, bossPatternRuntime, nextAttackAt, loopHandle, activeBuffs
 // }
@@ -113,11 +113,35 @@ function endRoom(roomId, result) {
     delete rooms[roomId];
 }
 
+// Shield-cookie defensive buffs (guard_stance skill, awakening ultimate) both
+// cut incoming damage the same amount; if both happen to be active at once
+// this intentionally doesn't stack, it just stays at the one multiplier.
+function damageReductionMultiplier(character, p, now) {
+    if (character.skillType === 'guard_stance' && p.guardStanceUntil && now < p.guardStanceUntil) {
+        return character.skillDamageMultiplier;
+    }
+    if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil) {
+        return character.ultimateDamageMultiplier;
+    }
+    return 1;
+}
+
+// awakening temporarily replaces the basic attack's damage; every other
+// character just uses their flat attackDamage.
+function effectiveAttackDamage(character, p, now) {
+    if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil && character.ultimateAttackDamage != null) {
+        return character.ultimateAttackDamage;
+    }
+    return character.attackDamage;
+}
+
 function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     const room = rooms[roomId];
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
+    const character = CHARACTERS[p.charType];
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now()));
     p.hp = Math.max(0, p.hp - dmg);
     if (p.hp <= 0) p.alive = false;
     io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, ...(extra || {}) });
@@ -140,6 +164,8 @@ function startFight(roomId) {
     room.bossState = 'idle';
     room.nextAttackAt = Date.now() + randomRest(bossDef);
     room.activeBuffs = [];
+    room.bossStunnedUntil = 0;
+    room.bossElementMark = null; // { element, charges, multiplier } | null
 
     io.to(roomId).emit('raidStarted', {
         bossHp: room.bossHp,
@@ -177,10 +203,24 @@ function tickRoom(roomId) {
                             healTeam(room, roomId, buff.healAmount);
                         }
                     }
+                } else if (buff.type === 'attack_burn' && buff.ticksLeft > 0) {
+                    buff.ticksLeft -= 1;
+                    room.bossHp = Math.max(0, room.bossHp - buff.damage);
+                    io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: buff.casterId });
+                    if (room.bossHp <= 0) endRoom(roomId, 'win');
+                } else if (buff.type === 'magma_zone') {
+                    const distToBoss = Math.hypot(buff.x, buff.y);
+                    if (distToBoss <= buff.radius + BOSS_RADIUS) {
+                        room.bossHp = Math.max(0, room.bossHp - buff.damage);
+                        io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: buff.casterId });
+                        if (room.bossHp <= 0) endRoom(roomId, 'win');
+                    }
                 }
             }
         }
     }
+
+    if (room.bossStunnedUntil && now < room.bossStunnedUntil) return; // frozen: no pattern progression at all
 
     if (room.bossState === 'idle') {
         if (now >= room.nextAttackAt) {
@@ -400,6 +440,8 @@ function spawnStoryMonsters(room, floorDef) {
             hp: def.health, maxHp: def.health,
             alive: true,
             state: 'idle', // 'idle' | 'telegraph'
+            elementMark: null, // { element, charges, multiplier } | null
+            stunnedUntil: 0,
             telegraphStartAt: 0,
             nextAttackAt: 0
         };
@@ -439,6 +481,8 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg) {
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
+    const character = CHARACTERS[p.charType];
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now()));
     p.hp = Math.max(0, p.hp - dmg);
     if (p.hp <= 0) p.alive = false;
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive });
@@ -476,12 +520,30 @@ function tickStoryRoom(roomId) {
                         }
                     }
                 }
+            } else if (buff.type === 'attack_burn' && buff.ticksLeft > 0) {
+                const m = room.monsters[buff.targetMonsterId];
+                buff.ticksLeft -= 1;
+                if (m && m.alive) {
+                    m.hp = Math.max(0, m.hp - buff.damage);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: buff.targetMonsterId }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: buff.targetMonsterId, hp: m.hp });
+                }
+            } else if (buff.type === 'magma_zone') {
+                for (const [mid, m] of Object.entries(room.monsters)) {
+                    if (!m.alive) continue;
+                    if (Math.hypot(buff.x - m.x, buff.y - m.y) <= buff.radius + MONSTER_RADIUS) {
+                        m.hp = Math.max(0, m.hp - buff.damage);
+                        if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                        else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
             }
         }
     }
 
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive) continue;
+        if (m.stunnedUntil && now < m.stunnedUntil) continue; // frozen: no movement, no attacks
         const def = MONSTERS[m.type];
 
         let nearest = null, nearestDist = Infinity;
@@ -664,18 +726,68 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
         if (character.attackType !== 'melee_kick') return;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
+        const baseAttackDamage = effectiveAttackDamage(character, p, now);
+        const floorDef = STORY_FLOOR_DEFS[room.floor];
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
             if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, m.x, m.y, MONSTER_RADIUS)) {
                 anyHit = true;
-                m.hp = Math.max(0, m.hp - character.attackDamage);
+
+                // Element mark: a matching-element attacker deals bonus
+                // damage vs a marked monster and burns down one charge.
+                let dmg = baseAttackDamage;
+                const mark = m.elementMark;
+                if (mark && mark.element === character.element && mark.charges > 0) {
+                    dmg = Math.round(dmg * mark.multiplier);
+                    mark.charges -= 1;
+                    if (mark.charges <= 0) m.elementMark = null;
+                }
+
+                m.hp = Math.max(0, m.hp - dmg);
                 if (m.hp <= 0) {
                     m.alive = false;
                     io.to(roomId).emit('monsterDefeated', { id: mid });
                 } else {
                     io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    if (character.attackBurnDamage) {
+                        room.activeBuffs.push({
+                            type: 'attack_burn',
+                            casterId: socket.id,
+                            targetMonsterId: mid,
+                            damage: character.attackBurnDamage,
+                            tickMs: character.attackBurnIntervalMs,
+                            ticksLeft: character.attackBurnTicks,
+                            lastTickAt: now,
+                            endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
+                        });
+                    }
+
+                    // Shove the target back (the boss doesn't have this --
+                    // it's fixed in place -- so this only ever fires here).
+                    if (character.attackKnockback) {
+                        const dx = m.x - p.x, dy = m.y - p.y;
+                        const kdist = Math.hypot(dx, dy) || 1;
+                        let nx = m.x + (dx / kdist) * character.attackKnockback;
+                        let ny = m.y + (dy / kdist) * character.attackKnockback;
+                        if (nx > 40) nx = 40;
+                        if (nx < -floorDef.levelLength) nx = -floorDef.levelLength;
+                        if (ny > floorDef.laneHalfWidth) ny = floorDef.laneHalfWidth;
+                        if (ny < -floorDef.laneHalfWidth) ny = -floorDef.laneHalfWidth;
+                        m.x = nx; m.y = ny;
+                    }
+
+                    // While the ultimate window is active, a landed attack marks the target.
+                    if (p.elementMarkUntil && now < p.elementMarkUntil) {
+                        if (m.elementMark && m.elementMark.element === character.element) {
+                            m.elementMark.charges += character.ultimateMarkUses;
+                        } else {
+                            m.elementMark = { element: character.element, charges: character.ultimateMarkUses, multiplier: character.ultimateMarkMultiplier };
+                        }
+                        io.to(roomId).emit('monsterMarked', { id: mid, element: m.elementMark.element, charges: m.elementMark.charges });
+                    }
                 }
             }
         }
@@ -685,7 +797,6 @@ io.on('connection', (socket) => {
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
 
-        const floorDef = STORY_FLOOR_DEFS[room.floor];
         if (floorDef.star && !room.starDefeated) {
             if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
                 room.starDefeated = true;
@@ -709,7 +820,8 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'spin_kick') {
+        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
+            // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
                 const dist = Math.hypot(p.x - m.x, p.y - m.y) - MONSTER_RADIUS;
@@ -735,6 +847,8 @@ io.on('connection', (socket) => {
                 lastTickAt: now,
                 triggered: false
             });
+        } else if (character.skillType === 'guard_stance') {
+            p.guardStanceUntil = now + character.skillDurationMs;
         }
         // speed_boost is purely client-side; nothing more to do here.
     });
@@ -785,6 +899,35 @@ io.on('connection', (socket) => {
             }
         } else if (character.ultimateType === 'attack_heal_boost') {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
+        } else if (character.ultimateType === 'awakening') {
+            p.awakenUntil = now + character.ultimateDurationMs;
+            if (character.ultimateSelfHeal) {
+                const healed = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
+                if (healed !== p.hp) {
+                    p.hp = healed;
+                    io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+                }
+            }
+        } else if (character.ultimateType === 'magma_zone') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
+            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+
+            io.to(roomId).emit('storyMagmaZonePlaced', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius, durationMs: character.ultimateZoneDurationMs });
+
+            room.activeBuffs.push({
+                type: 'magma_zone',
+                casterId: socket.id,
+                x: tx, y: ty,
+                radius: character.ultimateRadius,
+                damage: character.ultimateZoneDamagePerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs,
+                lastTickAt: now
+            });
         }
     });
 
@@ -811,10 +954,22 @@ io.on('connection', (socket) => {
         const now = Date.now();
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         if (character.attackType === 'melee_kick') {
             if (meleeLineHit(p.x, p.y, p.facing, character.attackRange, character.attackWidth, BOSS_RADIUS)) {
-                room.bossHp = Math.max(0, room.bossHp - character.attackDamage);
+                let dmg = effectiveAttackDamage(character, p, now);
+
+                // Element mark: a matching-element attacker deals bonus
+                // damage vs a marked boss and burns down one charge.
+                const mark = room.bossElementMark;
+                if (mark && mark.element === character.element && mark.charges > 0) {
+                    dmg = Math.round(dmg * mark.multiplier);
+                    mark.charges -= 1;
+                    if (mark.charges <= 0) room.bossElementMark = null;
+                }
+
+                room.bossHp = Math.max(0, room.bossHp - dmg);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
 
@@ -824,6 +979,29 @@ io.on('connection', (socket) => {
                 if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
                     const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
                     healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+                }
+
+                // Burn: a couple of small extra ticks after the initial hit.
+                if (character.attackBurnDamage) {
+                    room.activeBuffs.push({
+                        type: 'attack_burn',
+                        casterId: socket.id,
+                        damage: character.attackBurnDamage,
+                        tickMs: character.attackBurnIntervalMs,
+                        ticksLeft: character.attackBurnTicks,
+                        lastTickAt: now,
+                        endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
+                    });
+                }
+
+                // While the ultimate window is active, a landed attack marks the boss.
+                if (p.elementMarkUntil && now < p.elementMarkUntil) {
+                    if (room.bossElementMark && room.bossElementMark.element === character.element) {
+                        room.bossElementMark.charges += character.ultimateMarkUses;
+                    } else {
+                        room.bossElementMark = { element: character.element, charges: character.ultimateMarkUses, multiplier: character.ultimateMarkMultiplier };
+                    }
+                    io.to(roomId).emit('bossMarked', { element: room.bossElementMark.element, charges: room.bossElementMark.charges });
                 }
             }
         }
@@ -843,8 +1021,9 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'spin_kick') {
+        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // A spinning kick hits regardless of facing, unlike the basic attack.
+            // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             const distToEdge = Math.hypot(p.x, p.y) - BOSS_RADIUS;
             if (distToEdge <= character.skillRange) {
                 room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
@@ -865,6 +1044,13 @@ io.on('connection', (socket) => {
                 lastTickAt: now,
                 triggered: false
             });
+        } else if (character.skillType === 'guard_stance') {
+            p.guardStanceUntil = now + character.skillDurationMs;
+        } else if (character.skillType === 'flying_kick') {
+            if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
+                room.bossStunnedUntil = now + character.skillStunMs;
+                io.to(roomId).emit('bossStunned', { durationMs: character.skillStunMs });
+            }
         }
     });
 
@@ -913,6 +1099,41 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'attack_heal_boost') {
             // Read by the playerAttack handler for the duration of the buff.
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
+        } else if (character.ultimateType === 'awakening') {
+            p.awakenUntil = now + character.ultimateDurationMs;
+            if (character.ultimateSelfHeal) {
+                const healed = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
+                if (healed !== p.hp) {
+                    p.hp = healed;
+                    io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+                }
+            }
+        } else if (character.ultimateType === 'magma_zone') {
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+
+            const dist = Math.hypot(targetX, targetY);
+            const clampedDist = Math.min(dist, ARENA_RADIUS);
+            const scale = dist > 0 ? clampedDist / dist : 0;
+            const tx = targetX * scale, ty = targetY * scale;
+
+            io.to(roomId).emit('magmaZonePlaced', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius, durationMs: character.ultimateZoneDurationMs });
+
+            room.activeBuffs.push({
+                type: 'magma_zone',
+                casterId: socket.id,
+                x: tx, y: ty,
+                radius: character.ultimateRadius,
+                damage: character.ultimateZoneDamagePerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs,
+                lastTickAt: now
+            });
+        } else if (character.ultimateType === 'element_mark') {
+            // No immediate effect -- read by the playerAttack handler, which
+            // marks whatever it hits for the rest of this window.
+            p.elementMarkUntil = now + character.ultimateDurationMs;
         }
     });
 

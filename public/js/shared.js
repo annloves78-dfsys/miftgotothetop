@@ -86,6 +86,96 @@ const CHARACTERS = {
         ultimateDurationMs: 8000,
         ultimateHealPerAttack: 5,
         ultimateCooldownMs: 30000
+    },
+    reddragon: {
+        name: '레드 드레곤맛 쿠키',
+        shortName: '드레곤', // shown on the lobby's character-select button
+        color: '#c0392b',
+        grade: '에픽',
+        element: '불',
+        role: '탱커',
+        health: 110,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        attackType: 'melee_kick', // shield bash: same straight-line corridor mechanic
+        attackRange: 90,
+        attackWidth: 45,
+        attackDamage: 4,
+        attackCooldown: 500,
+        skillType: 'guard_stance', // 5s damage-reduction stance; ends early if the player attacks
+        skillDurationMs: 5000,
+        skillDamageMultiplier: 0.8, // incoming damage while guarding
+        skillCooldown: 10000,
+        ultimateType: 'awakening', // temporary speed/damage buff + a one-time self heal
+        ultimateDurationMs: 8000,
+        ultimateSpeedMultiplier: 1.5,
+        ultimateDamageMultiplier: 0.8, // incoming damage while awakened
+        ultimateAttackDamage: 7, // replaces attackDamage while awakened
+        ultimateSelfHeal: 10,
+        ultimateCooldownMs: 30000
+    },
+    volcano: {
+        name: '화산맛 쿠키',
+        shortName: '화산', // shown on the lobby's character-select button
+        color: '#d35400',
+        grade: '에픽',
+        element: '불',
+        role: '대미지 딜러',
+        health: 100,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        attackType: 'melee_kick', // 불주먹: same straight-line corridor mechanic
+        attackRange: 90,
+        attackWidth: 40,
+        attackDamage: 5,
+        attackCooldown: 500,
+        // On top of the immediate 5, a burn ticks for 1 dmg, 1s apart, twice
+        // (total 7). Intentionally left out of the ability description text.
+        attackBurnDamage: 1,
+        attackBurnTicks: 2,
+        attackBurnIntervalMs: 1000,
+        skillType: 'lava_burst', // instant self-centered AoE, same shape as spin_kick
+        skillRange: 100,
+        skillDamage: 5,
+        skillCooldown: 10000,
+        ultimateType: 'magma_zone', // click-to-place zone (aims like targeted_aoe) that ticks damage over time
+        ultimateRadius: 90,
+        ultimateZoneDamagePerTick: 2,
+        ultimateZoneTickMs: 1000,
+        ultimateZoneDurationMs: 10000,
+        ultimateCooldownMs: 30000
+    },
+    greenapple: {
+        name: '청사과맛 쿠키',
+        shortName: '청사과', // shown on the lobby's character-select button
+        color: '#8bc34a',
+        grade: '희귀',
+        element: '바람',
+        role: '스트라이커',
+        health: 100,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        attackType: 'melee_kick', // 긴 다리: same corridor mechanic, longer reach
+        attackRange: 160,
+        attackWidth: 30,
+        attackDamage: 2,
+        attackCooldown: 500,
+        attackKnockback: 20, // pushes the target back this many px (monsters only -- the boss is fixed in place)
+        skillType: 'flying_kick', // directional lunge that stuns whatever it hits, no damage
+        skillRange: 160,
+        skillWidth: 40,
+        skillStunMs: 1000,
+        skillCooldown: 10000,
+        // For ultimateDurationMs after casting, every basic attack that lands
+        // marks its target with this element. While marked, any attacker who
+        // shares that element deals ultimateMarkMultiplier damage and
+        // consumes one charge; marks stack (multiple marks add up their
+        // charges instead of overwriting).
+        ultimateType: 'element_mark',
+        ultimateDurationMs: 5000,
+        ultimateMarkMultiplier: 1.3,
+        ultimateMarkUses: 3,
+        ultimateCooldownMs: 30000
     }
 };
 

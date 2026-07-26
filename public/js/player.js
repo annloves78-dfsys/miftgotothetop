@@ -23,6 +23,7 @@ class Player {
         this.healEffectUntil = 0;
 
         this.speedBoostUntil = 0; // performance.now() timestamp; see triggerSkillEffect()
+        this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
     }
 
     get stats() {
@@ -46,7 +47,8 @@ class Player {
     updateLocal(keys) {
         if (!this.alive) return false;
         const boosted = this.stats.skillType === 'speed_boost' && performance.now() < this.speedBoostUntil;
-        const speed = boosted ? this.stats.skillSpeedValue : this.stats.speed;
+        const awakened = this.stats.ultimateType === 'awakening' && performance.now() < this.awakenUntil;
+        const speed = boosted ? this.stats.skillSpeedValue : (awakened ? this.stats.speed * this.stats.ultimateSpeedMultiplier : this.stats.speed);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -80,11 +82,15 @@ class Player {
     triggerAttackEffect() {
         this.lastAttackClientTime = performance.now();
         this.attackEffectUntil = performance.now() + 180;
+        if (this.stats.skillType === 'guard_stance') {
+            this.skillEffectUntil = 0; // attacking breaks the guard stance
+        }
     }
 
     triggerSkillEffect() {
         this.lastSkillClientTime = performance.now();
-        const duration = this.stats.skillType === 'spin_heal' ? this.stats.skillDurationMs : 350;
+        const matchesFullDuration = this.stats.skillType === 'spin_heal' || this.stats.skillType === 'guard_stance';
+        const duration = matchesFullDuration ? this.stats.skillDurationMs : 350;
         this.skillEffectUntil = performance.now() + duration;
         if (this.stats.skillType === 'speed_boost') {
             this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
@@ -101,6 +107,9 @@ class Player {
     triggerUltimateEffect() {
         this.markUltimateUsed();
         this.ultimateEffectUntil = performance.now() + (this.stats.ultimateDurationMs || 0);
+        if (this.stats.ultimateType === 'awakening') {
+            this.awakenUntil = performance.now() + this.stats.ultimateDurationMs;
+        }
     }
 
     triggerHealEffect() {

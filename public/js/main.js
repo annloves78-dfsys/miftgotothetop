@@ -8,6 +8,8 @@ const screens = {
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
     storyFight: document.getElementById('story-fight-screen'),
+    login: document.getElementById('login-screen'),
+    signup: document.getElementById('signup-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -46,12 +48,186 @@ const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-ico
 const charDetailDesc = document.getElementById('char-detail-desc');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
 
+// ---- Auth (login / signup / persistent session) ----
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const menuBtn = document.getElementById('menu-btn');
+const sideMenu = document.getElementById('side-menu');
+const menuGuestSection = document.getElementById('menu-guest-section');
+const menuUserSection = document.getElementById('menu-user-section');
+const menuNickname = document.getElementById('menu-nickname');
+const menuLoginBtn = document.getElementById('menu-login-btn');
+const menuSignupBtn = document.getElementById('menu-signup-btn');
+const menuLogoutBtn = document.getElementById('menu-logout-btn');
+const loginBackBtn = document.getElementById('login-back-btn');
+const loginEmail = document.getElementById('login-email');
+const loginPassword = document.getElementById('login-password');
+const loginError = document.getElementById('login-error');
+const loginSubmitBtn = document.getElementById('login-submit-btn');
+const loginGotoSignupBtn = document.getElementById('login-goto-signup-btn');
+const signupBackBtn = document.getElementById('signup-back-btn');
+const signupEmail = document.getElementById('signup-email');
+const signupPassword = document.getElementById('signup-password');
+const signupPasswordConfirm = document.getElementById('signup-password-confirm');
+const signupNickname = document.getElementById('signup-nickname');
+const signupError = document.getElementById('signup-error');
+const signupSubmitBtn = document.getElementById('signup-submit-btn');
+const signupGotoLoginBtn = document.getElementById('signup-goto-login-btn');
+
+const AUTH_SESSION_KEY = 'boss_raid_session';
+let currentUser = null;
+
+function saveAuthSession() {
+    if (currentUser) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ token: currentUser.session_token }));
+    else localStorage.removeItem(AUTH_SESSION_KEY);
+}
+function loadAuthSession() {
+    try { return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY)); } catch { return null; }
+}
+
+function updateMenuAuthUI() {
+    if (currentUser) {
+        menuGuestSection.classList.add('hidden');
+        menuUserSection.classList.remove('hidden');
+        menuNickname.textContent = currentUser.nickname + '님';
+    } else {
+        menuGuestSection.classList.remove('hidden');
+        menuUserSection.classList.add('hidden');
+    }
+}
+
+menuBtn.addEventListener('click', () => sideMenu.classList.toggle('hidden'));
+document.addEventListener('click', (e) => {
+    if (!sideMenu.classList.contains('hidden') && !sideMenu.contains(e.target) && e.target !== menuBtn) {
+        sideMenu.classList.add('hidden');
+    }
+});
+
+menuLoginBtn.addEventListener('click', () => {
+    sideMenu.classList.add('hidden');
+    loginError.textContent = '';
+    showScreen('login');
+});
+menuSignupBtn.addEventListener('click', () => {
+    sideMenu.classList.add('hidden');
+    signupError.textContent = '';
+    showScreen('signup');
+});
+menuLogoutBtn.addEventListener('click', () => {
+    currentUser = null;
+    saveAuthSession();
+    updateMenuAuthUI();
+    sideMenu.classList.add('hidden');
+});
+
+loginBackBtn.addEventListener('click', () => showScreen('lobby'));
+signupBackBtn.addEventListener('click', () => showScreen('lobby'));
+loginGotoSignupBtn.addEventListener('click', () => { signupError.textContent = ''; showScreen('signup'); });
+signupGotoLoginBtn.addEventListener('click', () => { loginError.textContent = ''; showScreen('login'); });
+
+async function syncGameDataToCloud(data) {
+    if (!currentUser) return;
+    try {
+        await sb.rpc('br_save_data', { p_token: currentUser.session_token, p_data: data || gameData });
+    } catch (e) {
+        console.error('cloud sync failed', e);
+    }
+}
+setCloudSyncHandler(syncGameDataToCloud);
+
+async function applyCloudGameData(cloudData) {
+    if (cloudData && typeof cloudData === 'object' && Object.keys(cloudData).length > 0) {
+        gameData = { ...defaultData, ...cloudData };
+        Object.keys(SHARED.CHARACTERS).forEach(id => {
+            if (!gameData.unlockedCharacters.includes(id)) gameData.unlockedCharacters.push(id);
+        });
+        saveGameData(gameData);
+    } else {
+        await syncGameDataToCloud();
+    }
+    updateSelectedCharLabel();
+}
+
+loginSubmitBtn.addEventListener('click', async () => {
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+    loginError.textContent = '';
+    if (!email || !password) { loginError.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+    try {
+        const { data, error } = await sb.rpc('br_login', { p_email: email, p_password: password });
+        if (error) throw error;
+        currentUser = data;
+        saveAuthSession();
+        updateMenuAuthUI();
+        await applyCloudGameData(data.game_data);
+        showScreen('lobby');
+    } catch (e) {
+        const msg = (e && e.message) || '';
+        loginError.textContent = msg.includes('INVALID_CREDENTIALS')
+            ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+            : '로그인에 실패했습니다.';
+    }
+});
+
+signupSubmitBtn.addEventListener('click', async () => {
+    const email = signupEmail.value.trim();
+    const password = signupPassword.value;
+    const passwordConfirm = signupPasswordConfirm.value;
+    const nickname = signupNickname.value.trim();
+    signupError.textContent = '';
+    if (!email || !password || !passwordConfirm || !nickname) {
+        signupError.textContent = '모든 항목을 입력해주세요.';
+        return;
+    }
+    if (password !== passwordConfirm) {
+        signupError.textContent = '비밀번호가 일치하지 않습니다.';
+        return;
+    }
+    const strongPassword = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/.test(password);
+    if (!strongPassword) {
+        signupError.textContent = '비밀번호는 10자 이상, 영문/숫자/특수문자를 모두 포함해야 합니다.';
+        return;
+    }
+    try {
+        const { data, error } = await sb.rpc('br_signup', { p_email: email, p_password: password, p_nickname: nickname });
+        if (error) throw error;
+        currentUser = data;
+        saveAuthSession();
+        updateMenuAuthUI();
+        await applyCloudGameData(data.game_data);
+        showScreen('lobby');
+    } catch (e) {
+        const msg = (e && e.message) || '';
+        if (msg.includes('EMAIL_EXISTS')) signupError.textContent = '이미 가입된 이메일입니다.';
+        else if (msg.includes('INVALID_EMAIL')) signupError.textContent = '올바른 이메일 형식이 아닙니다.';
+        else if (msg.includes('PASSWORD_WEAK')) signupError.textContent = '비밀번호는 10자 이상, 영문/숫자/특수문자를 모두 포함해야 합니다.';
+        else signupError.textContent = '회원가입에 실패했습니다.';
+    }
+});
+
+async function restoreAuthSession() {
+    const session = loadAuthSession();
+    if (!session || !session.token) return;
+    try {
+        const { data, error } = await sb.rpc('br_get_me', { p_token: session.token });
+        if (error) throw error;
+        currentUser = { ...data, session_token: session.token };
+        updateMenuAuthUI();
+        await applyCloudGameData(data.game_data);
+    } catch (e) {
+        localStorage.removeItem(AUTH_SESSION_KEY);
+    }
+}
+restoreAuthSession();
+
 function describeAbility(stats, kind) {
     const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
     if (kind === 'attack') {
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse) {
             text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
+        }
+        if (stats.attackKnockback) {
+            text += ` 적을 ${stats.attackKnockback}px 밀쳐냅니다.`;
         }
         return text;
     }
@@ -64,6 +240,12 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedValue}배 빨라집니다.${cd}`;
             case 'spin_heal':
                 return `${sec(stats.skillDurationMs)}초 동안 회전하며 반경 ${stats.skillRadius}px 내의 적에게 ${stats.skillDamage}의 피해를 주고, 적중하면 팀 전체를 ${stats.skillHealOnHit}만큼 회복시킵니다.${cd}`;
+            case 'guard_stance':
+                return `방패를 들어 방어 태세에 들어갑니다. 공격하거나 ${sec(stats.skillDurationMs)}초가 지나면 풀리며, 유지되는 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어듭니다.${cd}`;
+            case 'lava_burst':
+                return `용암을 뿜어 반경 ${stats.skillRange}px 내의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
+            case 'flying_kick':
+                return `전방 ${stats.skillRange}px 범위의 적을 걷어차 ${sec(stats.skillStunMs)}초 동안 기절시킵니다. 기절한 동안 상대는 아무 행동도 할 수 없습니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -77,6 +259,12 @@ function describeAbility(stats, kind) {
                 return `원하는 지점을 지정해 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다.${cd}`;
             case 'attack_heal_boost':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복시킵니다.${cd}`;
+            case 'awakening':
+                return `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedMultiplier}배가 되고, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다. 체력을 ${stats.ultimateSelfHeal}만큼 즉시 회복합니다.${cd}`;
+            case 'magma_zone':
+                return `지정한 위치에 마그마를 떨어뜨려 반경 ${stats.ultimateRadius}px에 화염 표식을 남깁니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 줍니다.${cd}`;
+            case 'element_mark':
+                return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 대상에게 속성 표식을 남깁니다. 표식이 있는 동안 같은 속성의 캐릭터가 공격하면 피해가 ${stats.ultimateMarkMultiplier}배가 되고, 표식은 ${stats.ultimateMarkUses}회 사용되면 사라집니다. 표식은 중첩됩니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -105,7 +293,13 @@ const SKILL_ICONS = {
     spin_heal: '🌿',
     team_heal_over_time: '💚',
     targeted_aoe: '💥',
-    attack_heal_boost: '✨'
+    attack_heal_boost: '✨',
+    guard_stance: '🛡',
+    awakening: '🔥',
+    lava_burst: '🌋',
+    magma_zone: '♨️',
+    flying_kick: '🦵',
+    element_mark: '🌪️'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -180,7 +374,8 @@ function openCharacterDetail(id) {
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
-    charDetailGrade.className = 'grade-badge' + (stats.grade === '희귀' ? ' rare' : ' common');
+    const gradeClass = stats.grade === '에픽' ? 'epic' : (stats.grade === '희귀' ? 'rare' : 'common');
+    charDetailGrade.className = 'grade-badge ' + gradeClass;
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
     charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
@@ -347,6 +542,7 @@ let storyLoopHandle = null;
 let storyLastMoveEmit = 0;
 let isStoryTargetingUltimate = false;
 let storyImpactEffects = []; // [{x, y, radius, until}]
+let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 
 socket.on('storyFloorStarted', (data) => {
     storyFloorDef = data.floorDef;
@@ -355,10 +551,11 @@ socket.on('storyFloorStarted', (data) => {
     storyPlayer = {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
-        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0
+        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0
     };
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
+    storyMagmaZones = [];
     updateStoryHpBar();
     updateStoryMonstersLeft();
     showScreen('storyFight');
@@ -399,6 +596,10 @@ socket.on('storyPlayerHealed', ({ hp }) => {
 
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs }) => {
+    storyMagmaZones.push({ x, y, radius, until: performance.now() + durationMs });
 });
 
 socket.on('storyFloorResult', ({ result, floor }) => {
@@ -478,7 +679,8 @@ function tryStoryUseSkill() {
     if (!storyCanUseSkill(now)) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     storyPlayer.lastSkillClientTime = now;
-    storyPlayer.skillEffectUntil = now + (stats.skillType === 'spin_heal' ? stats.skillDurationMs : 350);
+    const matchesFullDuration = stats.skillType === 'spin_heal' || stats.skillType === 'guard_stance';
+    storyPlayer.skillEffectUntil = now + (matchesFullDuration ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
     socket.emit('storyPlayerSkill');
 }
@@ -489,6 +691,7 @@ function tryStoryUseUltimate() {
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     storyPlayer.lastUltimateClientTime = now;
     storyPlayer.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
+    if (stats.ultimateType === 'awakening') storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
     socket.emit('storyPlayerUltimate');
 }
 
@@ -496,7 +699,7 @@ function tryStoryUseUltimate() {
 function storyHandleUltimateKey() {
     if (!storyPlayer) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    if (stats.ultimateType === 'targeted_aoe') {
+    if (stats.ultimateType === 'targeted_aoe' || stats.ultimateType === 'magma_zone') {
         if (isStoryTargetingUltimate) { isStoryTargetingUltimate = false; return; }
         if (!storyCanUseUltimate(performance.now())) return;
         isStoryTargetingUltimate = true;
@@ -521,6 +724,7 @@ function tryStoryAttack() {
     if (now - storyPlayer.lastAttackClientTime < stats.attackCooldown) return;
     storyPlayer.lastAttackClientTime = now;
     storyPlayer.attackEffectUntil = now + 180;
+    if (stats.skillType === 'guard_stance') storyPlayer.skillEffectUntil = 0; // attacking breaks the guard stance
     socket.emit('storyPlayerAttack');
 }
 
@@ -551,7 +755,8 @@ function storyFrame() {
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
         const boosted = stats.skillType === 'speed_boost' && now < storyPlayer.speedBoostUntil;
-        const speed = boosted ? stats.skillSpeedValue : stats.speed;
+        const awakened = stats.ultimateType === 'awakening' && now < storyPlayer.awakenUntil;
+        const speed = boosted ? stats.skillSpeedValue : (awakened ? stats.speed * stats.ultimateSpeedMultiplier : stats.speed);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -652,6 +857,18 @@ function storyRender(now) {
         storyCtx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
         storyCtx.fill();
         storyCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        storyCtx.lineWidth = 3;
+        storyCtx.stroke();
+    });
+
+    storyMagmaZones = storyMagmaZones.filter(z => now < z.until);
+    storyMagmaZones.forEach(z => {
+        const pulse = 3 + Math.sin(now / 120) * 3;
+        storyCtx.beginPath();
+        storyCtx.arc(z.x, z.y, z.radius + pulse, 0, Math.PI * 2);
+        storyCtx.fillStyle = 'rgba(230, 81, 0, 0.25)';
+        storyCtx.fill();
+        storyCtx.strokeStyle = 'rgba(255, 152, 0, 0.85)';
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
     });
@@ -929,6 +1146,7 @@ let mouseX = null;
 let mouseY = null; // canvas-space; null until the mouse first moves over it
 let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired by left-click
 let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
+let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -943,6 +1161,7 @@ socket.on('raidStarted', (data) => {
     raidStartAt = performance.now();
     isTargetingUltimate = false;
     impactEffects = [];
+    magmaZones = [];
     resetDetailActions();
     settingsMenu.classList.add('hidden');
     leavePendingBanner.classList.add('hidden');
@@ -972,6 +1191,10 @@ socket.on('playerUltimateUsed', ({ id }) => {
 
 socket.on('ultimateImpact', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+socket.on('magmaZonePlaced', ({ x, y, radius, durationMs }) => {
+    magmaZones.push({ x, y, radius, until: performance.now() + durationMs });
 });
 
 socket.on('playerHealed', ({ id, hp }) => {
@@ -1162,7 +1385,7 @@ function tryUseUltimate() {
 function handleUltimateKey() {
     const me = players[socket.id];
     if (!me) return;
-    if (me.stats.ultimateType === 'targeted_aoe') {
+    if (me.stats.ultimateType === 'targeted_aoe' || me.stats.ultimateType === 'magma_zone') {
         if (isTargetingUltimate) { isTargetingUltimate = false; return; } // F again cancels
         if (!me.canUseUltimate(performance.now())) return;
         isTargetingUltimate = true;
@@ -1235,6 +1458,18 @@ function render(now) {
         ctx.fillStyle = `rgba(142, 68, 173, ${0.5 * (1 - t)})`;
         ctx.fill();
         ctx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    });
+
+    magmaZones = magmaZones.filter(z => now < z.until);
+    magmaZones.forEach(z => {
+        const pulse = 3 + Math.sin(now / 120) * 3;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.radius + pulse, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(230, 81, 0, 0.25)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 152, 0, 0.85)';
         ctx.lineWidth = 3;
         ctx.stroke();
     });

@@ -28,12 +28,18 @@ function loadGameData() {
     return { ...defaultData };
 }
 
+let cloudSyncHandler = null;
+function setCloudSyncHandler(fn) {
+    cloudSyncHandler = fn;
+}
+
 function saveGameData(data) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
         console.error("Failed to save game data", e);
     }
+    if (cloudSyncHandler) cloudSyncHandler(data);
 }
 
 function resetGameData() {

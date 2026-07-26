@@ -586,6 +586,10 @@ html, body {
     background: #3498db;
 }
 
+.grade-badge.epic {
+    background: linear-gradient(90deg, #9b59b6, #e91e8c);
+}
+
 .cd-name {
     font-size: 28px;
     font-weight: bold;
@@ -717,6 +721,165 @@ html, body {
 .skill-icon-box.selected {
     border-color: #f1c40f;
     box-shadow: 0 0 10px rgba(241, 196, 15, 0.6);
+}
+
+/* Hamburger menu (top-right of lobby) */
+.menu-btn {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    z-index: 15;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+    background: rgba(20, 24, 32, 0.55);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.menu-btn:hover {
+    background: rgba(20, 24, 32, 0.8);
+}
+
+.side-menu {
+    position: absolute;
+    top: 74px;
+    right: 24px;
+    z-index: 15;
+    width: 220px;
+    background: #22293a;
+    border: 2px solid #34495e;
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.menu-item-btn {
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #34495e;
+    color: white;
+    border: 2px solid #7f8c8d;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.menu-item-btn:hover {
+    filter: brightness(1.15);
+}
+
+.menu-nickname {
+    font-size: 15px;
+    font-weight: bold;
+    text-align: center;
+    padding: 4px 0 2px;
+}
+
+/* Login / Signup */
+#login-screen, #signup-screen {
+    background: rgba(10, 14, 20, 0.92);
+}
+
+.auth-card {
+    width: 420px;
+    max-width: 90vw;
+    max-height: 86vh;
+    overflow-y: auto;
+    background: white;
+    color: #222;
+    border-radius: 18px;
+    padding: 40px 36px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.auth-title {
+    font-size: 26px;
+    font-weight: 800;
+    text-align: center;
+    margin: 0 0 4px;
+}
+
+.auth-subtitle {
+    font-size: 13px;
+    color: #888;
+    text-align: center;
+    margin: 0 0 16px;
+}
+
+.auth-label {
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 14px;
+    margin-bottom: 6px;
+}
+
+.auth-input {
+    padding: 12px 14px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fafafa;
+    color: #222;
+}
+
+.auth-input:focus {
+    outline: none;
+    border-color: #4f8ff7;
+    background: white;
+}
+
+.auth-hint {
+    font-size: 11px;
+    color: #999;
+    margin: 4px 0 0;
+}
+
+.auth-error {
+    font-size: 12px;
+    color: #e74c3c;
+    min-height: 16px;
+    margin: 10px 0 0;
+}
+
+.auth-submit-btn {
+    margin-top: 18px;
+    padding: 14px;
+    background: #4f8ff7;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.auth-submit-btn:hover {
+    filter: brightness(1.05);
+}
+
+.auth-link-btn {
+    margin-top: 14px;
+    background: none;
+    border: none;
+    color: #4f8ff7;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    align-self: center;
 }
 
 .leave-party-btn {
