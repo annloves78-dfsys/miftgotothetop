@@ -1043,6 +1043,11 @@ html, body {
     box-shadow: 0 0 10px rgba(241, 196, 15, 0.6);
 }
 
+/* Passive slot for a cookie that has none -- still clickable, just muted. */
+.skill-icon-box.empty {
+    opacity: 0.4;
+}
+
 /* Hamburger menu (top-right of lobby) */
 .menu-btn {
     position: absolute;

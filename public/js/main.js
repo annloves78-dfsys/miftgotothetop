@@ -69,6 +69,7 @@ function gradeClass(grade) {
 const charDetailAttackIcon = document.getElementById('char-detail-attack-icon');
 const charDetailSkillIcon = document.getElementById('char-detail-skill-icon');
 const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-icon');
+const charDetailPassiveIcon = document.getElementById('char-detail-passive-icon');
 const charDetailDesc = document.getElementById('char-detail-desc');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
 
@@ -243,21 +244,26 @@ async function restoreAuthSession() {
 }
 restoreAuthSession();
 
-// Passives have no icon of their own, so they're appended to the basic-attack
-// description (the one shown by default on the detail screen).
+// Passives get their own icon on the detail screen (next to the ultimate), so
+// this is the text for that slot. Cookies without one show 없음.
+function hasPassive(stats) {
+    return !!(stats.passiveReviveCount || stats.passiveResistElement);
+}
+
 function passiveText(stats) {
-    let out = '';
+    const parts = [];
     if (stats.passiveReviveCount) {
-        out += ` [패시브] 쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${Math.round(stats.passiveReviveHpRatio * 100)}%로 부활합니다.`;
+        parts.push(`쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${Math.round(stats.passiveReviveHpRatio * 100)}%로 부활합니다.`);
     }
     if (stats.passiveResistElement) {
-        out += ` [패시브] ${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`;
+        parts.push(`${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`);
     }
-    return out;
+    return parts.length ? parts.join(' ') : '없음';
 }
 
 function describeAbility(stats, kind) {
     const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
+    if (kind === 'passive') return passiveText(stats);
     if (kind === 'attack') {
         if (stats.attackType === 'alternating_punch') {
             return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
@@ -266,8 +272,7 @@ function describeAbility(stats, kind) {
             const [a, b] = stats.attackStages;
             return `1타는 좌우로 넓게 휘둘러 (가로 ${a.width}px, 전방 ${a.range}px) ${a.damage}의 피해를 줍니다.`
                 + ` 1타 후 ${sec(stats.comboFollowupCooldown)}초 만에 2타를 이어서 쓸 수 있고, 2타는 전방으로 길게 (${b.range}px) 찔러 ${b.damage}의 피해를 줍니다.`
-                + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`
-                + passiveText(stats);
+                + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse) {
@@ -276,7 +281,7 @@ function describeAbility(stats, kind) {
         if (stats.attackKnockback) {
             text += ` 적을 ${stats.attackKnockback}px 밀쳐냅니다.`;
         }
-        return text + passiveText(stats);
+        return text;
     }
     if (kind === 'skill') {
         const cd = ` (재사용 대기시간 ${sec(stats.skillCooldown)}초)`;
@@ -348,13 +353,15 @@ function selectCharDetailAbility(kind) {
     [
         [charDetailAttackIcon, 'attack'],
         [charDetailSkillIcon, 'skill'],
-        [charDetailUltimateIcon, 'ultimate']
+        [charDetailUltimateIcon, 'ultimate'],
+        [charDetailPassiveIcon, 'passive']
     ].forEach(([el, k]) => el.classList.toggle('selected', k === kind));
 }
 
 charDetailAttackIcon.addEventListener('click', () => selectCharDetailAbility('attack'));
 charDetailSkillIcon.addEventListener('click', () => selectCharDetailAbility('skill'));
 charDetailUltimateIcon.addEventListener('click', () => selectCharDetailAbility('ultimate'));
+charDetailPassiveIcon.addEventListener('click', () => selectCharDetailAbility('passive'));
 
 const SKILL_ICONS = {
     melee_kick: '🗡',
@@ -790,6 +797,7 @@ function openCharacterDetail(id) {
     charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
     charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
+    charDetailPassiveIcon.classList.toggle('empty', !hasPassive(stats));
     selectCharDetailAbility('attack');
     showScreen('characterDetail');
 }
