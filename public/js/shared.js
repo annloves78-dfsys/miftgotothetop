@@ -271,11 +271,15 @@ const CHARACTERS = {
         // comboFollowupCooldown after the sweep instead of the full cooldown.
         attackType: 'combo_two_stage',
         attackStages: [
-            { range: 100, width: 90, damage: 8 }, // sweep: long sideways, medium forward
-            { range: 190, width: 40, damage: 5 }  // thrust: long forward
+            { range: 100, width: 90, damage: 7 }, // sweep: long sideways, medium forward
+            { range: 190, width: 40, damage: 4 }  // thrust: long forward
         ],
         attackCooldown: 500,
         comboFollowupCooldown: 200,
+        // Passive: cheats death once per battle, coming back with this much of
+        // its max health. The count resets every time a fight starts.
+        passiveReviveCount: 1,
+        passiveReviveHpRatio: 0.5,
         // Like guard_stance but it is NOT broken by attacking.
         skillType: 'shield_block',
         skillDurationMs: 5000,

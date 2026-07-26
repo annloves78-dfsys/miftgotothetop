@@ -8,6 +8,11 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// 관리자 콘솔은 게임과 완전히 분리된 페이지라 /admin 링크로 따로 엽니다.
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 // rooms[roomId] = {
 //   bossId, state: 'waiting'|'fighting'|'ended',
 //   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil, guardStanceUntil, awakenUntil, elementMarkUntil, punchSequence, rapidStrikeUntil, rapidAttackCount } },
@@ -210,6 +215,18 @@ function outgoingDamageMultiplier(target, now) {
     return 1;
 }
 
+// Cheat-death passive (lightning). Called the moment a player's hp hits 0:
+// spends one revive charge and returns them to a fraction of max hp instead of
+// letting them go down. Returns true if the death was cancelled.
+function tryRevive(p, character) {
+    if (!character.passiveReviveCount) return false;
+    if ((p.revivesUsed || 0) >= character.passiveReviveCount) return false;
+    p.revivesUsed = (p.revivesUsed || 0) + 1;
+    p.hp = Math.max(1, Math.round(p.maxHp * character.passiveReviveHpRatio));
+    p.alive = true;
+    return true;
+}
+
 function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     const room = rooms[roomId];
     if (!room) return;
@@ -227,8 +244,13 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
         dmg -= absorbed;
     }
     p.hp = Math.max(0, p.hp - dmg);
-    if (p.hp <= 0) p.alive = false;
+    let revived = false;
+    if (p.hp <= 0) {
+        revived = tryRevive(p, character);
+        if (!revived) p.alive = false;
+    }
     io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0, ...(extra || {}) });
+    if (revived) io.to(roomId).emit('playerRevived', { id: playerId, hp: p.hp });
 
     if (Object.values(room.players).every(pl => !pl.alive)) {
         endRoom(roomId, 'lose');
@@ -655,8 +677,13 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
         dmg -= absorbed;
     }
     p.hp = Math.max(0, p.hp - dmg);
-    if (p.hp <= 0) p.alive = false;
+    let revived = false;
+    if (p.hp <= 0) {
+        revived = tryRevive(p, character);
+        if (!revived) p.alive = false;
+    }
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
+    if (revived) io.to(roomId).emit('storyPlayerRevived', { id: playerId, hp: p.hp });
     if (!p.alive) endStoryRoom(roomId, 'lose');
 }
 
@@ -988,7 +1015,10 @@ io.on('connection', (socket) => {
         }
 
         if (floorDef.star && !room.starDefeated) {
-            if (meleeLineHitPoint(p.x, p.y, p.facing, character.attackRange, character.attackWidth, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
+            // Must use the resolved swing, not character.attackRange/Width --
+            // multi-stage attacks (combo_two_stage) leave those undefined, which
+            // made the star impossible to hit.
+            if (meleeLineHitPoint(p.x, p.y, p.facing, swing.range, swing.width, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
                 room.starDefeated = true;
                 io.to(roomId).emit('starHit', {});
                 endStoryRoom(roomId, 'win');

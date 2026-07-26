@@ -243,6 +243,19 @@ async function restoreAuthSession() {
 }
 restoreAuthSession();
 
+// Passives have no icon of their own, so they're appended to the basic-attack
+// description (the one shown by default on the detail screen).
+function passiveText(stats) {
+    let out = '';
+    if (stats.passiveReviveCount) {
+        out += ` [패시브] 쓰러져도 전투당 ${stats.passiveReviveCount}번 체력 ${Math.round(stats.passiveReviveHpRatio * 100)}%로 부활합니다.`;
+    }
+    if (stats.passiveResistElement) {
+        out += ` [패시브] ${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`;
+    }
+    return out;
+}
+
 function describeAbility(stats, kind) {
     const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
     if (kind === 'attack') {
@@ -253,7 +266,8 @@ function describeAbility(stats, kind) {
             const [a, b] = stats.attackStages;
             return `1타는 좌우로 넓게 휘둘러 (가로 ${a.width}px, 전방 ${a.range}px) ${a.damage}의 피해를 줍니다.`
                 + ` 1타 후 ${sec(stats.comboFollowupCooldown)}초 만에 2타를 이어서 쓸 수 있고, 2타는 전방으로 길게 (${b.range}px) 찔러 ${b.damage}의 피해를 줍니다.`
-                + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+                + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`
+                + passiveText(stats);
         }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse) {
@@ -262,7 +276,7 @@ function describeAbility(stats, kind) {
         if (stats.attackKnockback) {
             text += ` 적을 ${stats.attackKnockback}px 밀쳐냅니다.`;
         }
-        return text;
+        return text + passiveText(stats);
     }
     if (kind === 'skill') {
         const cd = ` (재사용 대기시간 ${sec(stats.skillCooldown)}초)`;
@@ -1178,6 +1192,14 @@ socket.on('storyPlayerShielded', ({ shieldHp }) => {
     updateStoryHpBar();
 });
 
+socket.on('storyPlayerRevived', ({ hp }) => {
+    if (!storyPlayer) return;
+    storyPlayer.hp = hp;
+    storyPlayer.alive = true;
+    storyPlayer.healEffectUntil = performance.now() + 900; // brighter, longer flash
+    updateStoryHpBar();
+});
+
 socket.on('storyPlayerHealed', ({ hp }) => {
     if (!storyPlayer) return;
     storyPlayer.hp = hp;
@@ -1915,6 +1937,15 @@ socket.on('playerHealed', ({ id, hp }) => {
     if (!p) return;
     p.hp = hp;
     p.triggerHealEffect();
+    updateHpBars();
+});
+
+socket.on('playerRevived', ({ id, hp }) => {
+    const p = players[id];
+    if (!p) return;
+    p.hp = hp;
+    p.alive = true;
+    p.healEffectUntil = performance.now() + 900; // brighter, longer flash
     updateHpBars();
 });
 
