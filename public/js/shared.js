@@ -188,6 +188,41 @@ const CHARACTERS = {
         ultimateMarkMultiplier: 1.3,
         ultimateMarkUses: 3,
         ultimateCooldownMs: 30000
+    },
+    orangelemon: {
+        name: '오렌지 레몬맛 쿠키',
+        shortName: '오렌지레몬', // shown on the lobby's character-select button
+        color: '#f39c12',
+        colorLeft: '#e67e22', // orange
+        colorRight: '#f1c40f', // yellow
+        grade: '에이션트',
+        element: '빛',
+        role: '대미지 딜러',
+        health: 130,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        // 짜릿한 주먹: alternates right/left punches, each swing dealing a
+        // different amount. Uses the same straight-line corridor as melee_kick.
+        attackType: 'alternating_punch',
+        attackRange: 90,
+        attackWidth: 40,
+        attackDamageRight: 7,
+        attackDamageLeft: 8,
+        attackCooldown: 500,
+        skillType: 'kick', // 발차기: directional hit, no AoE/stun -- also what awakening auto-throws
+        skillRange: 100,
+        skillWidth: 45,
+        skillDamage: 10,
+        skillCooldown: 10000,
+        // 각성: for ultimateDurationMs, the basic attack's cooldown drops to
+        // ultimateRapidCooldown, and every ultimateAutoKickEvery-th attack
+        // (counted fresh from the moment this activates) becomes the kick
+        // instead of a punch.
+        ultimateType: 'awakening_rapid',
+        ultimateDurationMs: 10000,
+        ultimateRapidCooldown: 100,
+        ultimateAutoKickEvery: 3,
+        ultimateCooldownMs: 30000
     }
 };
 

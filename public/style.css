@@ -1104,6 +1104,13 @@ html, body {
     margin-bottom: 12px;
 }
 
+.boss-card .icon.char-swatch {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px solid #ecf0f1;
+}
+
 .boss-card .name {
     font-size: 18px;
     font-weight: bold;

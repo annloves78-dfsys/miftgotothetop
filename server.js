@@ -10,7 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // rooms[roomId] = {
 //   bossId, state: 'waiting'|'fighting'|'ended',
-//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil, guardStanceUntil, awakenUntil } },
+//   players: { [socketId]: { x, y, hp, maxHp, charType, facing, alive, lastAttackTime, lastSkillTime, lastUltimateTime, attackHealBoostUntil, guardStanceUntil, awakenUntil, elementMarkUntil, punchSequence, rapidStrikeUntil, rapidAttackCount } },
 //   bossHp, bossMaxHp, bossState: 'idle'|'telegraph'|'active',
 //   bossPattern, bossPatternStartAt, bossPatternRuntime, nextAttackAt, loopHandle, activeBuffs
 // }
@@ -133,6 +133,25 @@ function effectiveAttackDamage(character, p, now) {
         return character.ultimateAttackDamage;
     }
     return character.attackDamage;
+}
+
+// Is the awakening_rapid ultimate (orangelemon) currently active for this player?
+function rapidStrikeActive(character, p, now) {
+    return character.ultimateType === 'awakening_rapid' && !!p.rapidStrikeUntil && now < p.rapidStrikeUntil;
+}
+
+// alternating_punch (orangelemon): right/left punches alternate in damage;
+// while rapid strike is active, every ultimateAutoKickEvery-th attack
+// (counted fresh from activation) becomes the kick instead.
+function resolveAlternatingPunchDamage(character, p, rapid) {
+    if (rapid) {
+        p.rapidAttackCount = (p.rapidAttackCount || 0) + 1;
+        if (p.rapidAttackCount % character.ultimateAutoKickEvery === 0) {
+            return character.skillDamage;
+        }
+    }
+    p.punchSequence = (p.punchSequence || 0) + 1;
+    return (p.punchSequence % 2 === 1) ? character.attackDamageRight : character.attackDamageLeft;
 }
 
 function applyDamageToPlayer(roomId, playerId, dmg, extra) {
@@ -735,13 +754,17 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         const character = CHARACTERS[p.charType];
         const now = Date.now();
-        if (now - p.lastAttackTime < character.attackCooldown) return;
+        const rapid = rapidStrikeActive(character, p, now);
+        const cooldown = rapid ? character.ultimateRapidCooldown : character.attackCooldown;
+        if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
-        if (character.attackType !== 'melee_kick') return;
+        if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch') return;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
-        const baseAttackDamage = effectiveAttackDamage(character, p, now);
+        const baseAttackDamage = character.attackType === 'alternating_punch'
+            ? resolveAlternatingPunchDamage(character, p, rapid)
+            : effectiveAttackDamage(character, p, now);
         const floorDef = STORY_FLOOR_DEFS[room.floor];
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
@@ -861,6 +884,27 @@ io.on('connection', (socket) => {
             });
         } else if (character.skillType === 'guard_stance') {
             p.guardStanceUntil = now + character.skillDurationMs;
+        } else if (character.skillType === 'flying_kick') {
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) {
+                    m.stunnedUntil = now + character.skillStunMs;
+                    io.to(roomId).emit('monsterStunned', { id: mid });
+                }
+            }
+        } else if (character.skillType === 'kick') {
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) {
+                    m.hp = Math.max(0, m.hp - character.skillDamage);
+                    if (m.hp <= 0) {
+                        m.alive = false;
+                        io.to(roomId).emit('monsterDefeated', { id: mid });
+                    } else {
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                    }
+                }
+            }
         }
         // speed_boost is purely client-side; nothing more to do here.
     });
@@ -940,6 +984,13 @@ io.on('connection', (socket) => {
                 endAt: now + character.ultimateZoneDurationMs,
                 lastTickAt: now
             });
+        } else if (character.ultimateType === 'element_mark') {
+            // No immediate effect -- read by the storyPlayerAttack handler,
+            // which marks whatever it hits for the rest of this window.
+            p.elementMarkUntil = now + character.ultimateDurationMs;
+        } else if (character.ultimateType === 'awakening_rapid') {
+            p.rapidStrikeUntil = now + character.ultimateDurationMs;
+            p.rapidAttackCount = 0;
         }
     });
 
@@ -964,13 +1015,17 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         const character = CHARACTERS[p.charType];
         const now = Date.now();
-        if (now - p.lastAttackTime < character.attackCooldown) return;
+        const rapid = rapidStrikeActive(character, p, now);
+        const cooldown = rapid ? character.ultimateRapidCooldown : character.attackCooldown;
+        if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
-        if (character.attackType === 'melee_kick') {
+        if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch') {
             if (meleeLineHit(p.x, p.y, p.facing, character.attackRange, character.attackWidth, BOSS_RADIUS)) {
-                let dmg = effectiveAttackDamage(character, p, now);
+                let dmg = character.attackType === 'alternating_punch'
+                    ? resolveAlternatingPunchDamage(character, p, rapid)
+                    : effectiveAttackDamage(character, p, now);
 
                 // Element mark: a matching-element attacker deals bonus
                 // damage vs a marked boss and burns down one charge.
@@ -1071,6 +1126,12 @@ io.on('connection', (socket) => {
                 room.bossStunnedUntil = now + character.skillStunMs;
                 io.to(roomId).emit('bossStunned', { durationMs: character.skillStunMs });
             }
+        } else if (character.skillType === 'kick') {
+            if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
         }
     });
 
@@ -1154,6 +1215,9 @@ io.on('connection', (socket) => {
             // No immediate effect -- read by the playerAttack handler, which
             // marks whatever it hits for the rest of this window.
             p.elementMarkUntil = now + character.ultimateDurationMs;
+        } else if (character.ultimateType === 'awakening_rapid') {
+            p.rapidStrikeUntil = now + character.ultimateDurationMs;
+            p.rapidAttackCount = 0;
         }
     });
 

@@ -24,6 +24,7 @@ class Player {
 
         this.speedBoostUntil = 0; // performance.now() timestamp; see triggerSkillEffect()
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
+        this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
     }
 
     get stats() {
@@ -31,7 +32,10 @@ class Player {
     }
 
     canAttack(now) {
-        return this.alive && now - this.lastAttackClientTime >= this.stats.attackCooldown;
+        if (!this.alive) return false;
+        const rapid = this.stats.ultimateType === 'awakening_rapid' && now < this.rapidStrikeUntil;
+        const cooldown = rapid ? this.stats.ultimateRapidCooldown : this.stats.attackCooldown;
+        return now - this.lastAttackClientTime >= cooldown;
     }
 
     canUseSkill(now) {
@@ -109,6 +113,8 @@ class Player {
         this.ultimateEffectUntil = performance.now() + (this.stats.ultimateDurationMs || 0);
         if (this.stats.ultimateType === 'awakening') {
             this.awakenUntil = performance.now() + this.stats.ultimateDurationMs;
+        } else if (this.stats.ultimateType === 'awakening_rapid') {
+            this.rapidStrikeUntil = performance.now() + this.stats.ultimateDurationMs;
         }
     }
 

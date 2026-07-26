@@ -231,6 +231,9 @@ restoreAuthSession();
 function describeAbility(stats, kind) {
     const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
     if (kind === 'attack') {
+        if (stats.attackType === 'alternating_punch') {
+            return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse) {
             text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
@@ -255,6 +258,8 @@ function describeAbility(stats, kind) {
                 return `용암을 뿜어 반경 ${stats.skillRange}px 내의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             case 'flying_kick':
                 return `전방 ${stats.skillRange}px 범위의 적을 걷어차 ${sec(stats.skillStunMs)}초 동안 기절시킵니다. 기절한 동안 상대는 아무 행동도 할 수 없습니다.${cd}`;
+            case 'kick':
+                return `전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -274,6 +279,8 @@ function describeAbility(stats, kind) {
                 return `지정한 위치에 마그마를 떨어뜨려 반경 ${stats.ultimateRadius}px에 화염 표식을 남깁니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 줍니다.${cd}`;
             case 'element_mark':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 대상에게 속성 표식을 남깁니다. 표식이 있는 동안 같은 속성의 캐릭터가 공격하면 피해가 ${stats.ultimateMarkMultiplier}배가 되고, 표식은 ${stats.ultimateMarkUses}회 사용되면 사라집니다. 표식은 중첩됩니다.${cd}`;
+            case 'awakening_rapid':
+                return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -319,7 +326,10 @@ const SKILL_ICONS = {
     lava_burst: '🌋',
     magma_zone: '♨️',
     flying_kick: '🦵',
-    element_mark: '🌪️'
+    element_mark: '🌪️',
+    alternating_punch: '👊',
+    kick: '🦶',
+    awakening_rapid: '⚡'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -371,7 +381,10 @@ function renderCharacterList() {
         const unlocked = gameData.unlockedCharacters.includes(id);
         const card = document.createElement('div');
         card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === gameData.selectedCharacter ? ' selected' : '');
-        card.innerHTML = `<div class="icon">${unlocked ? '🧑' : '🔒'}</div><div class="name">${stats.name}</div>`;
+        const iconHtml = unlocked
+            ? `<div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>`
+            : `<div class="icon">🔒</div>`;
+        card.innerHTML = `${iconHtml}<div class="name">${stats.name}</div>`;
         if (unlocked) card.addEventListener('click', () => openCharacterDetail(id));
         characterListEl.appendChild(card);
     });
@@ -399,8 +412,13 @@ function openCharacterDetail(id) {
     charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
-    charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
+    if (stats.attackDamageRight != null && stats.attackDamageLeft != null) {
+        charDetailAtk.textContent = `${stats.attackDamageRight}~${stats.attackDamageLeft}`;
+    } else {
+        charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
+    }
     charDetailHp.textContent = stats.health != null ? stats.health : '-';
+    charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
     charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
     selectCharDetailAbility('attack');
@@ -572,7 +590,7 @@ socket.on('storyFloorStarted', (data) => {
     storyPlayer = {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true,
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
-        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0
+        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0
     };
     isStoryTargetingUltimate = false;
     storyImpactEffects = [];
@@ -713,6 +731,7 @@ function tryStoryUseUltimate() {
     storyPlayer.lastUltimateClientTime = now;
     storyPlayer.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
     if (stats.ultimateType === 'awakening') storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
     socket.emit('storyPlayerUltimate');
 }
 
@@ -742,7 +761,9 @@ function tryStoryAttack() {
     if (!storyPlayer || !storyPlayer.alive) return;
     const now = performance.now();
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    if (now - storyPlayer.lastAttackClientTime < stats.attackCooldown) return;
+    const rapid = stats.ultimateType === 'awakening_rapid' && now < storyPlayer.rapidStrikeUntil;
+    const cooldown = rapid ? stats.ultimateRapidCooldown : stats.attackCooldown;
+    if (now - storyPlayer.lastAttackClientTime < cooldown) return;
     storyPlayer.lastAttackClientTime = now;
     storyPlayer.attackEffectUntil = now + 180;
     if (stats.skillType === 'guard_stance') storyPlayer.skillEffectUntil = 0; // attacking breaks the guard stance
