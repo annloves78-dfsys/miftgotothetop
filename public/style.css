@@ -590,6 +590,11 @@ html, body {
     background: linear-gradient(90deg, #9b59b6, #e91e8c);
 }
 
+.grade-badge.ancient {
+    background: linear-gradient(90deg, #f39c12, #f1c40f, #f39c12);
+    color: #3e2200;
+}
+
 .cd-name {
     font-size: 28px;
     font-weight: bold;

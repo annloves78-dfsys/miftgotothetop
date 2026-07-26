@@ -42,6 +42,15 @@ const charDetailElement = document.getElementById('char-detail-element');
 const charDetailRole = document.getElementById('char-detail-role');
 const charDetailAtk = document.getElementById('char-detail-atk');
 const charDetailHp = document.getElementById('char-detail-hp');
+const charDetailAwakenSlot = document.getElementById('char-detail-awaken-slot');
+
+// Cookie Run Kingdom-style rarity ladder. From 에이션트 up, cookies get an
+// extra "각성" (awakening) equipment slot above their weapon slot.
+const GRADE_ORDER = ['일반', '희귀', '에픽', '에이션트', '비스트', '게스트'];
+function hasAwakenSlot(grade) {
+    const idx = GRADE_ORDER.indexOf(grade);
+    return idx >= GRADE_ORDER.indexOf('에이션트');
+}
 const charDetailAttackIcon = document.getElementById('char-detail-attack-icon');
 const charDetailSkillIcon = document.getElementById('char-detail-skill-icon');
 const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-icon');
@@ -385,8 +394,9 @@ function openCharacterDetail(id) {
     charDetailName.textContent = stats.name;
     charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
-    const gradeClass = stats.grade === '에픽' ? 'epic' : (stats.grade === '희귀' ? 'rare' : 'common');
-    charDetailGrade.className = 'grade-badge ' + gradeClass;
+    const GRADE_CLASSES = { '희귀': 'rare', '에픽': 'epic', '에이션트': 'ancient', '비스트': 'ancient', '게스트': 'ancient' };
+    charDetailGrade.className = 'grade-badge ' + (GRADE_CLASSES[stats.grade] || 'common');
+    charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
     charDetailAtk.textContent = stats.attackDamage != null ? stats.attackDamage : '-';
