@@ -479,7 +479,7 @@ storySoloBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-const STORY_TOTAL_FLOORS = 3;
+const STORY_TOTAL_FLOORS = 10; // floors 3+ are placeholders until they get real content (see STORY_FLOOR_DEFS)
 let selectedStoryFloor = 1;
 
 function isFloorUnlocked(floor) {
@@ -513,11 +513,11 @@ function renderTower() {
     });
 
     const floorDef = SHARED.STORY_FLOOR_DEFS[selectedStoryFloor];
-    towerFloorPower.textContent = (floorDef && floorDef.recommendedPower) || '미정';
+    towerFloorPower.textContent = floorDef ? floorDef.recommendedPower : '준비중';
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     towerCharIcon.style.background = charIconBackground(stats);
     towerCharName.textContent = stats.name;
-    towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor);
+    towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor) || !floorDef;
 }
 
 backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
