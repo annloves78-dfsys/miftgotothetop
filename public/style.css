@@ -2126,6 +2126,17 @@ body.mc-on .settings-hint {
     font-size: 9px;
 }
 
+/* The number key that also swaps to this cookie. */
+.guest-party-member .pm-key {
+    font-size: 9px;
+    color: #95a5a6;
+    line-height: 1;
+}
+
+.guest-party-member.active .pm-key {
+    color: #f1c40f;
+}
+
 /* The floor giving way once the boss hits 0 -- it doesn't die, phase 2 begins. */
 .guest-collapse {
     position: absolute;

@@ -1018,6 +1018,20 @@ function findOpenGuestRoom(guestId) {
     return null;
 }
 
+// Timers that belong to the cookie, not to the player holding it: its own
+// skill/ultimate cooldowns plus the buff windows those opened. Each of the four
+// cookies therefore has its own skill and its own ultimate -- using one cookie's
+// ultimate leaves the other three free to use theirs.
+const GUEST_SLOT_TIMERS = ['lastSkillTime', 'lastUltimateTime', 'guardStanceUntil',
+    'attackHealBoostUntil', 'awakenUntil', 'rapidStrikeUntil'];
+
+// Hand the active cookie's hp and timers back to its slot before leaving it.
+function bankGuestSlot(p) {
+    p.partyHp[p.active] = p.hp;
+    const slot = p.partySlotTimers[p.active];
+    GUEST_SLOT_TIMERS.forEach(f => { slot[f] = p[f] || 0; });
+}
+
 // A party entry's cookie is the source of truth for its max hp. p.charType/hp/
 // maxHp mirror whichever slot is active so all the shared combat helpers
 // (resolveAttack, damageReductionMultiplier, ...) keep working unchanged.
@@ -1026,6 +1040,8 @@ function activateGuestSlot(p, index) {
     p.charType = p.party[index];
     p.hp = p.partyHp[index];
     p.maxHp = p.partyMaxHp[index];
+    const slot = p.partySlotTimers[index];
+    GUEST_SLOT_TIMERS.forEach(f => { p[f] = slot[f] || 0; });
 }
 
 function makeGuestPlayer(party, slotIndex) {
@@ -1036,6 +1052,7 @@ function makeGuestPlayer(party, slotIndex) {
         partyMaxHp: maxHp.slice(),
         partyAlive: party.map(() => true),
         partyRevivesUsed: party.map(() => 0),
+        partySlotTimers: party.map(() => ({})),
         active: 0,
         x: slotIndex === 0 ? -90 : 90,
         y: GUEST_ARENA_HALF_H - 70,
@@ -1127,7 +1144,7 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
             // out once the whole party is down.
             const next = p.partyAlive.findIndex(a => a);
             if (next >= 0) {
-                p.partyHp[p.active] = 0;
+                bankGuestSlot(p); // p.hp is already 0 here
                 activateGuestSlot(p, next);
                 swappedTo = next;
             } else {
@@ -2250,7 +2267,7 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         if (typeof index !== 'number' || index < 0 || index >= p.party.length) return;
         if (index === p.active || !p.partyAlive[index]) return;
-        p.partyHp[p.active] = p.hp; // bank the outgoing cookie's damage
+        bankGuestSlot(p); // the outgoing cookie keeps its damage AND its cooldowns
         activateGuestSlot(p, index);
         io.to(roomId).emit('guestSwapped', {
             id: socket.id, active: p.active, charType: p.charType,

@@ -56,6 +56,31 @@ let guestLastMoveEmit = 0;
 let guestLocal = null;      // local prediction of my own cookie
 let guestQuakeUntil = 0;
 
+// Mirror of the server's per-slot timers: each of the four cookies carries its
+// own skill/ultimate cooldown and its own buff windows, so using one cookie's
+// ultimate doesn't spend anybody else's.
+const GUEST_SLOT_FIELDS = ['lastSkillClientTime', 'lastUltimateClientTime',
+    'skillEffectUntil', 'ultimateEffectUntil', 'speedBoostUntil', 'awakenUntil', 'rapidStrikeUntil'];
+const GUEST_SLOT_DEFAULTS = {
+    lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
+    skillEffectUntil: 0, ultimateEffectUntil: 0,
+    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0
+};
+
+function guestSlotBag(i) {
+    if (!guestLocal.slotTimers[i]) guestLocal.slotTimers[i] = { ...GUEST_SLOT_DEFAULTS };
+    return guestLocal.slotTimers[i];
+}
+
+function activateGuestLocalSlot(index) {
+    if (!guestLocal || index === guestLocal.activeSlot) return;
+    const outgoing = guestSlotBag(guestLocal.activeSlot);
+    GUEST_SLOT_FIELDS.forEach(f => { outgoing[f] = guestLocal[f]; });
+    guestLocal.activeSlot = index;
+    const incoming = guestSlotBag(index);
+    GUEST_SLOT_FIELDS.forEach(f => { guestLocal[f] = incoming[f]; });
+}
+
 function guestPartyCapacity() {
     return guestIsMulti ? 1 : SHARED.GUEST_PARTY_SIZE;
 }
@@ -226,21 +251,49 @@ function guestStats() {
     return SHARED.CHARACTERS[me ? me.charType : 'kicker'] || SHARED.CHARACTERS.kicker;
 }
 
+// Clicks are delegated to the bar itself, and the rows are built once and then
+// updated in place. Rebuilding the rows on every server tick (which is what
+// this used to do) meant a real mousedown/mouseup pair almost never landed on
+// the same element, so clicking a cookie never swapped -- only the number keys
+// worked.
+guestPartyBarEl.addEventListener('click', (e) => {
+    const row = e.target.closest ? e.target.closest('.guest-party-member') : null;
+    if (!row || !guestPartyBarEl.contains(row)) return;
+    const me = guestMe();
+    const i = Number(row.dataset.slot);
+    if (!me || !Number.isInteger(i)) return;
+    if (i === me.active || !me.partyAlive[i]) return;
+    socket.emit('guestSwap', { index: i });
+});
+
+function buildGuestPartyBar(party) {
+    guestPartyBarEl.innerHTML = '';
+    party.forEach((id, i) => {
+        const stats = SHARED.CHARACTERS[id];
+        const el = document.createElement('div');
+        el.className = 'guest-party-member';
+        el.dataset.slot = String(i);
+        el.innerHTML = `<div class="pm-key">${i + 1}</div>`
+            + `<div class="pm-circle" style="background:${charIconBackground(stats)}"></div>`
+            + `<div class="pm-bar"><div class="pm-bar-fill"></div></div>`
+            + `<div class="pm-hp"></div>`;
+        guestPartyBarEl.appendChild(el);
+    });
+}
+
 function renderGuestPartyBar() {
     const me = guestMe();
     if (!me) { guestPartyBarEl.innerHTML = ''; return; }
-    guestPartyBarEl.innerHTML = '';
+    const rows = guestPartyBarEl.children;
+    if (rows.length !== me.party.length) buildGuestPartyBar(me.party);
     me.party.forEach((id, i) => {
-        const stats = SHARED.CHARACTERS[id];
+        const el = guestPartyBarEl.children[i];
         const down = !me.partyAlive[i];
-        const el = document.createElement('div');
-        el.className = 'guest-party-member' + (i === me.active ? ' active' : '') + (down ? ' down' : '');
+        el.classList.toggle('active', i === me.active);
+        el.classList.toggle('down', down);
         const pct = Math.max(0, me.partyHp[i] / me.partyMaxHp[i]) * 100;
-        el.innerHTML = `<div class="pm-circle" style="background:${charIconBackground(stats)}"></div>`
-            + `<div class="pm-bar"><div class="pm-bar-fill" style="width:${pct}%"></div></div>`
-            + `<div class="pm-hp">${me.partyHp[i]}/${me.partyMaxHp[i]}</div>`;
-        if (!down && i !== me.active) el.addEventListener('click', () => socket.emit('guestSwap', { index: i }));
-        guestPartyBarEl.appendChild(el);
+        el.querySelector('.pm-bar-fill').style.width = `${pct}%`;
+        el.querySelector('.pm-hp').textContent = `${me.partyHp[i]}/${me.partyMaxHp[i]}`;
     });
 }
 
@@ -267,10 +320,12 @@ socket.on('guestStarted', (data) => {
     const me = data.players[socket.id];
     guestLocal = me ? {
         x: me.x, y: me.y, facing: -Math.PI / 2,
-        lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
-        attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0,
-        speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
-        comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0
+        lastAttackClientTime: -Infinity,
+        attackEffectUntil: 0,
+        comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0,
+        activeSlot: me.active || 0,
+        slotTimers: me.party.map(() => ({ ...GUEST_SLOT_DEFAULTS })),
+        ...GUEST_SLOT_DEFAULTS
     } : null;
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestImpacts = [];
@@ -316,14 +371,20 @@ socket.on('guestPlayerShielded', (d) => {
 socket.on('guestSwapped', (d) => {
     if (!guestState || !guestState.players[d.id]) return;
     Object.assign(guestState.players[d.id], d);
-    if (d.id === socket.id) syncGuestMobileIcons(d.charType);
+    if (d.id === socket.id) {
+        syncGuestMobileIcons(d.charType);
+        activateGuestLocalSlot(d.active);
+    }
     updateGuestHpBars();
 });
 socket.on('guestForcedSwap', (d) => {
     if (!guestState || !guestState.players[d.id]) return;
     guestState.players[d.id].active = d.active;
     guestState.players[d.id].charType = d.charType;
-    if (d.id === socket.id) syncGuestMobileIcons(d.charType);
+    if (d.id === socket.id) {
+        syncGuestMobileIcons(d.charType);
+        activateGuestLocalSlot(d.active);
+    }
     updateGuestHpBars();
 });
 
