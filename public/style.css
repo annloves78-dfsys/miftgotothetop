@@ -164,23 +164,30 @@ html, body {
 .ev-total-main { flex: 1; text-align: left; }
 .ev-total-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
 
-/* One mission row: step badge, name/goal/progress, reward, claim. */
+/* Mission cards, side by side; each one reads top to bottom. */
+.ev-mission-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
 .ev-mission {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 12px 14px;
+    gap: 8px;
+    padding: 16px 14px;
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.28);
     border: 2px solid #34495e;
-    margin-bottom: 10px;
 }
 
 .ev-mission.claimed { opacity: 0.55; }
 
 .ev-mission-badge {
-    width: 46px;
-    height: 46px;
+    width: 62px;
+    height: 62px;
     border-radius: 50%;
     border: 3px solid #5dade2;
     background: #1b2437;
@@ -191,16 +198,23 @@ html, body {
     flex-shrink: 0;
 }
 
-.ev-badge-icon { font-size: 17px; line-height: 1; }
-.ev-badge-step { font-size: 10px; color: #bdc3c7; }
+.ev-badge-icon { font-size: 24px; line-height: 1; }
+.ev-badge-step { font-size: 11px; color: #bdc3c7; }
 
-.ev-mission-main { flex: 1; text-align: left; }
-.ev-mission-name { font-size: 15px; font-weight: bold; }
-.ev-mission-text { font-size: 12px; color: #bdc3c7; margin-top: 2px; }
+.ev-mission-name { font-size: 16px; font-weight: bold; text-align: center; }
+/* Pushes the bar/reward/claim block to the bottom so cards of different text
+   lengths still line their buttons up. */
+.ev-mission-text {
+    flex: 1;
+    font-size: 12px;
+    color: #bdc3c7;
+    text-align: center;
+    line-height: 1.4;
+}
 
 .ev-mission-bar {
     position: relative;
-    margin-top: 7px;
+    width: 100%;
     height: 16px;
     border-radius: 8px;
     background: #1b2437;
@@ -265,6 +279,26 @@ html, body {
     text-align: center;
     flex-shrink: 0;
 }
+
+/* Inside a card the chip and button span the card instead of sitting in columns. */
+.ev-mission .ev-reward-chip,
+.ev-mission .ev-claim-btn,
+.ev-mission .ev-claimed {
+    width: 100%;
+}
+
+.ev-mission .ev-reward-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 0;
+}
+
+.ev-mission .ev-reward-icon { font-size: 20px; }
+.ev-mission .ev-reward-amount { font-size: 14px; }
+.ev-mission .ev-claim-btn { padding: 10px 0; }
+.ev-mission .ev-claimed { padding: 10px 0; }
 
 /* Shop */
 .shop-layout {

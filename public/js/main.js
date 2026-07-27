@@ -1136,7 +1136,8 @@ function claimCellHtml(id, reward, ready, claimed) {
     return `<button class="ev-claim-btn" data-mission="${id}"${ready ? '' : ' disabled'}>획득</button>`;
 }
 
-function missionRowHtml(m, index, sideIcon) {
+// One mission card, read top to bottom: badge, name, goal, progress, reward, claim.
+function missionCardHtml(m, index, sideIcon) {
     const have = eventProgressOf(m);
     const done = eventMissionDone(m);
     const claimed = eventMissionClaimed(m.id);
@@ -1144,12 +1145,10 @@ function missionRowHtml(m, index, sideIcon) {
     return `<div class="ev-mission${claimed ? ' claimed' : ''}">`
         + `<div class="ev-mission-badge"><span class="ev-badge-icon">${sideIcon}</span>`
         + `<span class="ev-badge-step">${index + 1}</span></div>`
-        + `<div class="ev-mission-main">`
         + `<div class="ev-mission-name">${m.name}</div>`
         + `<div class="ev-mission-text">${m.text}</div>`
         + `<div class="ev-mission-bar"><div class="ev-mission-fill" style="width:${pct}%"></div>`
         + `<span class="ev-mission-count">${have}/${m.goal}</span></div>`
-        + `</div>`
         + `<div class="ev-reward-chip"><span class="ev-reward-icon">🎫</span>`
         + `<span class="ev-reward-amount">${m.reward}</span></div>`
         + claimCellHtml(m.id, m.reward, done, claimed)
@@ -1193,7 +1192,9 @@ function renderEventScreen() {
 
     const side = EV.missions[eventCategory] || EV.missions.water;
     eventContentEl.innerHTML = eventHeaderHtml()
-        + side.missions.map((m, i) => missionRowHtml(m, i, side.icon)).join('');
+        + `<div class="ev-mission-grid">`
+        + side.missions.map((m, i) => missionCardHtml(m, i, side.icon)).join('')
+        + `</div>`;
 }
 
 eventContentEl.addEventListener('click', (e) => {
