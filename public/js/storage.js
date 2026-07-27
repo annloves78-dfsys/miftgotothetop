@@ -17,7 +17,10 @@ const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
-    unlockedCharacters: Object.keys(SHARED.CHARACTERS),
+    // Every cookie starts unlocked EXCEPT the season-limited ones -- those are
+    // what 시즌 뽑기 is for.
+    unlockedCharacters: Object.keys(SHARED.CHARACTERS)
+        .filter(id => !SHARED.CHARACTERS[id].seasonLimited),
     clearedStoryFloors: [],
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
     currencies: { ...defaultCurrencies },
@@ -43,7 +46,10 @@ function loadGameData() {
             // Saves made before a cookie existed won't have it in their stored
             // unlockedCharacters array (the merge above just keeps the old
             // array) — there's no unlock system yet, so patch every cookie in.
+            // ...but never patch in a season-limited cookie: those have to be
+            // pulled from 시즌 뽑기, so an old save must not be handed one.
             Object.keys(SHARED.CHARACTERS).forEach(id => {
+                if (SHARED.CHARACTERS[id].seasonLimited) return;
                 if (!data.unlockedCharacters.includes(id)) data.unlockedCharacters.push(id);
             });
             // Same story for currencies: a save from before a currency existed

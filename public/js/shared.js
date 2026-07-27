@@ -297,6 +297,48 @@ const CHARACTERS = {
         ultimateDebuffDurationMs: 10000,
         ultimateCooldownMs: 30000
     },
+    // 시즌 한정 (물과 불의 싸움). The first cookie that fights at range: it
+    // throws a drop rather than swinging, and everything it does is in service
+    // of 물 속성부여 -- see applyElementMark for how a 물 mark and a 바람 mark
+    // refuse to overwrite each other.
+    waterdrop: {
+        name: '물방울맛 쿠키',
+        shortName: '물방울', // shown on the lobby's character-select button
+        color: '#3498db',
+        colorLeft: '#1f6fb2', // blue
+        colorRight: '#7fd4f5', // sky
+        grade: '레전더리',
+        element: '물',
+        role: '스트라이커',
+        // 시즌 뽑기로만 얻는다: excluded from the starting roster, unlike every
+        // other cookie so far. Also keeps it out of play until its abilities
+        // below are actually implemented server-side.
+        seasonLimited: true,
+        health: 100,
+        combatPower: 500, // starting value for every character
+        speed: 2,
+        // 물방울 던지기: a real projectile, so it travels and can miss.
+        attackType: 'throw_projectile',
+        attackProjectileRadius: 10, // the drop is 20px across
+        attackProjectileSpeed: 460, // px per second
+        attackRange: 520, // how far the drop flies before it fizzles
+        attackDamage: 3,
+        attackCooldown: 500,
+        // 물방울 터트리기: pick a spot (aims like a targeted ultimate), and
+        // everything inside gets 물 속성부여. No damage of its own.
+        skillType: 'mark_burst',
+        skillRadius: 40,
+        skillMarkUses: 3,
+        skillMarkMultiplier: 1.3,
+        skillCooldown: 10000,
+        // 폭포: pick a spot; whatever it lands on is marked for 10 seconds with
+        // no charge limit ("개수 상관없이").
+        ultimateType: 'mark_flood',
+        ultimateRadius: 110,
+        ultimateMarkDurationMs: 10000,
+        ultimateMarkMultiplier: 1.3,
+        ultimateCooldownMs: 30000
+    },
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button

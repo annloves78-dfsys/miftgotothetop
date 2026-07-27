@@ -1803,10 +1803,19 @@ body.mc-on .gacha-odds-row {
     position: static;
 }
 
-.lobby-left-actions {
+/* 이벤트 on its own line, then the 캐릭터/상점/뽑기 row under it, with a small
+   gap between the two lines. */
+.lobby-left-stack {
     position: absolute;
     left: 30px;
     bottom: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.lobby-left-actions {
     display: flex;
     gap: 16px;
 }

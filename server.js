@@ -793,6 +793,53 @@ function shieldBetween(room, floorDef, m, p) {
     return false;
 }
 
+// ==================== 속성부여 (element marks) ====================
+// A target carries at most ONE mark. If it is already marked with a DIFFERENT
+// element, the new mark is refused outright -- 먼저 부여한 속성만 적용된다 --
+// so a 물 mark can't wipe a 바람 mark (or the other way round) mid-fight.
+// Marking again with the SAME element tops the existing mark up instead.
+//
+// A mark is either charge-based ({ charges }) or timed ({ until, unlimited }).
+// Timed marks ignore charges entirely for their whole window.
+function applyElementMark(target, element, opts, now) {
+    const cur = target.elementMark;
+    if (cur && !elementMarkExpired(cur, now) && cur.element !== element) return false;
+    if (cur && !elementMarkExpired(cur, now) && cur.element === element) {
+        if (opts.durationMs) {
+            cur.unlimited = true;
+            cur.until = Math.max(cur.until || 0, now + opts.durationMs);
+        } else {
+            cur.charges = (cur.charges || 0) + opts.charges;
+        }
+        cur.multiplier = Math.max(cur.multiplier || 1, opts.multiplier);
+        return true;
+    }
+    target.elementMark = opts.durationMs
+        ? { element, unlimited: true, until: now + opts.durationMs, multiplier: opts.multiplier }
+        : { element, charges: opts.charges, multiplier: opts.multiplier };
+    return true;
+}
+
+function elementMarkExpired(mark, now) {
+    if (!mark) return true;
+    if (mark.until && now >= mark.until) return true;
+    return !mark.unlimited && mark.charges <= 0;
+}
+
+// Damage multiplier this attacker gets against the target's mark, burning a
+// charge if it uses one. Returns 1 when the mark doesn't apply.
+function consumeElementMark(target, character, now) {
+    const mark = target.elementMark;
+    if (!mark) return 1;
+    if (elementMarkExpired(mark, now)) { target.elementMark = null; return 1; }
+    if (mark.element !== character.element) return 1;
+    if (!mark.unlimited) {
+        mark.charges -= 1;
+        if (mark.charges <= 0) target.elementMark = null;
+    }
+    return mark.multiplier;
+}
+
 function normalizeAngle(a) {
     while (a > Math.PI) a -= Math.PI * 2;
     while (a < -Math.PI) a += Math.PI * 2;
@@ -2220,13 +2267,7 @@ io.on('connection', (socket) => {
 
                 // Element mark: a matching-element attacker deals bonus
                 // damage vs a marked monster and burns down one charge.
-                let dmg = baseAttackDamage;
-                const mark = m.elementMark;
-                if (mark && mark.element === character.element && mark.charges > 0) {
-                    dmg = Math.round(dmg * mark.multiplier);
-                    mark.charges -= 1;
-                    if (mark.charges <= 0) m.elementMark = null;
-                }
+                const dmg = Math.round(baseAttackDamage * consumeElementMark(m, character, now));
 
                 m.hp = Math.max(0, m.hp - dmg);
                 if (m.hp <= 0) {
@@ -2261,14 +2302,18 @@ io.on('connection', (socket) => {
                         m.x = nx; m.y = ny;
                     }
 
-                    // While the ultimate window is active, a landed attack marks the target.
+                    // While the ultimate window is active, a landed attack marks
+                    // the target -- unless something else already marked it.
                     if (p.elementMarkUntil && now < p.elementMarkUntil) {
-                        if (m.elementMark && m.elementMark.element === character.element) {
-                            m.elementMark.charges += character.ultimateMarkUses;
-                        } else {
-                            m.elementMark = { element: character.element, charges: character.ultimateMarkUses, multiplier: character.ultimateMarkMultiplier };
+                        const marked = applyElementMark(m, character.element, {
+                            charges: character.ultimateMarkUses,
+                            multiplier: character.ultimateMarkMultiplier
+                        }, now);
+                        if (marked) {
+                            io.to(roomId).emit('monsterMarked', {
+                                id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+                            });
                         }
-                        io.to(roomId).emit('monsterMarked', { id: mid, element: m.elementMark.element, charges: m.elementMark.charges });
                     }
                 }
             }
