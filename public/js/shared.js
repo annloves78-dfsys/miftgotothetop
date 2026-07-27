@@ -298,8 +298,10 @@ const CHARACTERS = {
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
-        color: '#8e44ad',
-        colorLeft: '#8e44ad', // purple
+        // Black/yellow, not purple/yellow: purple+yellow is 자색 고구마맛's
+        // exact pair and the two cookies were hard to tell apart.
+        color: '#1c1c22',
+        colorLeft: '#1c1c22', // black
         colorRight: '#f1c40f', // yellow
         grade: '게스트',
         element: '어둠',
@@ -313,8 +315,12 @@ const CHARACTERS = {
         // attackSideOffset px off to that side of the body instead of dead
         // centre, so the two shots really do cover different ground.
         attackType: 'dual_spear',
-        attackRange: 85, // "자두맛보다 살짝 더 긴 정도" -- kicker reaches 70
-        attackWidth: 40,
+        // "더 얇게 하고 약간 더 길게 1.4배 정도": 85 -> 119, corridor 40 -> 26.
+        // The side offset stays at 22 so the two spears still visibly cover
+        // different ground; dead centre is still reachable because the hit
+        // test adds the target's radius (22 <= 26/2 + MONSTER_RADIUS).
+        attackRange: 119, // "자두맛보다 살짝 더 긴 정도" -- kicker reaches 70
+        attackWidth: 26,
         attackSideOffset: 22,
         attackDamage: 5,
         attackCooldown: 100,
