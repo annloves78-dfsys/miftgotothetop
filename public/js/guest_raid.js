@@ -10,7 +10,6 @@
 const guestRaidModeCard = document.getElementById('guest-raid-mode-card');
 const guestPartySlotsEl = document.getElementById('guest-party-slots');
 const guestPartyHintEl = document.getElementById('guest-party-hint');
-const guestRosterEl = document.getElementById('guest-roster');
 const guestBossPowerEl = document.getElementById('guest-boss-power');
 const guestBossHpSpecEl = document.getElementById('guest-boss-hp');
 const guestMultiBtn = document.getElementById('guest-multi-btn');
@@ -37,7 +36,10 @@ const guestFightLeaveBtn = document.getElementById('guest-fight-leave-btn');
 
 const GUEST_ID = 'guest1'; // the only guest raid so far, and it is never chosen from a list
 
-let guestParty = [];        // cookies picked on the detail screen
+// Always GUEST_PARTY_SIZE long, holes are null. Multiplayer only *shows* and
+// sends the first slot, but the other three are kept so toggling back to solo
+// doesn't throw away the party you built.
+let guestParty = new Array(SHARED.GUEST_PARTY_SIZE).fill(null);
 let guestIsMulti = false;   // multiplayer shows ONE cookie each, not four
 let guestPhase = 'idle';    // 'idle' | 'searching' | 'matched'
 let guestMyReady = false;
@@ -58,6 +60,33 @@ function guestPartyCapacity() {
     return guestIsMulti ? 1 : SHARED.GUEST_PARTY_SIZE;
 }
 
+// The cookies actually taken in: the visible slots, holes dropped.
+function guestPartyLineup() {
+    return guestParty.slice(0, guestPartyCapacity()).filter(Boolean);
+}
+
+function guestPartyReady() {
+    return guestPartyLineup().length === guestPartyCapacity();
+}
+
+// Filling a slot with a cookie that's already in another slot swaps the two
+// rather than duplicating it -- that's how you reorder the party.
+function setGuestPartySlot(index, id) {
+    const at = guestParty.indexOf(id);
+    if (at >= 0 && at !== index) guestParty[at] = guestParty[index];
+    guestParty[index] = id;
+    renderGuestDetail();
+}
+
+// Each slot is its own 캐릭터 선택 screen -- the same one story mode uses, so
+// you see the full card list and the character detail before confirming.
+function openGuestSlotPicker(index) {
+    openCharacterSelect('guestDetail', {
+        selectedId: guestParty[index] || null,
+        onPick: (id) => setGuestPartySlot(index, id)
+    });
+}
+
 function renderGuestPartySlots() {
     const cap = guestPartyCapacity();
     guestPartySlotsEl.innerHTML = '';
@@ -66,47 +95,40 @@ function renderGuestPartySlots() {
         const stats = id ? SHARED.CHARACTERS[id] : null;
         const slot = document.createElement('div');
         slot.className = 'guest-party-slot' + (stats ? ' filled' : '');
+        slot.dataset.slot = String(i);
         const circle = stats
             ? `<div class="slot-circle" style="background:${charIconBackground(stats)}"></div>`
             : '<div class="slot-circle">+</div>';
-        slot.innerHTML = circle + `<div class="slot-name">${stats ? (stats.shortName || stats.name) : ''}</div>`;
-        if (stats) slot.addEventListener('click', () => { guestParty.splice(i, 1); renderGuestDetail(); });
+        slot.innerHTML = circle
+            + `<div class="slot-name">${stats ? (stats.shortName || stats.name) : '비어있음'}</div>`;
+        slot.addEventListener('click', () => openGuestSlotPicker(i));
+        if (stats) {
+            // Emptying a slot needs its own control now that the slot itself opens the picker.
+            const clear = document.createElement('button');
+            clear.className = 'slot-clear';
+            clear.textContent = '×';
+            clear.addEventListener('click', (e) => {
+                e.stopPropagation();
+                guestParty[i] = null;
+                renderGuestDetail();
+            });
+            slot.appendChild(clear);
+        }
         guestPartySlotsEl.appendChild(slot);
     }
     guestPartyHintEl.textContent = guestIsMulti
         ? '멀티플레이는 캐릭터 1명만 데려갑니다.'
-        : `캐릭터를 눌러 ${cap}명을 정하세요. (${guestParty.length}/${cap})`;
-}
-
-function renderGuestRoster() {
-    guestRosterEl.innerHTML = '';
-    charactersByGradeDesc().forEach(([id, stats]) => {
-        if (!isCharacterUnlocked(id)) return;
-        const row = document.createElement('div');
-        row.className = 'guest-roster-item' + (guestParty.includes(id) ? ' picked' : '');
-        row.innerHTML = `<div class="guest-roster-swatch" style="background:${charIconBackground(stats)}"></div>`
-            + `<div class="guest-roster-name">${stats.name}</div>`;
-        row.addEventListener('click', () => {
-            const at = guestParty.indexOf(id);
-            if (at >= 0) guestParty.splice(at, 1);
-            else if (guestParty.length < guestPartyCapacity()) guestParty.push(id);
-            renderGuestDetail();
-        });
-        guestRosterEl.appendChild(row);
-    });
+        : `빈 칸을 눌러 캐릭터를 고르세요. (${guestPartyLineup().length}/${cap})`;
 }
 
 function renderGuestDetail() {
     const def = SHARED.GUEST_BOSS_DEFS[GUEST_ID];
     guestBossPowerEl.textContent = `${def.recommendedPower} (${SHARED.GUEST_PARTY_SIZE}명 합계)`;
     guestBossHpSpecEl.textContent = def.maxHp;
-    if (guestParty.length > guestPartyCapacity()) guestParty.length = guestPartyCapacity();
     renderGuestPartySlots();
-    renderGuestRoster();
     if (guestPhase === 'idle') {
-        const ready = guestParty.length === guestPartyCapacity();
         guestMultiBtn.disabled = false; // multiplayer re-cuts the party to 1 on click
-        guestSoloBtn.disabled = !ready;
+        guestSoloBtn.disabled = !guestPartyReady();
     }
 }
 
@@ -130,8 +152,9 @@ function leaveGuestRaidIfAny() {
 function openGuestDetail() {
     leaveGuestRaidIfAny();
     guestIsMulti = false;
-    // Seed with the lobby's selected cookie so there's a sensible starting point.
-    if (!guestParty.length && gameData.selectedCharacter) guestParty = [gameData.selectedCharacter];
+    // Seed the first slot with the lobby's selected cookie so there's a sensible
+    // starting point; the other three are yours to fill.
+    if (!guestParty.some(Boolean) && gameData.selectedCharacter) guestParty[0] = gameData.selectedCharacter;
     renderGuestDetail();
     showScreen('guestDetail');
 }
@@ -154,18 +177,19 @@ function guestStartClick(isMulti) {
             renderGuestDetail();
             return;
         }
-        if (guestParty.length !== guestPartyCapacity()) return;
+        if (!guestPartyReady()) return;
+        const lineup = guestPartyLineup();
         if (isMulti) {
             guestPhase = 'searching';
             guestMultiBtn.disabled = true;
             guestSoloBtn.disabled = true;
             guestLeaveBtn.classList.remove('hidden');
             guestMultiBtn.textContent = '대기중...';
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: guestParty });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup });
         } else {
             guestMultiBtn.disabled = true;
             guestSoloBtn.disabled = true;
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: guestParty, solo: true });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, solo: true });
             socket.emit('startGuestRaid');
         }
     } else if (guestPhase === 'matched' && !guestMyReady) {

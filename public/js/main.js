@@ -915,6 +915,19 @@ updateSelectedCharLabel();
 
 let characterReturnScreen = 'lobby'; // where "뒤로"/selecting a character sends you back to
 
+// Normally picking a cookie changes the lobby selection. A screen that needs a
+// cookie for something else -- the guest raid's four party slots -- sets this
+// instead, so the same 캐릭터 선택 → 상세 → 선택 flow can fill any slot.
+// { selectedId, onPick(id) }
+let characterPickTarget = null;
+
+function openCharacterSelect(returnScreen, pickTarget) {
+    characterReturnScreen = returnScreen;
+    characterPickTarget = pickTarget || null;
+    renderCharacterList();
+    showScreen('characterSelect');
+}
+
 // Highest grade first; within a grade the most recently added cookie comes
 // first, which is its position in the CHARACTERS roster (appended in order).
 function charactersByGradeDesc() {
@@ -929,10 +942,11 @@ function charactersByGradeDesc() {
 
 function renderCharacterList() {
     characterListEl.innerHTML = '';
+    const currentId = characterPickTarget ? characterPickTarget.selectedId : gameData.selectedCharacter;
     charactersByGradeDesc().forEach(([id, stats]) => {
         const unlocked = isCharacterUnlocked(id);
         const card = document.createElement('div');
-        card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === gameData.selectedCharacter ? ' selected' : '');
+        card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === currentId ? ' selected' : '');
         const iconHtml = unlocked
             ? `<div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>`
             : `<div class="icon">🔒</div>`;
@@ -942,12 +956,11 @@ function renderCharacterList() {
     });
 }
 
-characterSelectBtn.addEventListener('click', () => {
-    characterReturnScreen = 'lobby';
-    renderCharacterList();
-    showScreen('characterSelect');
+characterSelectBtn.addEventListener('click', () => openCharacterSelect('lobby'));
+backFromCharacterBtn.addEventListener('click', () => {
+    characterPickTarget = null;
+    showScreen(characterReturnScreen);
 });
-backFromCharacterBtn.addEventListener('click', () => showScreen(characterReturnScreen));
 
 // ---- Character detail (appearance/equipment preview before confirming a pick) ----
 let viewingCharacterId = null;
@@ -988,6 +1001,13 @@ function openCharacterDetail(id) {
 charDetailBackBtn.addEventListener('click', () => showScreen('characterSelect'));
 
 charDetailSelectBtn.addEventListener('click', () => {
+    if (characterPickTarget) {
+        const target = characterPickTarget;
+        characterPickTarget = null;
+        target.onPick(viewingCharacterId);
+        showScreen(characterReturnScreen);
+        return;
+    }
     gameData.selectedCharacter = viewingCharacterId;
     saveGameData(gameData);
     updateSelectedCharLabel();
@@ -1193,11 +1213,7 @@ gachaNormalBtn.addEventListener('click', () => {
 });
 gachaPullBackBtn.addEventListener('click', () => showScreen('gacha'));
 
-detailChangeCharBtn.addEventListener('click', () => {
-    characterReturnScreen = 'bossDetail';
-    renderCharacterList();
-    showScreen('characterSelect');
-});
+detailChangeCharBtn.addEventListener('click', () => openCharacterSelect('bossDetail'));
 
 // ---- Mode select ----
 playBtn.addEventListener('click', () => showScreen('modeSelect'));
@@ -1219,11 +1235,7 @@ const towerCharName = document.getElementById('tower-char-name');
 const towerPlayBtn = document.getElementById('tower-play-btn');
 const backFromTowerBtn = document.getElementById('back-from-tower-btn');
 
-towerCharPreview.addEventListener('click', () => {
-    characterReturnScreen = 'storyTower';
-    renderCharacterList();
-    showScreen('characterSelect');
-});
+towerCharPreview.addEventListener('click', () => openCharacterSelect('storyTower'));
 
 backFromStoryModeBtn.addEventListener('click', () => showScreen('modeSelect'));
 // story-multi-btn stays permanently disabled -- multiplayer story mode isn't built yet.
