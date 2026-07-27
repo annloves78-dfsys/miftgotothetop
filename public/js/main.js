@@ -16,6 +16,7 @@ const screens = {
     controls: document.getElementById('controls-screen'),
     guestDetail: document.getElementById('guest-detail-screen'),
     guestFight: document.getElementById('guest-fight-screen'),
+    event: document.getElementById('event-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -1045,6 +1046,53 @@ shopBtn.addEventListener('click', () => {
     showScreen('shop');
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- Event ----
+// The 이벤트 칸 itself. Cards come from SHARED.EVENTS, so running an event is a
+// data entry rather than new screens; with none running it says so.
+const eventBtn = document.getElementById('event-btn');
+const eventBadge = document.getElementById('event-badge');
+const backFromEventBtn = document.getElementById('back-from-event-btn');
+const eventListEl = document.getElementById('event-list');
+
+function activeEvents() {
+    return (SHARED.EVENTS || []).filter(e => !e.hidden);
+}
+
+function updateEventBadge() {
+    const open = activeEvents().filter(e => !e.locked).length;
+    eventBadge.textContent = String(open);
+    eventBadge.classList.toggle('hidden', open === 0);
+}
+
+function renderEventList() {
+    const list = activeEvents();
+    if (!list.length) {
+        eventListEl.innerHTML = '<p class="event-empty">진행 중인 이벤트가 없습니다.</p>';
+        return;
+    }
+    eventListEl.innerHTML = '';
+    list.forEach(ev => {
+        const card = document.createElement('div');
+        card.className = 'event-card' + (ev.locked ? ' locked' : '');
+        card.dataset.eventId = ev.id;
+        card.innerHTML = `<div class="event-icon">${ev.locked ? '🔒' : (ev.icon || '🎉')}</div>`
+            + `<div class="event-body">`
+            + `<div class="event-name">${ev.name}</div>`
+            + `<div class="event-period">${ev.period || '상시'}</div>`
+            + `<div class="event-desc">${ev.description || ''}</div>`
+            + `</div>`
+            + `<div class="event-reward">${ev.reward || ''}</div>`;
+        eventListEl.appendChild(card);
+    });
+}
+
+eventBtn.addEventListener('click', () => {
+    renderEventList();
+    showScreen('event');
+});
+backFromEventBtn.addEventListener('click', () => showScreen('lobby'));
+updateEventBadge();
 
 // ---- Gacha ----
 const gachaBtn = document.getElementById('gacha-btn');

@@ -99,6 +99,66 @@ html, body {
     margin-top: auto;
 }
 
+/* Event: the lobby's 이벤트 칸, above 캐릭터 */
+.event-btn {
+    position: relative;
+    background: linear-gradient(180deg, #8e44ad, #6c3483);
+    border-color: #a569bd;
+}
+
+.event-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: #e74c3c;
+    color: #fff;
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+}
+
+.event-list {
+    width: 88vw;
+    max-width: 900px;
+    max-height: 66vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.event-empty {
+    color: #7f8c8d;
+    text-align: center;
+    padding: 60px 0;
+}
+
+.event-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: #22293a;
+    border: 2px solid #34495e;
+    cursor: pointer;
+}
+
+.event-card:hover { border-color: #a569bd; }
+.event-card.locked { opacity: 0.5; cursor: not-allowed; }
+
+.event-card .event-icon { font-size: 34px; }
+.event-card .event-body { flex: 1; text-align: left; }
+.event-card .event-name { font-size: 17px; font-weight: bold; }
+.event-card .event-period { font-size: 12px; color: #f1c40f; margin-top: 2px; }
+.event-card .event-desc { font-size: 13px; color: #bdc3c7; margin-top: 4px; }
+.event-card .event-reward { font-size: 13px; color: #2ecc71; white-space: nowrap; }
+
 /* Shop */
 .shop-layout {
     display: flex;
