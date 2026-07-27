@@ -30,6 +30,8 @@ const guestMySkillCdEl = document.getElementById('guest-my-skill-cd');
 const guestMyUltimateCdEl = document.getElementById('guest-my-ultimate-cd');
 const guestPartyBarEl = document.getElementById('guest-party-bar');
 const guestCollapseOverlay = document.getElementById('guest-collapse-overlay');
+const guestDiscardOverlay = document.getElementById('guest-discard-overlay');
+const guestDiscardChoicesEl = document.getElementById('guest-discard-choices');
 const guestFightMenuBtn = document.getElementById('guest-fight-menu-btn');
 const guestFightSettings = document.getElementById('guest-fight-settings');
 const guestFightLeaveBtn = document.getElementById('guest-fight-leave-btn');
@@ -52,6 +54,14 @@ let guestStuckSpears = [];
 let guestMagmaZones = [];
 let guestImpacts = [];
 let guestIsTargetingUltimate = false;
+let guestPhaseNo = 1;        // 1차 / 2차
+let guestMonsters = {};      // 부하 소환 (2차)
+let guestProjectiles = {};
+let guestFallZones = [];
+let guestBarrage = null;     // { size, spears }
+let guestBossLaser = null;   // { angle, range, width }
+let guestWall = null;
+let guestDebuffUntil = 0;    // 흑화: our damage is dulled until then
 let guestLastMoveEmit = 0;
 let guestLocal = null;      // local prediction of my own cookie
 let guestQuakeUntil = 0;
@@ -288,12 +298,14 @@ function renderGuestPartyBar() {
     if (rows.length !== me.party.length) buildGuestPartyBar(me.party);
     me.party.forEach((id, i) => {
         const el = guestPartyBarEl.children[i];
+        const discarded = !!(me.partyDiscarded && me.partyDiscarded[i]);
         const down = !me.partyAlive[i];
         el.classList.toggle('active', i === me.active);
         el.classList.toggle('down', down);
+        el.classList.toggle('discarded', discarded);
         const pct = Math.max(0, me.partyHp[i] / me.partyMaxHp[i]) * 100;
         el.querySelector('.pm-bar-fill').style.width = `${pct}%`;
-        el.querySelector('.pm-hp').textContent = `${me.partyHp[i]}/${me.partyMaxHp[i]}`;
+        el.querySelector('.pm-hp').textContent = discarded ? '버림' : `${me.partyHp[i]}/${me.partyMaxHp[i]}`;
     });
 }
 
@@ -342,9 +354,94 @@ socket.on('guestStarted', (data) => {
 socket.on('guestTick', (data) => {
     if (!guestState) return;
     guestState.bossHp = data.bossHp;
+    if (data.bossMaxHp) guestState.bossMaxHp = data.bossMaxHp;
+    guestState.bossShieldHp = data.bossShieldHp || 0;
     guestState.bossFacing = data.bossFacing;
     guestState.players = data.players;
     guestStuckSpears = data.stuckSpears;
+    guestFallZones = data.fallZones || [];
+    guestMonsters = data.monsters || {};
+    guestProjectiles = data.projectiles || {};
+    guestWall = data.wall || null;
+    if (data.phase) guestPhaseNo = data.phase;
+    updateGuestHpBars();
+});
+
+// ---------------- 2차 레이드 ----------------
+socket.on('guestMinionsSummoned', ({ monsters }) => { Object.assign(guestMonsters, monsters); });
+socket.on('guestMonsterDamaged', ({ id, hp }) => { if (guestMonsters[id]) guestMonsters[id].hp = hp; });
+socket.on('guestMonsterDefeated', ({ id }) => { delete guestMonsters[id]; });
+socket.on('guestBossLaser', (d) => { guestBossLaser = { ...d }; });
+socket.on('guestBossLaserAim', ({ angle }) => { if (guestBossLaser) guestBossLaser.angle = angle; });
+socket.on('guestBossLaserEnd', () => { guestBossLaser = null; });
+socket.on('guestFallZone', (z) => { guestFallZones.push(z); });
+socket.on('guestFallZonesCleared', () => { guestFallZones = []; });
+socket.on('guestBarrageWave', (d) => { guestBarrage = d; });
+socket.on('guestBarrageCleared', () => { guestBarrage = null; });
+socket.on('guestWallRaised', (d) => { guestWall = d; });
+socket.on('guestWallDropped', () => { guestWall = null; });
+socket.on('guestBossShield', ({ shieldHp }) => { if (guestState) guestState.bossShieldHp = shieldHp; });
+socket.on('guestBossHealed', ({ bossHp }) => { if (guestState) { guestState.bossHp = bossHp; updateGuestHpBars(); } });
+socket.on('guestDiscardPrompt', ({ party, partyHp, partyMaxHp, partyAlive }) => {
+    guestCollapseOverlay.classList.add('hidden');
+    guestDiscardChoicesEl.innerHTML = '';
+    party.forEach((id, i) => {
+        const stats = SHARED.CHARACTERS[id] || SHARED.CHARACTERS.kicker;
+        const el = document.createElement('div');
+        el.className = 'guest-discard-choice';
+        el.dataset.slot = String(i);
+        el.innerHTML = `<div class="dc-circle" style="background:${charIconBackground(stats)}"></div>`
+            + `<div class="dc-name">${stats.shortName || stats.name}</div>`
+            + `<div class="dc-hp">${partyAlive[i] ? `${partyHp[i]}/${partyMaxHp[i]}` : '쓰러짐'}</div>`;
+        guestDiscardChoicesEl.appendChild(el);
+    });
+    guestDiscardOverlay.classList.remove('hidden');
+});
+
+guestDiscardChoicesEl.addEventListener('click', (e) => {
+    const row = e.target.closest ? e.target.closest('.guest-discard-choice') : null;
+    if (!row || guestDiscardChoicesEl.classList.contains('locked')) return;
+    guestDiscardChoicesEl.classList.add('locked');
+    socket.emit('guestDiscardCookie', { index: Number(row.dataset.slot) });
+});
+
+socket.on('guestDiscardAccepted', ({ index }) => {
+    const row = guestDiscardChoicesEl.children[index];
+    if (row) row.classList.add('discarded');
+});
+
+socket.on('guestPhase2Started', (data) => {
+    guestPhaseNo = 2;
+    guestDiscardOverlay.classList.add('hidden');
+    guestDiscardChoicesEl.classList.remove('locked');
+    guestCollapseOverlay.classList.add('hidden');
+    guestState = {
+        bossHp: data.bossHp, bossMaxHp: data.bossMaxHp, bossShieldHp: 0,
+        bossX: data.bossX, bossY: data.bossY, bossFacing: Math.PI / 2,
+        players: data.players
+    };
+    const me = data.players[socket.id];
+    if (me && guestLocal) {
+        guestLocal.x = me.x; guestLocal.y = me.y;
+        guestLocal.activeSlot = me.active || 0;
+        guestLocal.slotTimers = me.party.map(() => ({ ...GUEST_SLOT_DEFAULTS }));
+        Object.assign(guestLocal, GUEST_SLOT_DEFAULTS);
+    }
+    guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
+    guestMagmaZones = []; guestImpacts = []; guestFallZones = [];
+    guestMonsters = {}; guestProjectiles = {};
+    guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
+    if (me) syncGuestMobileIcons(me.charType);
+    updateGuestHpBars();
+    buildGuestPartyBar(me ? me.party : []);
+    renderGuestPartyBar();
+});
+
+socket.on('guestBossEmpowered', (d) => {
+    if (!guestState) return;
+    guestState.bossHp = d.bossHp;
+    guestState.bossShieldHp = d.shieldHp;
+    guestDebuffUntil = performance.now() + d.durationMs;
     updateGuestHpBars();
 });
 
@@ -415,11 +512,20 @@ socket.on('guestFloorCollapse', () => {
 socket.on('guestResult', ({ result }) => {
     stopGuestLoop();
     guestState = null;
+    guestPhaseNo = 1;
     guestCollapseOverlay.classList.add('hidden');
-    resultTitle.textContent = result === 'phase1' ? '1차 격파!' : (result === 'lose' ? '패배...' : '나감');
-    resultDesc.textContent = result === 'phase1'
-        ? '번개지옥맛 쿠키는 쓰러지지 않았습니다. 2차 레이드는 준비 중입니다.'
-        : (result === 'lose' ? '파티가 전멸했습니다.' : '');
+    guestDiscardOverlay.classList.add('hidden');
+    guestDiscardChoicesEl.classList.remove('locked');
+    guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
+    guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
+    const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
+    resultTitle.textContent = titles[result] || '나감';
+    const descs = {
+        win: '번개지옥맛 쿠키를 2차 레이드까지 완전히 쓰러뜨렸습니다.',
+        phase1: '번개지옥맛 쿠키는 쓰러지지 않았습니다. 2차 레이드는 준비 중입니다.',
+        lose: '파티가 전멸했습니다.'
+    };
+    resultDesc.textContent = descs[result] || '';
     resetGuestActions();
     showScreen('result');
 });
@@ -664,7 +770,30 @@ function guestRender(now) {
     guestCtx.strokeRect(-HW, -HH, HW * 2, HH * 2);
 
     if (!guestState) { guestCtx.restore(); return; }
-    const def = SHARED.GUEST_BOSS_DEFS[GUEST_ID];
+    const def = SHARED.guestDefFor({ guestId: GUEST_ID, phase: guestPhaseNo });
+
+    // 낙하물 left lying on the ground.
+    guestFallZones.forEach(z => {
+        guestCtx.beginPath();
+        guestCtx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+        guestCtx.fillStyle = 'rgba(120, 60, 160, 0.28)';
+        guestCtx.fill();
+        guestCtx.strokeStyle = 'rgba(180, 120, 220, 0.8)';
+        guestCtx.lineWidth = 2;
+        guestCtx.stroke();
+    });
+
+    // 총공격: the volley currently sitting on the field.
+    if (guestBarrage) {
+        const s = guestBarrage.size;
+        guestBarrage.spears.forEach(sp => {
+            guestCtx.fillStyle = 'rgba(231, 76, 60, 0.3)';
+            guestCtx.fillRect(sp.x - s / 2, sp.y - s / 2, s, s);
+            guestCtx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
+            guestCtx.lineWidth = 2;
+            guestCtx.strokeRect(sp.x - s / 2, sp.y - s / 2, s, s);
+        });
+    }
 
     // Magma zones sit under everything.
     guestMagmaZones = guestMagmaZones.filter(z => now < z.until);
@@ -687,7 +816,17 @@ function guestRender(now) {
             guestCtx.rotate(t.angle);
             guestCtx.fillRect(0, -t.width / 2, t.range, t.width);
             guestCtx.strokeRect(0, -t.width / 2, t.range, t.width);
-        } else if (t.skill === 'spear_drop') {
+        } else if (t.skill === 'half_sweep') {
+            // Half the field, split along the boss's facing.
+            guestCtx.translate(guestState.bossX, guestState.bossY);
+            guestCtx.beginPath();
+            guestCtx.moveTo(0, 0);
+            guestCtx.arc(0, 0, t.range, t.angle - t.halfAngle, t.angle + t.halfAngle);
+            guestCtx.closePath();
+            guestCtx.fill();
+            guestCtx.stroke();
+        } else {
+            // spear_drop / spear_throw / half_sweep_fall all mark a circle.
             guestCtx.beginPath();
             guestCtx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
             guestCtx.fill();
@@ -697,7 +836,7 @@ function guestRender(now) {
     });
 
     // Spears left stuck in the floor keep burning whoever touches them.
-    const stuckR = def.patterns.spear_drop.stuckRadius;
+    const stuckR = (SHARED.GUEST_BOSS_DEFS[GUEST_ID].patterns.spear_drop || {}).stuckRadius || 30;
     guestStuckSpears.forEach(s => {
         guestCtx.save();
         guestCtx.translate(s.x, s.y);
@@ -761,11 +900,95 @@ function guestRender(now) {
         guestCtx.stroke();
     });
 
+    // 벽 가르기: the wall across the middle.
+    if (guestWall) {
+        const t = guestWall.thickness || 18;
+        guestCtx.fillStyle = 'rgba(20, 12, 28, 0.95)';
+        guestCtx.fillRect(-HW, guestWall.y - t / 2, HW * 2, t);
+        guestCtx.strokeStyle = 'rgba(155, 89, 182, 0.9)';
+        guestCtx.lineWidth = 3;
+        guestCtx.strokeRect(-HW, guestWall.y - t / 2, HW * 2, t);
+    }
+
+    // The boss's own beam (반갈라 베기 stage 2).
+    if (guestBossLaser) {
+        guestCtx.save();
+        guestCtx.translate(guestState.bossX, guestState.bossY);
+        guestCtx.rotate(guestBossLaser.angle);
+        const w = guestBossLaser.width;
+        guestCtx.fillStyle = 'rgba(155, 89, 182, 0.35)';
+        guestCtx.fillRect(0, -w / 2, guestBossLaser.range, w);
+        guestCtx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        guestCtx.fillRect(0, -w / 6, guestBossLaser.range, w / 3);
+        guestCtx.restore();
+    }
+
+    // Summoned adds and their arrows.
+    Object.values(guestMonsters).forEach(m => {
+        const mdef = SHARED.MONSTERS[m.type];
+        if (!mdef) return;
+        if (m.laser) {
+            guestCtx.save();
+            guestCtx.translate(m.x, m.y);
+            guestCtx.rotate(m.laser.angle);
+            guestCtx.fillStyle = 'rgba(231, 76, 60, 0.35)';
+            guestCtx.fillRect(0, -mdef.laserWidth / 2, mdef.laserRange, mdef.laserWidth);
+            guestCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            guestCtx.fillRect(0, -mdef.laserWidth / 6, mdef.laserRange, mdef.laserWidth / 3);
+            guestCtx.restore();
+        }
+        const R = SHARED.MONSTER_RADIUS;
+        guestCtx.beginPath();
+        guestCtx.arc(m.x, m.y, R, 0, Math.PI * 2);
+        guestCtx.fillStyle = mdef.color;
+        guestCtx.fill();
+        guestCtx.lineWidth = 2;
+        guestCtx.strokeStyle = m.state === 'telegraph' ? '#e74c3c' : '#2c3e50';
+        guestCtx.stroke();
+        const bw = 26;
+        guestCtx.fillStyle = '#c0392b';
+        guestCtx.fillRect(m.x - bw / 2, m.y - R - 9, bw, 4);
+        guestCtx.fillStyle = '#2ecc71';
+        guestCtx.fillRect(m.x - bw / 2, m.y - R - 9, bw * Math.max(0, m.hp / m.maxHp), 4);
+    });
+    Object.values(guestProjectiles).forEach(pr => {
+        guestCtx.save();
+        guestCtx.translate(pr.x, pr.y);
+        guestCtx.rotate(pr.angle);
+        guestCtx.fillStyle = '#ecf0f1';
+        guestCtx.fillRect(-8, -2, 16, 4);
+        guestCtx.restore();
+    });
+
     // The boss.
     const bossStats = SHARED.CHARACTERS[def.charType];
     const windingUp = guestHitFlashes.some(h => h.windup);
     guestCtx.save();
     guestCtx.translate(guestState.bossX, guestState.bossY);
+    // 2차: a black aura churning around the body.
+    if (def.aura) {
+        for (let i = 0; i < 7; i++) {
+            const a = now / 900 + (i * Math.PI * 2) / 7;
+            const wob = Math.sin(now / 320 + i) * 8;
+            const rr = def.radius + 26 + wob;
+            guestCtx.beginPath();
+            guestCtx.arc(Math.cos(a) * rr * 0.55, Math.sin(a) * rr * 0.55, 26 + wob * 0.6, 0, Math.PI * 2);
+            guestCtx.fillStyle = `rgba(10, 6, 16, ${0.32 + 0.12 * Math.sin(now / 260 + i)})`;
+            guestCtx.fill();
+        }
+        guestCtx.beginPath();
+        guestCtx.arc(0, 0, def.radius + 18, 0, Math.PI * 2);
+        guestCtx.strokeStyle = 'rgba(90, 40, 130, 0.7)';
+        guestCtx.lineWidth = 6;
+        guestCtx.stroke();
+    }
+    if (guestState.bossShieldHp > 0) {
+        guestCtx.beginPath();
+        guestCtx.arc(0, 0, def.radius + 12, 0, Math.PI * 2);
+        guestCtx.strokeStyle = 'rgba(52, 152, 219, 0.9)';
+        guestCtx.lineWidth = 4;
+        guestCtx.stroke();
+    }
     if (windingUp) {
         guestCtx.beginPath();
         guestCtx.arc(0, 0, def.radius + 14 + Math.sin(now / 40) * 4, 0, Math.PI * 2);

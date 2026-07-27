@@ -6,7 +6,7 @@ const path = require('path');
 
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
-    GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS } = require('./public/js/shared.js');
+    GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -595,7 +595,7 @@ function createStoryRoom(floor) {
         state: 'fighting',
         players: {},
         monsters: {},
-        projectiles: {}, // id -> arrow in flight; see spawnStoryProjectile
+        projectiles: {}, // id -> arrow in flight; see spawnMonsterProjectile
         nextProjectileId: 0,
         starDefeated: false,
         activeBuffs: [],
@@ -652,7 +652,29 @@ function publicProjectiles(room) {
 
 // Fires an arrow from a monster toward a fixed point (where the target stood at
 // release), so moving aside after the shot dodges it.
-function spawnStoryProjectile(room, roomId, monsterId, m, def, targetX, targetY) {
+// Story floors and the guest raid's summoned adds run the same monsters. They
+// differ only in how damage reaches a player, where a monster may stand, what
+// can block its line of fire, and which events go on the wire -- so those four
+// things are handed in and the behaviour itself is written once.
+function storyMonsterCtx(roomId, room) {
+    const floorDef = STORY_FLOOR_DEFS[room.floor];
+    return {
+        roomId, room, floorDef,
+        damagePlayer: (playerId, dmg, mark) => applyDamageToStoryPlayer(roomId, playerId, dmg, mark),
+        clamp: (m) => { if (floorDef) { const k = clampToLane(floorDef, m.x, m.y); m.x = k.x; m.y = k.y; } },
+        // A raised shield stops an EMPLACEMENT firing through it; see shieldBetween.
+        sightBlocked: (m, target, def) => def.speed === 0 && !!floorDef && shieldBetween(room, floorDef, m, target),
+        outOfBounds: (pr) => !!floorDef && (pr.x > 200 || pr.x < -floorDef.levelLength - 200
+            || Math.abs(pr.y) > floorDef.laneHalfWidth + 200),
+        ev: {
+            telegraph: 'monsterTelegraph', attack: 'monsterAttack',
+            projectileFired: 'storyProjectileFired', projectileGone: 'storyProjectileGone'
+        }
+    };
+}
+
+function spawnMonsterProjectile(ctx, monsterId, m, def, targetX, targetY) {
+    const { room, roomId } = ctx;
     const dx = targetX - m.x, dy = targetY - m.y;
     const dist = Math.hypot(dx, dy) || 1;
     const speed = def.projectileSpeed;
@@ -667,13 +689,13 @@ function spawnStoryProjectile(room, roomId, monsterId, m, def, targetX, targetY)
         bornAt: Date.now()
     };
     room.projectiles[id] = pr;
-    io.to(roomId).emit('storyProjectileFired', { id, monsterId, ...publicProjectiles(room)[id] });
+    io.to(roomId).emit(ctx.ev.projectileFired, { id, monsterId, ...publicProjectiles(room)[id] });
     return id;
 }
 
 // Advances every arrow and resolves hits. Returns once the room may have ended.
-function tickStoryProjectiles(roomId, room, alivePlayers, dtMs) {
-    const floorDef = STORY_FLOOR_DEFS[room.floor];
+function tickMonsterProjectiles(ctx, alivePlayers, dtMs) {
+    const { roomId, room } = ctx;
     const now = Date.now();
     const dt = dtMs / 1000;
     for (const [id, pr] of Object.entries(room.projectiles)) {
@@ -689,16 +711,11 @@ function tickStoryProjectiles(roomId, room, alivePlayers, dtMs) {
         }
 
         const expired = now - pr.bornAt >= PROJECTILE_MAX_LIFETIME_MS;
-        const outOfBounds = floorDef && (
-            pr.x > 200 || pr.x < -floorDef.levelLength - 200 ||
-            Math.abs(pr.y) > floorDef.laneHalfWidth + 200
-        );
-
-        if (hitPlayerId || expired || outOfBounds) {
+        if (hitPlayerId || expired || ctx.outOfBounds(pr)) {
             delete room.projectiles[id];
-            io.to(roomId).emit('storyProjectileGone', { id, hit: !!hitPlayerId, x: pr.x, y: pr.y });
+            io.to(roomId).emit(ctx.ev.projectileGone, { id, hit: !!hitPlayerId, x: pr.x, y: pr.y });
             if (hitPlayerId) {
-                applyDamageToStoryPlayer(roomId, hitPlayerId, pr.damage, pr.elementMark);
+                ctx.damagePlayer(hitPlayerId, pr.damage, pr.elementMark);
                 if (!rooms[roomId]) return; // player died; room already torn down
             }
         }
@@ -786,7 +803,8 @@ function normalizeAngle(a) {
 // player, but its tip is limited to laserTrackSpeed px/sec sideways -- a cookie
 // moves ~120 px/sec, so running out of the beam is always possible. Anyone
 // caught in the corridor takes laserDamage every laserTickMs.
-function tickLaser(roomId, room, m, mid, def, nearest, alivePlayers, now) {
+function tickLaser(ctx, m, mid, def, nearest, alivePlayers, now) {
+    const { roomId, room } = ctx;
     if (now >= m.laser.endAt) {
         m.laser = null;
         m.state = 'idle';
@@ -806,9 +824,108 @@ function tickLaser(roomId, room, m, mid, def, nearest, alivePlayers, now) {
     for (const p of alivePlayers) {
         if (!meleeLineHitPoint(m.x, m.y, m.laser.angle, def.laserRange, def.laserWidth, p.x, p.y, PLAYER_RADIUS)) continue;
         const targetId = Object.keys(room.players).find(id => room.players[id] === p);
-        applyDamageToStoryPlayer(roomId, targetId,
-            def.laserDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+        ctx.damagePlayer(targetId, def.laserDamage * outgoingDamageMultiplier(m, now), m.elementMark);
         if (!rooms[roomId]) return; // that hit may have ended the floor
+    }
+}
+
+// One tick of every monster in a room: kiting, telegraphs, beams and arrows.
+// Shared by story floors and the guest raid's summoned adds -- see storyMonsterCtx.
+function tickMonsterSet(ctx, alivePlayers, now) {
+    const { roomId, room } = ctx;
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        if (m.stunnedUntil && now < m.stunnedUntil) {
+            // Frozen: no movement, no attacks. A stun also cuts a beam that was
+            // mid-fire, rather than leaving it hanging in the air unattended.
+            if (m.laser) {
+                m.laser = null;
+                m.state = 'idle';
+                m.nextAttackAt = now + MONSTERS[m.type].attackCooldown;
+            }
+            continue;
+        }
+        const def = MONSTERS[m.type];
+
+        let nearest = null, nearestDist = Infinity;
+        for (const p of alivePlayers) {
+            const d = Math.hypot(p.x - m.x, p.y - m.y);
+            if (d < nearestDist) { nearestDist = d; nearest = p; }
+        }
+        if (!nearest) continue;
+        const blockedByShield = ctx.sightBlocked(m, nearest, def);
+        if (blockedByShield && m.laser) {
+            m.laser = null;
+            m.state = 'idle';
+            m.nextAttackAt = now + def.attackCooldown;
+            continue;
+        }
+        if (m.state === 'idle' && nearestDist > def.aggroRange) continue; // dormant until approached
+
+        if (m.state === 'idle') {
+            // Kites the nearest player: closes in if too far, backs off if the
+            // player gets right up next to it, hovering at preferredDistance
+            // instead of standing adjacent like a melee mob would.
+            const step = def.speed * 3; // ~px per 50ms tick
+            if (nearestDist > def.preferredDistance) {
+                const dx = nearest.x - m.x, dy = nearest.y - m.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                const move = Math.min(step, dist - def.preferredDistance);
+                m.x += (dx / dist) * move;
+                m.y += (dy / dist) * move;
+            } else if (nearestDist < def.preferredDistance * 0.7) {
+                const dx = m.x - nearest.x, dy = m.y - nearest.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                m.x += (dx / dist) * step;
+                m.y += (dy / dist) * step;
+            }
+            ctx.clamp(m);
+
+            if (nearestDist <= def.attackRange && now >= m.nextAttackAt && !blockedByShield) {
+                m.state = 'telegraph';
+                m.telegraphStartAt = now;
+                io.to(roomId).emit(ctx.ev.telegraph, { id: mid });
+            }
+        } else if (m.state === 'firing') {
+            tickLaser(ctx, m, mid, def, nearest, alivePlayers, now);
+            if (!rooms[roomId]) return;
+        } else if (m.state === 'telegraph') {
+            if (blockedByShield) {
+                // A shield came up (or the player ducked back behind one) while
+                // this was winding up -- drop the swing rather than firing through it.
+                m.state = 'idle';
+                m.nextAttackAt = now + def.attackCooldown;
+                continue;
+            }
+            if (now - m.telegraphStartAt >= def.telegraphMs) {
+                if (def.laser) {
+                    // The beam starts locked on and then can only drift after
+                    // the player at laserTrackSpeed; see tickLaser.
+                    m.state = 'firing';
+                    m.laser = {
+                        angle: Math.atan2(nearest.y - m.y, nearest.x - m.x),
+                        endAt: now + def.laserDurationMs,
+                        nextDamageAt: now
+                    };
+                    io.to(roomId).emit(ctx.ev.attack, { id: mid });
+                    continue;
+                }
+                m.state = 'idle';
+                m.nextAttackAt = now + def.attackCooldown;
+                const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
+                if (def.projectileSpeed) {
+                    // Archers release an arrow regardless of current range: it
+                    // flies to where the player was and can be sidestepped.
+                    io.to(roomId).emit(ctx.ev.attack, { id: mid });
+                    spawnMonsterProjectile(ctx, mid, m, def, nearest.x, nearest.y);
+                } else if (d <= def.attackRange) {
+                    const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
+                    io.to(roomId).emit(ctx.ev.attack, { id: mid });
+                    ctx.damagePlayer(targetId, def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+                    if (!rooms[roomId]) return;
+                }
+            }
+        }
     }
 }
 
@@ -864,115 +981,11 @@ function tickStoryRoom(roomId) {
         }
     }
 
-    for (const [mid, m] of Object.entries(room.monsters)) {
-        if (!m.alive) continue;
-        if (m.stunnedUntil && now < m.stunnedUntil) {
-            // Frozen: no movement, no attacks. A stun also cuts a beam that was
-            // mid-fire, rather than leaving it hanging in the air unattended.
-            if (m.laser) {
-                m.laser = null;
-                m.state = 'idle';
-                m.nextAttackAt = now + MONSTERS[m.type].attackCooldown;
-            }
-            continue;
-        }
-        const def = MONSTERS[m.type];
-        const floorDefForSight = STORY_FLOOR_DEFS[room.floor];
-
-        let nearest = null, nearestDist = Infinity;
-        for (const p of alivePlayers) {
-            const d = Math.hypot(p.x - m.x, p.y - m.y);
-            if (d < nearestDist) { nearestDist = d; nearest = p; }
-        }
-        if (!nearest) continue;
-        // A raised shield stops an EMPLACEMENT from shooting through it. Scoped
-        // deliberately to monsters that can't move (speed 0): a laser_robot has
-        // 620px of reach and would otherwise burn the player across a sealed
-        // room while they're still fighting the room in front of it. Monsters
-        // that can walk are left exactly as they were -- they close the distance
-        // and hit you the moment they're next to you, so blocking them would
-        // only create a stalemate at the shield rather than protecting anyone.
-        const blockedByShield = def.speed === 0 && !!floorDefForSight
-            && shieldBetween(room, floorDefForSight, m, nearest);
-        if (blockedByShield && m.laser) {
-            m.laser = null;
-            m.state = 'idle';
-            m.nextAttackAt = now + def.attackCooldown;
-            continue;
-        }
-        if (m.state === 'idle' && nearestDist > def.aggroRange) continue; // dormant until approached
-
-        if (m.state === 'idle') {
-            // Kites the nearest player: closes in if too far, backs off if the
-            // player gets right up next to it, hovering at preferredDistance
-            // instead of standing adjacent like a melee mob would.
-            const step = def.speed * 3; // ~px per 50ms tick
-            if (nearestDist > def.preferredDistance) {
-                const dx = nearest.x - m.x, dy = nearest.y - m.y;
-                const dist = Math.hypot(dx, dy) || 1;
-                const move = Math.min(step, dist - def.preferredDistance);
-                m.x += (dx / dist) * move;
-                m.y += (dy / dist) * move;
-            } else if (nearestDist < def.preferredDistance * 0.7) {
-                const dx = m.x - nearest.x, dy = m.y - nearest.y;
-                const dist = Math.hypot(dx, dy) || 1;
-                m.x += (dx / dist) * step;
-                m.y += (dy / dist) * step;
-            }
-            const floorDef = STORY_FLOOR_DEFS[room.floor];
-            if (floorDef) {
-                const kept = clampToLane(floorDef, m.x, m.y);
-                m.x = kept.x; m.y = kept.y;
-            }
-
-            if (nearestDist <= def.attackRange && now >= m.nextAttackAt && !blockedByShield) {
-                m.state = 'telegraph';
-                m.telegraphStartAt = now;
-                io.to(roomId).emit('monsterTelegraph', { id: mid });
-            }
-        } else if (m.state === 'firing') {
-            tickLaser(roomId, room, m, mid, def, nearest, alivePlayers, now);
-        } else if (m.state === 'telegraph') {
-            if (blockedByShield) {
-                // A shield came up (or the player ducked back behind one) while
-                // this was winding up -- drop the swing rather than firing through it.
-                m.state = 'idle';
-                m.nextAttackAt = now + def.attackCooldown;
-                continue;
-            }
-            if (now - m.telegraphStartAt >= def.telegraphMs) {
-                if (def.laser) {
-                    // The beam starts locked on and then can only drift after
-                    // the player at laserTrackSpeed; see tickLaser.
-                    m.state = 'firing';
-                    m.laser = {
-                        angle: Math.atan2(nearest.y - m.y, nearest.x - m.x),
-                        endAt: now + def.laserDurationMs,
-                        nextDamageAt: now
-                    };
-                    io.to(roomId).emit('monsterAttack', { id: mid });
-                    continue;
-                }
-                m.state = 'idle';
-                m.nextAttackAt = now + def.attackCooldown;
-                const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
-                if (def.projectileSpeed) {
-                    // Archers release an arrow regardless of current range: it
-                    // flies to where the player was and can be sidestepped.
-                    io.to(roomId).emit('monsterAttack', { id: mid });
-                    spawnStoryProjectile(room, roomId, mid, m, def, nearest.x, nearest.y);
-                } else if (d <= def.attackRange) {
-                    const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
-                    io.to(roomId).emit('monsterAttack', { id: mid });
-                    applyDamageToStoryPlayer(roomId, targetId,
-                        def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
-                }
-            }
-        }
-    }
+    const ctx = storyMonsterCtx(roomId, room);
+    tickMonsterSet(ctx, alivePlayers, now);
 
     if (!rooms[roomId]) return; // room may have just ended (player died) mid-loop above
-    tickStoryProjectiles(roomId, room, alivePlayers, 50);
+    tickMonsterProjectiles(ctx, alivePlayers, 50);
     if (!rooms[roomId]) return; // an arrow may have just killed the last player
     io.to(roomId).emit('storyTick', { monsters: publicMonsters(room), projectiles: publicProjectiles(room) });
 }
@@ -1002,7 +1015,18 @@ function createGuestRoom(guestId, solo) {
         nextSkillAt: 0,
         stuckSpears: [], // 창 찍기 leaves these behind; see tickGuestRoom
         activeBuffs: [],
+        phase: 1,
         phaseTransitioned: false, // the boss doesn't die -- the floor collapses instead
+        discardChoices: {}, // playerId -> the slot they threw away entering 2차
+        monsters: {}, // 부하 소환 (2차) fills this
+        nextMonsterId: 0,
+        projectiles: {}, // arrows from summoned chocolate_cake_slices
+        nextProjectileId: 0,
+        bossShieldHp: 0, // 흑화 puts one on the boss
+        playerDamageDebuffUntil: 0, // ...and dulls everyone's damage until then
+        playerDamageMultiplier: 1,
+        fallZones: [], // 낙하물 left on the ground by 반갈라 베기
+        wall: null, // 벽 가르기 pens the party into one half while this is up
         loopHandle: null
     };
     return roomId;
@@ -1051,6 +1075,7 @@ function makeGuestPlayer(party, slotIndex) {
         partyHp: maxHp.slice(),
         partyMaxHp: maxHp.slice(),
         partyAlive: party.map(() => true),
+        partyDiscarded: party.map(() => false), // 2차 진입 때 버린 쿠키
         partyRevivesUsed: party.map(() => 0),
         partySlotTimers: party.map(() => ({})),
         active: 0,
@@ -1075,7 +1100,7 @@ function publicGuestPlayers(room) {
             x: p.x, y: p.y, facing: p.facing, alive: p.alive, ready: !!p.ready,
             charType: p.charType, hp: p.hp, maxHp: p.maxHp, shieldHp: p.shieldHp || 0,
             party: p.party, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp,
-            partyAlive: p.partyAlive, active: p.active
+            partyAlive: p.partyAlive, partyDiscarded: p.partyDiscarded, active: p.active
         };
     }
     return out;
@@ -1165,10 +1190,17 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
 }
 
 // Every point of damage the boss takes funnels through here so the phase
-// transition can't be missed. The boss does NOT die at 0 -- the ground gives way
-// and the second raid begins (not built yet, so the run stops there).
+// transition can't be missed. At 0 in 1차 the boss does NOT die -- the ground
+// gives way, you throw a cookie away, and 2차 begins. At 0 in 2차 it is over.
 function damageGuestBoss(roomId, room, amount, byId) {
     if (!room || room.state !== 'fighting' || room.phaseTransitioned) return;
+    amount = Math.max(0, Math.round(amount * guestPlayerDamageScale(room)));
+    if (room.bossShieldHp > 0) {
+        const absorbed = Math.min(room.bossShieldHp, amount);
+        room.bossShieldHp -= absorbed;
+        amount -= absorbed;
+        io.to(roomId).emit('guestBossShield', { shieldHp: room.bossShieldHp });
+    }
     room.bossHp = Math.max(0, room.bossHp - amount);
     io.to(roomId).emit('guestBossDamaged', { bossHp: room.bossHp, by: byId });
     if (room.bossHp > 0) return;
@@ -1177,9 +1209,93 @@ function damageGuestBoss(roomId, room, amount, byId) {
     room.bossPattern = null;
     room.bossRuntime = null;
     room.stuckSpears = [];
+    room.fallZones = [];
+    if (room.wall) { room.wall = null; io.to(roomId).emit('guestWallDropped', {}); }
+
+    if (room.phase === 2) {
+        setTimeout(() => endGuestRoom(roomId, 'win'), 1200);
+        return;
+    }
     io.to(roomId).emit('guestFloorCollapse', {});
-    // Phase 2 isn't built yet; hold here so the collapse can play out.
-    setTimeout(() => endGuestRoom(roomId, 'phase1'), 2600);
+    setTimeout(() => beginGuestDiscardChoice(roomId), 2600);
+}
+
+// 흑화 dulls everyone's damage for a while. Non-stacking: recasting refreshes
+// the window rather than multiplying 0.8 by itself into nothing.
+function guestPlayerDamageScale(room) {
+    if (!room.playerDamageDebuffUntil || Date.now() >= room.playerDamageDebuffUntil) return 1;
+    return room.playerDamageMultiplier;
+}
+
+// Between the two raids: everyone with more than one cookie throws one away for
+// good. The fight is frozen until every such player has chosen.
+function beginGuestDiscardChoice(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+    room.state = 'choosing';
+    room.discardChoices = {};
+    let anyone = false;
+    for (const [id, p] of Object.entries(room.players)) {
+        if (p.party.length <= 1) {
+            // Nothing to choose from -- a multiplayer run brings one cookie each.
+            room.discardChoices[id] = -1;
+            continue;
+        }
+        anyone = true;
+        io.to(id).emit('guestDiscardPrompt', {
+            party: p.party, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp, partyAlive: p.partyAlive
+        });
+    }
+    if (!anyone) startGuestPhase2(roomId);
+}
+
+function startGuestPhase2(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.kind !== 'guest') return;
+    const def = guestDefFor({ ...room, phase: 2 });
+
+    room.phase = 2;
+    room.phaseTransitioned = false;
+    room.state = 'fighting';
+    room.bossHp = def.maxHp;
+    room.bossMaxHp = def.maxHp;
+    room.bossShieldHp = 0;
+    room.playerDamageDebuffUntil = 0;
+    room.playerDamageMultiplier = 1;
+    room.bossState = 'idle';
+    room.bossPattern = null;
+    room.bossRuntime = null;
+    room.stuckSpears = [];
+    room.fallZones = [];
+    room.wall = null;
+    room.monsters = {};
+    room.projectiles = {};
+    room.activeBuffs = [];
+    room.nextSkillAt = Date.now() + def.skillIntervalMs;
+
+    // A fresh raid, so the cookies you kept come back whole. The one you threw
+    // away does not come back at all -- that is what the choice costs.
+    for (const [id, p] of Object.entries(room.players)) {
+        const discarded = room.discardChoices[id];
+        p.partyDiscarded = p.party.map((_, i) => i === discarded);
+        for (let i = 0; i < p.party.length; i++) {
+            p.partyAlive[i] = !p.partyDiscarded[i];
+            p.partyHp[i] = p.partyDiscarded[i] ? 0 : p.partyMaxHp[i];
+            p.partySlotTimers[i] = {};
+        }
+        const first = p.partyAlive.findIndex(a => a);
+        p.alive = first >= 0;
+        p.shieldHp = 0;
+        if (first >= 0) activateGuestSlot(p, first);
+        p.x = 0;
+        p.y = GUEST_ARENA_HALF_H - 70;
+    }
+
+    io.to(roomId).emit('guestPhase2Started', {
+        bossHp: room.bossHp, bossMaxHp: room.bossMaxHp,
+        bossX: room.bossX, bossY: room.bossY,
+        players: publicGuestPlayers(room)
+    });
 }
 
 function guestAlivePlayers(room) {
@@ -1196,7 +1312,7 @@ function startGuestFight(roomId) {
     const room = rooms[roomId];
     if (!room || room.kind !== 'guest' || room.state !== 'waiting') return;
     if (Object.keys(room.players).length === 0) return;
-    const def = GUEST_BOSS_DEFS[room.guestId];
+    const def = guestDefFor(room);
 
     room.state = 'fighting';
     room.bossHp = def.maxHp;
@@ -1222,7 +1338,14 @@ function beginGuestSkill(roomId, room, def, now) {
         room.nextSkillAt = now + def.skillIntervalMs;
         return;
     }
-    const keys = Object.keys(def.patterns);
+    // 부하 소환 is skipped while its last squad is still standing, so the field
+    // can't silently fill up with three squads at once.
+    const keys = Object.keys(def.patterns)
+        .filter(k => k !== 'summon_minions' || !guestMonstersAlive(room));
+    if (!keys.length) {
+        room.nextSkillAt = now + def.skillIntervalMs;
+        return;
+    }
     const pick = keys[Math.floor(Math.random() * keys.length)];
     room.bossPattern = pick;
     room.bossState = 'casting';
@@ -1264,6 +1387,186 @@ function beginGuestSkill(roomId, room, def, now) {
         io.to(roomId).emit('guestWindup', {
             skill: 'big_slash', near, windupMs: room.bossRuntime.windupMs
         });
+    } else if (pick === 'summon_minions') {
+        const p = def.patterns.summon_minions;
+        room.bossRuntime = {
+            phase: 'telegraph', at: now,
+            variant: p.variants[Math.floor(Math.random() * p.variants.length)]
+        };
+        io.to(roomId).emit('guestWindup', { skill: 'summon_minions', windupMs: p.telegraphMs });
+    } else if (pick === 'half_sweep') {
+        const p = def.patterns.half_sweep;
+        // Right half first, then the left -- "오른쪽" is relative to the boss's
+        // own facing, so it cleaves the field in two either way.
+        room.bossRuntime = { stage: 'sweep', side: 'right', phase: 'telegraph', at: now, swung: 0 };
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'half_sweep', side: 'right',
+            angle: room.bossFacing - Math.PI / 2, halfAngle: Math.PI / 2,
+            range: p.sweepRange, telegraphMs: p.telegraphMs + p.sweepDelayMs
+        });
+    } else if (pick === 'empower') {
+        const p = def.patterns.empower;
+        room.bossRuntime = { phase: 'telegraph', at: now };
+        io.to(roomId).emit('guestWindup', { skill: 'empower', windupMs: p.telegraphMs });
+    } else if (pick === 'spear_throw') {
+        const p = def.patterns.spear_throw;
+        room.bossRuntime = { wave: 0, phase: 'telegraph', at: now, x: target.x, y: target.y };
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'spear_throw', wave: 0, x: target.x, y: target.y,
+            radius: p.radius, telegraphMs: p.telegraphMs
+        });
+    } else if (pick === 'arena_split') {
+        const p = def.patterns.arena_split;
+        // The wall goes across the middle; the party is penned into whichever
+        // half it is standing in, and the squad lands in there with them.
+        const side = target.y >= 0 ? 1 : -1;
+        room.wall = { y: 0, side, thickness: p.wallThickness };
+        room.bossRuntime = { phase: 'telegraph', at: now, side };
+        io.to(roomId).emit('guestWallRaised', { y: 0, side, thickness: p.wallThickness });
+    } else if (pick === 'barrage') {
+        const p = def.patterns.barrage;
+        room.bossRuntime = { wave: 0, phase: 'live', at: now, spears: rollGuestBarrage(p.firstWaveCount, p.size, []) };
+        io.to(roomId).emit('guestBarrageWave', {
+            wave: 0, size: p.size, spears: room.bossRuntime.spears
+        });
+    }
+}
+
+// 총공격 spear positions: anywhere on the field, and never repeating a spot the
+// previous volley already used ("처음이랑 다른").
+function rollGuestBarrage(count, size, avoid) {
+    const spears = [];
+    const half = size / 2;
+    for (let i = 0; i < count; i++) {
+        let x = 0, y = 0;
+        for (let tries = 0; tries < 12; tries++) {
+            x = (Math.random() * 2 - 1) * (GUEST_ARENA_HALF_W - half);
+            y = (Math.random() * 2 - 1) * (GUEST_ARENA_HALF_H - half);
+            if (!avoid.some(s => Math.hypot(s.x - x, s.y - y) < size)) break;
+        }
+        spears.push({ x, y });
+    }
+    return spears;
+}
+
+// The guest arena is an open square, and nothing in it blocks line of fire.
+function guestMonsterCtx(roomId, room) {
+    return {
+        roomId, room,
+        damagePlayer: (playerId, dmg, mark) => applyDamageToGuestPlayer(roomId, playerId, dmg, mark),
+        clamp: (m) => {
+            m.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, m.x));
+            m.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, m.y));
+        },
+        sightBlocked: () => false,
+        outOfBounds: (pr) => Math.abs(pr.x) > GUEST_ARENA_HALF_W + 200
+            || Math.abs(pr.y) > GUEST_ARENA_HALF_H + 200,
+        ev: {
+            telegraph: 'guestMonsterTelegraph', attack: 'guestMonsterAttack',
+            projectileFired: 'guestProjectileFired', projectileGone: 'guestProjectileGone'
+        }
+    };
+}
+
+function guestMonstersAlive(room) {
+    return Object.values(room.monsters).some(m => m.alive);
+}
+
+// 부하 소환. Spreads the squad across the field between the boss and the party
+// so they have to be fought through rather than all landing in one lump.
+function spawnGuestMinions(roomId, room, variant) {
+    const spawned = {};
+    for (let i = 0; i < variant.count; i++) {
+        const id = `gm${room.nextMonsterId++}`;
+        // Even columns across the field, staggered rows going down from the boss.
+        const perRow = Math.min(variant.count, 8);
+        const col = i % perRow, row = Math.floor(i / perRow);
+        const spread = (GUEST_ARENA_HALF_W - 60) * 2;
+        const x = -GUEST_ARENA_HALF_W + 60 + (perRow === 1 ? spread / 2 : (col * spread) / (perRow - 1));
+        const y = room.bossY + 110 + row * 90;
+        const m = {
+            type: variant.type,
+            x, y: Math.min(GUEST_ARENA_HALF_H - 40, y),
+            hp: MONSTERS[variant.type].health,
+            maxHp: MONSTERS[variant.type].health,
+            alive: true,
+            state: 'idle',
+            nextAttackAt: 0,
+            telegraphStartAt: 0,
+            laser: null
+        };
+        room.monsters[id] = m;
+        spawned[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: true };
+    }
+    io.to(roomId).emit('guestMinionsSummoned', { monsters: spawned });
+}
+
+// Same as spawnGuestMinions, but confined to one half of the field -- 벽 가르기
+// drops its squad in with whoever it just walled in.
+function spawnGuestMinionsOnSide(roomId, room, group, side) {
+    const spawned = {};
+    const ids = [];
+    const yLo = side > 0 ? 60 : -GUEST_ARENA_HALF_H + 40;
+    const yHi = side > 0 ? GUEST_ARENA_HALF_H - 40 : -60;
+    for (let i = 0; i < group.count; i++) {
+        const id = `gm${room.nextMonsterId++}`;
+        const spread = (GUEST_ARENA_HALF_W - 60) * 2;
+        const x = -GUEST_ARENA_HALF_W + 60
+            + (group.count === 1 ? spread / 2 : (i * spread) / (group.count - 1));
+        const y = yLo + ((yHi - yLo) * (i % 2 === 0 ? 0.3 : 0.7));
+        const m = {
+            type: group.type, x, y,
+            hp: MONSTERS[group.type].health, maxHp: MONSTERS[group.type].health,
+            alive: true, state: 'idle', nextAttackAt: 0, telegraphStartAt: 0, laser: null
+        };
+        room.monsters[id] = m;
+        ids.push(id);
+        spawned[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: true };
+    }
+    io.to(roomId).emit('guestMinionsSummoned', { monsters: spawned });
+    return ids;
+}
+
+function damageGuestMonster(roomId, room, mid, amount) {
+    const m = room.monsters[mid];
+    if (!m || !m.alive) return;
+    m.hp = Math.max(0, m.hp - Math.max(0, Math.round(amount * guestPlayerDamageScale(room))));
+    if (m.hp > 0) { io.to(roomId).emit('guestMonsterDamaged', { id: mid, hp: m.hp }); return; }
+    m.alive = false;
+    m.laser = null;
+    io.to(roomId).emit('guestMonsterDefeated', { id: mid });
+}
+
+// Everything a player attack can land on: the boss, plus any summoned add.
+function guestLineTargets(room, originX, originY, facing, range, width) {
+    const out = [];
+    const def = guestDefFor(room);
+    if (meleeLineHitPoint(originX, originY, facing, range, width, room.bossX, room.bossY, def.radius)) {
+        out.push({ boss: true });
+    }
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        if (meleeLineHitPoint(originX, originY, facing, range, width, m.x, m.y, MONSTER_RADIUS)) out.push({ mid });
+    }
+    return out;
+}
+
+function guestCircleTargets(room, x, y, radius) {
+    const out = [];
+    const def = guestDefFor(room);
+    if (Math.hypot(x - room.bossX, y - room.bossY) <= radius + def.radius) out.push({ boss: true });
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        if (Math.hypot(x - m.x, y - m.y) <= radius + MONSTER_RADIUS) out.push({ mid });
+    }
+    return out;
+}
+
+function damageGuestTargets(roomId, room, targets, amount, byId) {
+    for (const t of targets) {
+        if (t.boss) damageGuestBoss(roomId, room, amount, byId);
+        else damageGuestMonster(roomId, room, t.mid, amount);
+        if (!rooms[roomId]) return;
     }
 }
 
@@ -1276,10 +1579,229 @@ function guestCircleHit(room, roomId, x, y, radius, damage) {
     }
 }
 
+// One half of the field, split along whichever way the boss is facing.
+// side 'right' is clockwise of its facing, 'left' anticlockwise.
+function guestHalfHit(roomId, room, side, range, damage) {
+    for (const p of guestAlivePlayers(room)) {
+        const dx = p.x - room.bossX, dy = p.y - room.bossY;
+        if (Math.hypot(dx, dy) > range + PLAYER_RADIUS) continue;
+        // Component along the boss's left-hand normal: positive is its left.
+        const rel = -Math.sin(room.bossFacing) * dx + Math.cos(room.bossFacing) * dy;
+        if (side === 'right' ? rel > PLAYER_RADIUS : rel < -PLAYER_RADIUS) continue;
+        const id = Object.keys(room.players).find(k => room.players[k] === p);
+        applyDamageToGuestPlayer(roomId, id, damage);
+        if (!rooms[roomId]) return;
+    }
+}
+
+function endGuestPattern(room, def, now) {
+    room.bossState = 'idle';
+    room.bossPattern = null;
+    room.bossRuntime = null;
+    room.nextSkillAt = now + def.skillIntervalMs;
+}
+
+function healGuestBoss(roomId, room, amount) {
+    if (room.phaseTransitioned) return;
+    const before = room.bossHp;
+    room.bossHp = Math.min(room.bossMaxHp, room.bossHp + amount);
+    if (room.bossHp !== before) io.to(roomId).emit('guestBossHealed', { bossHp: room.bossHp });
+}
+
+// 2. 반갈라 베기 -> 레이저 -> 낙하물, in that order, as one skill.
+function tickGuestHalfSweep(roomId, room, def, now) {
+    const p = def.patterns.half_sweep;
+    const rt = room.bossRuntime;
+
+    if (rt.stage === 'sweep') {
+        const due = rt.phase === 'telegraph' ? p.telegraphMs + p.sweepDelayMs : p.sideGapMs;
+        if (now - rt.at < due) return;
+        io.to(roomId).emit('guestSkillHit', {
+            skill: 'half_sweep', side: rt.side,
+            angle: room.bossFacing, range: p.sweepRange
+        });
+        guestHalfHit(roomId, room, rt.side, p.sweepRange, p.sweepDamage);
+        if (!rooms[roomId]) return;
+        rt.swung += 1;
+        if (rt.swung === 1) {
+            // The left half follows 0.3s later, so you have to cross over.
+            rt.side = 'left';
+            rt.phase = 'gap';
+            rt.at = now;
+            io.to(roomId).emit('guestTelegraph', {
+                skill: 'half_sweep', side: 'left',
+                angle: room.bossFacing + Math.PI / 2, halfAngle: Math.PI / 2,
+                range: p.sweepRange, telegraphMs: p.sideGapMs
+            });
+            return;
+        }
+        // Straight into the beam.
+        const t = pickGuestTarget(room);
+        rt.stage = 'laser';
+        rt.at = now;
+        rt.angle = t ? Math.atan2(t.y - room.bossY, t.x - room.bossX) : room.bossFacing;
+        rt.endAt = now + p.laserDurationMs;
+        rt.nextDamageAt = now;
+        io.to(roomId).emit('guestBossLaser', {
+            angle: rt.angle, range: p.laserRange, width: p.laserWidth, durationMs: p.laserDurationMs
+        });
+        return;
+    }
+
+    if (rt.stage === 'laser') {
+        if (now >= rt.endAt) {
+            io.to(roomId).emit('guestBossLaserEnd', {});
+            rt.stage = 'fall';
+            rt.wave = 0;
+            rt.phase = 'telegraph';
+            rt.at = now;
+            const t = pickGuestTarget(room);
+            rt.x = t ? t.x : 0;
+            rt.y = t ? t.y : 0;
+            io.to(roomId).emit('guestTelegraph', {
+                skill: 'half_sweep_fall', wave: 0, x: rt.x, y: rt.y,
+                radius: p.fallRadius, telegraphMs: p.fallTelegraphMs
+            });
+            return;
+        }
+        // Swings after the nearest player, but slower than a cookie can run.
+        const target = pickGuestTargetNearest(room);
+        if (target) {
+            const dist = Math.max(1, Math.hypot(target.x - room.bossX, target.y - room.bossY));
+            const maxStep = (p.laserTrackSpeed * (50 / 1000)) / dist;
+            const want = normalizeAngle(Math.atan2(target.y - room.bossY, target.x - room.bossX) - rt.angle);
+            rt.angle = normalizeAngle(rt.angle + Math.max(-maxStep, Math.min(maxStep, want)));
+        }
+        io.to(roomId).emit('guestBossLaserAim', { angle: rt.angle });
+        if (now < rt.nextDamageAt) return;
+        rt.nextDamageAt += p.laserTickMs;
+        for (const pl of guestAlivePlayers(room)) {
+            if (!meleeLineHitPoint(room.bossX, room.bossY, rt.angle, p.laserRange, p.laserWidth,
+                pl.x, pl.y, PLAYER_RADIUS)) continue;
+            const id = Object.keys(room.players).find(k => room.players[k] === pl);
+            applyDamageToGuestPlayer(roomId, id, p.laserDamage);
+            if (!rooms[roomId]) return;
+        }
+        return;
+    }
+
+    // rt.stage === 'fall'
+    if (rt.phase === 'telegraph' && now - rt.at >= p.fallTelegraphMs) {
+        io.to(roomId).emit('guestSkillHit', {
+            skill: 'half_sweep_fall', wave: rt.wave, x: rt.x, y: rt.y, radius: p.fallRadius
+        });
+        // It stays where it fell until the whole skill is over.
+        room.fallZones.push({
+            x: rt.x, y: rt.y, radius: p.fallRadius,
+            damage: p.fallDamage, tickMs: p.fallTickMs, nextTickAt: now + p.fallTickMs
+        });
+        io.to(roomId).emit('guestFallZone', { x: rt.x, y: rt.y, radius: p.fallRadius });
+        rt.wave += 1;
+        if (rt.wave >= p.fallCount) {
+            room.fallZones = [];
+            io.to(roomId).emit('guestFallZonesCleared', {});
+            endGuestPattern(room, def, now);
+            return;
+        }
+        rt.phase = 'wait';
+        rt.at = now;
+    } else if (rt.phase === 'wait' && now - rt.at >= p.fallIntervalMs - p.fallTelegraphMs) {
+        const t = pickGuestTarget(room);
+        rt.phase = 'telegraph';
+        rt.at = now;
+        if (t) { rt.x = t.x; rt.y = t.y; }
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'half_sweep_fall', wave: rt.wave, x: rt.x, y: rt.y,
+            radius: p.fallRadius, telegraphMs: p.fallTelegraphMs
+        });
+    }
+}
+
+// 6. 벽 가르기: raise a wall, pen the party in with a squad, and once that squad
+// is dead throw a volley of spears before the wall comes back down.
+function tickGuestArenaSplit(roomId, room, def, now) {
+    const p = def.patterns.arena_split;
+    const rt = room.bossRuntime;
+
+    if (rt.phase === 'telegraph') {
+        if (now - rt.at < p.telegraphMs) return;
+        // Track exactly what this skill put in the pen: a leftover squad from an
+        // earlier 부하 소환 could be stranded on the far side of the wall, and
+        // waiting on those too would lock the fight up for good.
+        rt.penIds = [];
+        for (const group of p.minions) {
+            rt.penIds.push(...spawnGuestMinionsOnSide(roomId, room, group, rt.side));
+        }
+        rt.phase = 'penned';
+        rt.at = now;
+        return;
+    }
+
+    if (rt.phase === 'penned') {
+        if (rt.penIds.some(id => room.monsters[id] && room.monsters[id].alive)) return;
+        // Pen cleared -> the spear volley starts.
+        rt.phase = 'spear';
+        rt.wave = 0;
+        rt.spearPhase = 'telegraph';
+        rt.at = now;
+        const t = pickGuestTarget(room);
+        rt.x = t ? t.x : 0;
+        rt.y = t ? t.y : 0;
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'spear_throw', wave: 0, x: rt.x, y: rt.y,
+            radius: p.spearRadius, telegraphMs: p.spearTelegraphMs
+        });
+        return;
+    }
+
+    // rt.phase === 'spear'
+    if (rt.spearPhase === 'telegraph' && now - rt.at >= p.spearTelegraphMs) {
+        io.to(roomId).emit('guestSkillHit', {
+            skill: 'spear_throw', wave: rt.wave, x: rt.x, y: rt.y, radius: p.spearRadius
+        });
+        let hits = 0;
+        for (const pl of guestAlivePlayers(room)) {
+            if (Math.hypot(pl.x - rt.x, pl.y - rt.y) > p.spearRadius + PLAYER_RADIUS) continue;
+            hits += 1;
+            const id = Object.keys(room.players).find(k => room.players[k] === pl);
+            applyDamageToGuestPlayer(roomId, id, p.spearDamage);
+            if (!rooms[roomId]) return;
+        }
+        if (hits) healGuestBoss(roomId, room, p.spearHealOnHit * hits);
+        rt.wave += 1;
+        if (rt.wave >= p.spearCount) {
+            room.wall = null;
+            io.to(roomId).emit('guestWallDropped', {});
+            endGuestPattern(room, def, now);
+            return;
+        }
+        rt.spearPhase = 'wait';
+        rt.at = now;
+    } else if (rt.spearPhase === 'wait' && now - rt.at >= p.spearIntervalMs - p.spearTelegraphMs) {
+        const t = pickGuestTarget(room);
+        rt.spearPhase = 'telegraph';
+        rt.at = now;
+        if (t) { rt.x = t.x; rt.y = t.y; }
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'spear_throw', wave: rt.wave, x: rt.x, y: rt.y,
+            radius: p.spearRadius, telegraphMs: p.spearTelegraphMs
+        });
+    }
+}
+
+function pickGuestTargetNearest(room) {
+    let best = null, bestD = Infinity;
+    for (const p of guestAlivePlayers(room)) {
+        const d = Math.hypot(p.x - room.bossX, p.y - room.bossY);
+        if (d < bestD) { bestD = d; best = p; }
+    }
+    return best;
+}
+
 function tickGuestRoom(roomId) {
     const room = rooms[roomId];
     if (!room || room.state !== 'fighting') return;
-    const def = GUEST_BOSS_DEFS[room.guestId];
+    const def = guestDefFor(room);
     const now = Date.now();
 
     // Team buffs (the healer's ultimate) tick independently of the boss.
@@ -1290,11 +1812,31 @@ function tickGuestRoom(roomId) {
             buff.lastTickAt += buff.tickMs;
             if (buff.type === 'team_heal_over_time') healGuestTeam(room, roomId, buff.healPerTick);
             else if (buff.type === 'magma_zone') {
-                if (Math.hypot(buff.x - room.bossX, buff.y - room.bossY) <= buff.radius + def.radius) {
-                    damageGuestBoss(roomId, room, buff.damage, buff.casterId);
-                    if (!rooms[roomId]) return;
-                }
+                damageGuestTargets(roomId, room,
+                    guestCircleTargets(room, buff.x, buff.y, buff.radius), buff.damage, buff.casterId);
+                if (!rooms[roomId]) return;
             }
+        }
+    }
+
+    // Summoned adds (2차) live in the same room and fight on their own clock.
+    if (Object.keys(room.monsters).length) {
+        const mctx = guestMonsterCtx(roomId, room);
+        tickMonsterSet(mctx, guestAlivePlayers(room), now);
+        if (!rooms[roomId]) return;
+        tickMonsterProjectiles(mctx, guestAlivePlayers(room), 50);
+        if (!rooms[roomId]) return;
+    }
+
+    // 낙하물 left on the ground burn anyone standing in one.
+    for (const zone of room.fallZones) {
+        if (now < zone.nextTickAt) continue;
+        zone.nextTickAt += zone.tickMs;
+        for (const p of guestAlivePlayers(room)) {
+            if (Math.hypot(p.x - zone.x, p.y - zone.y) > zone.radius + PLAYER_RADIUS) continue;
+            const id = Object.keys(room.players).find(k => room.players[k] === p);
+            applyDamageToGuestPlayer(roomId, id, zone.damage);
+            if (!rooms[roomId]) return;
         }
     }
 
@@ -1397,6 +1939,88 @@ function tickGuestRoom(roomId) {
             room.bossPattern = null;
             room.nextSkillAt = now + def.skillIntervalMs;
         }
+    } else if (room.bossPattern === 'summon_minions') {
+        const p = def.patterns.summon_minions;
+        const rt = room.bossRuntime;
+        if (now - rt.at >= p.telegraphMs) {
+            spawnGuestMinions(roomId, room, rt.variant);
+            endGuestPattern(room, def, now); // one squad and the skill is done
+        }
+    } else if (room.bossPattern === 'half_sweep') {
+        tickGuestHalfSweep(roomId, room, def, now);
+        if (!rooms[roomId]) return;
+    } else if (room.bossPattern === 'empower') {
+        const p = def.patterns.empower;
+        const rt = room.bossRuntime;
+        if (now - rt.at >= p.telegraphMs) {
+            room.bossHp = Math.min(room.bossMaxHp, room.bossHp + p.healAmount);
+            room.bossShieldHp = p.shieldAmount;
+            // Refreshes rather than stacking -- 0.8 x 0.8 x ... would end the fight.
+            room.playerDamageMultiplier = p.playerDamageMultiplier;
+            room.playerDamageDebuffUntil = now + p.durationMs;
+            io.to(roomId).emit('guestBossEmpowered', {
+                bossHp: room.bossHp, shieldHp: room.bossShieldHp,
+                damageMultiplier: p.playerDamageMultiplier, durationMs: p.durationMs
+            });
+            endGuestPattern(room, def, now);
+        }
+    } else if (room.bossPattern === 'spear_throw') {
+        const p = def.patterns.spear_throw;
+        const rt = room.bossRuntime;
+        if (rt.phase === 'telegraph' && now - rt.at >= p.telegraphMs) {
+            io.to(roomId).emit('guestSkillHit', { skill: 'spear_throw', wave: rt.wave, x: rt.x, y: rt.y, radius: p.radius });
+            // Every spear that connects feeds the boss.
+            let hits = 0;
+            for (const pl of guestAlivePlayers(room)) {
+                if (Math.hypot(pl.x - rt.x, pl.y - rt.y) > p.radius + PLAYER_RADIUS) continue;
+                hits += 1;
+                const id = Object.keys(room.players).find(k => room.players[k] === pl);
+                applyDamageToGuestPlayer(roomId, id, p.damage);
+                if (!rooms[roomId]) return;
+            }
+            if (hits) healGuestBoss(roomId, room, p.healOnHit * hits);
+            rt.wave += 1;
+            if (rt.wave >= p.count) endGuestPattern(room, def, now);
+            else { rt.phase = 'wait'; rt.at = now; }
+        } else if (rt.phase === 'wait' && now - rt.at >= p.intervalMs - p.telegraphMs) {
+            const t = pickGuestTarget(room);
+            rt.phase = 'telegraph';
+            rt.at = now;
+            if (t) { rt.x = t.x; rt.y = t.y; }
+            io.to(roomId).emit('guestTelegraph', {
+                skill: 'spear_throw', wave: rt.wave, x: rt.x, y: rt.y,
+                radius: p.radius, telegraphMs: p.telegraphMs
+            });
+        }
+    } else if (room.bossPattern === 'arena_split') {
+        tickGuestArenaSplit(roomId, room, def, now);
+        if (!rooms[roomId]) return;
+    } else if (room.bossPattern === 'barrage') {
+        const p = def.patterns.barrage;
+        const rt = room.bossRuntime;
+        if (now - rt.at >= p.waveMs) {
+            // The volley that was on the ground for the last second lands, then
+            // vanishes and a fresh one drops somewhere else.
+            let hits = 0;
+            for (const pl of guestAlivePlayers(room)) {
+                if (!rt.spears.some(s => Math.abs(pl.x - s.x) <= p.size / 2 + PLAYER_RADIUS
+                    && Math.abs(pl.y - s.y) <= p.size / 2 + PLAYER_RADIUS)) continue;
+                hits += 1;
+                const id = Object.keys(room.players).find(k => room.players[k] === pl);
+                applyDamageToGuestPlayer(roomId, id, p.damage);
+                if (!rooms[roomId]) return;
+            }
+            if (hits) healGuestBoss(roomId, room, p.healOnHit * hits);
+            rt.wave += 1;
+            if (rt.wave >= p.waves) {
+                io.to(roomId).emit('guestBarrageCleared', {});
+                endGuestPattern(room, def, now);
+            } else {
+                rt.spears = rollGuestBarrage(p.waveCount, p.size, rt.spears);
+                rt.at = now;
+                io.to(roomId).emit('guestBarrageWave', { wave: rt.wave, size: p.size, spears: rt.spears });
+            }
+        }
     }
 
     if (!rooms[roomId]) return;
@@ -1404,10 +2028,25 @@ function tickGuestRoom(roomId) {
 }
 
 function guestTickPayload(room) {
+    const monsters = {};
+    for (const [id, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        monsters[id] = {
+            type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: true,
+            state: m.state, laser: m.laser ? { angle: m.laser.angle } : null
+        };
+    }
     return {
         bossHp: room.bossHp,
+        bossMaxHp: room.bossMaxHp,
+        bossShieldHp: room.bossShieldHp || 0,
         bossFacing: room.bossFacing,
+        phase: room.phase,
         stuckSpears: room.stuckSpears.map(s => ({ x: s.x, y: s.y })),
+        fallZones: room.fallZones.map(z => ({ x: z.x, y: z.y, radius: z.radius })),
+        wall: room.wall,
+        monsters,
+        projectiles: publicProjectiles(room),
         players: publicGuestPlayers(room)
     };
 }
@@ -2255,6 +2894,11 @@ io.on('connection', (socket) => {
         if (Math.abs(x) > GUEST_ARENA_HALF_W + 1 || Math.abs(y) > GUEST_ARENA_HALF_H + 1) return;
         p.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, x));
         p.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, y));
+        // 벽 가르기: while the wall is up you are penned into your own half.
+        if (room.wall) {
+            const edge = room.wall.y + room.wall.side * (room.wall.thickness / 2 + PLAYER_RADIUS);
+            p.y = room.wall.side > 0 ? Math.max(edge, p.y) : Math.min(edge, p.y);
+        }
         p.facing = facing;
     });
 
@@ -2275,6 +2919,22 @@ io.on('connection', (socket) => {
         });
     });
 
+    // 2차 진입 전에 버릴 쿠키 하나. Everyone who has a choice has to make it
+    // before the second raid starts.
+    socket.on('guestDiscardCookie', ({ index }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'choosing') return;
+        const p = room.players[socket.id];
+        if (!p || p.party.length <= 1) return;
+        if (typeof index !== 'number' || index < 0 || index >= p.party.length) return;
+        if (room.discardChoices[socket.id] !== undefined) return; // no take-backs
+        room.discardChoices[socket.id] = index;
+        io.to(socket.id).emit('guestDiscardAccepted', { index, charType: p.party[index] });
+        const everyone = Object.keys(room.players).every(id => room.discardChoices[id] !== undefined);
+        if (everyone) startGuestPhase2(roomId);
+    });
+
     socket.on('guestPlayerAttack', () => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
@@ -2282,7 +2942,6 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
         const character = CHARACTERS[p.charType];
-        const def = GUEST_BOSS_DEFS[room.guestId];
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
         if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid)) return;
@@ -2293,10 +2952,11 @@ io.on('connection', (socket) => {
 
         const swing = resolveAttack(character, p, now, rapid);
         advanceAttackSequence(character, p);
-        if (!meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width,
-            room.bossX, room.bossY, def.radius)) return;
+        // The boss and any summoned add are both in the way of the same swing.
+        const targets = guestLineTargets(room, swing.originX, swing.originY, p.facing, swing.range, swing.width);
+        if (!targets.length) return;
 
-        damageGuestBoss(roomId, room, swing.damage, socket.id);
+        damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
         if (!rooms[roomId]) return;
         if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
             const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
@@ -2311,36 +2971,49 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
         const character = CHARACTERS[p.charType];
-        const def = GUEST_BOSS_DEFS[room.guestId];
         if (!character.skillType) return;
         const now = Date.now();
         if (now - p.lastSkillTime < character.skillCooldown) return;
         p.lastSkillTime = now;
         socket.to(roomId).emit('guestPlayerSkillUsed', { id: socket.id });
 
-        const distToBoss = Math.hypot(p.x - room.bossX, p.y - room.bossY) - def.radius;
         if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
-            if (distToBoss <= character.skillRange) damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            damageGuestTargets(roomId, room,
+                guestCircleTargets(room, p.x, p.y, character.skillRange), character.skillDamage, socket.id);
         } else if (character.skillType === 'guard_stance' || character.skillType === 'shield_block') {
             p.guardStanceUntil = now + character.skillDurationMs;
         } else if (character.skillType === 'kick' || character.skillType === 'flying_kick') {
-            if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth,
-                room.bossX, room.bossY, def.radius) && character.skillDamage) {
-                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
-            }
+            if (!character.skillDamage) return;
+            damageGuestTargets(roomId, room,
+                guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth),
+                character.skillDamage, socket.id);
         } else if (character.skillType === 'self_heal') {
             p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
             p.partyHp[p.active] = p.hp;
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
         } else if (character.skillType === 'spin_heal') {
-            if (distToBoss <= character.skillRadius) {
-                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            const hit = guestCircleTargets(room, p.x, p.y, character.skillRadius);
+            if (hit.length) {
+                damageGuestTargets(roomId, room, hit, character.skillDamage, socket.id);
                 if (rooms[roomId]) healGuestTeam(room, roomId, character.skillHealOnHit);
             }
         } else if (character.skillType === 'earthquake') {
-            // Only one enemy in a guest raid, so this always takes the small-group branch.
             io.to(roomId).emit('guestEarthquake', { id: socket.id });
-            damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            // 지진: with a crowd on the field it kills one outright instead of
+            // chipping everyone -- the same rule the story floors use.
+            const adds = Object.entries(room.monsters).filter(([, m]) => m.alive);
+            const enemyCount = adds.length + (room.phaseTransitioned ? 0 : 1);
+            if (enemyCount > character.skillThresholdCount) {
+                const victim = adds[0];
+                if (victim) damageGuestMonster(roomId, room, victim[0], room.monsters[victim[0]].hp);
+                else damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            } else {
+                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+                for (const [mid] of adds) {
+                    if (!rooms[roomId]) return;
+                    damageGuestMonster(roomId, room, mid, character.skillDamage);
+                }
+            }
         }
         // speed_boost is client-side only.
     });
@@ -2352,7 +3025,6 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
         const character = CHARACTERS[p.charType];
-        const def = GUEST_BOSS_DEFS[room.guestId];
         if (!character.ultimateType) return;
         const now = Date.now();
         if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
@@ -2367,8 +3039,6 @@ io.on('connection', (socket) => {
                 y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, ty))
             };
         };
-        const hitsBoss = (t, radius) => Math.hypot(t.x - room.bossX, t.y - room.bossY) <= radius + def.radius;
-
         if (character.ultimateType === 'team_heal_over_time') {
             room.activeBuffs.push({
                 type: 'team_heal_over_time', tickMs: character.ultimateTickMs,
@@ -2382,7 +3052,9 @@ io.on('connection', (socket) => {
                 id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius,
                 bolt: character.ultimateType === 'lightning_strike'
             });
-            if (hitsBoss(t, character.ultimateRadius)) damageGuestBoss(roomId, room, character.ultimateDamage, socket.id);
+            damageGuestTargets(roomId, room,
+                guestCircleTargets(room, t.x, t.y, character.ultimateRadius),
+                character.ultimateDamage, socket.id);
         } else if (character.ultimateType === 'magma_zone') {
             const t = aimed();
             if (!t) return;
@@ -2432,6 +3104,15 @@ io.on('connection', (socket) => {
         }
         if (room.state === 'waiting') {
             Object.values(room.players).forEach(pl => { pl.ready = false; });
+        }
+        // Don't leave the survivor frozen on a discard that will never arrive:
+        // drop the leaver's slot and start 2차 once everyone left has chosen.
+        if (room.kind === 'guest' && room.state === 'choosing') {
+            delete room.discardChoices[socket.id];
+            if (Object.keys(room.players).every(id => room.discardChoices[id] !== undefined)) {
+                startGuestPhase2(roomId);
+            }
+            return;
         }
         io.to(roomId).emit('raidRoomUpdate', {
             roomId, bossId: room.bossId, count: Object.keys(room.players).length,

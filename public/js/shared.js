@@ -480,9 +480,111 @@ const GUEST_BOSS_DEFS = {
                 farRadius: 200, // circle centred on the player it picked
                 damage: 20
             }
+        },
+        // ==================== 2차 레이드 ====================
+        // Reached by taking the 1차 boss to 0: the floor gives way, you throw one
+        // cookie away for good, and the same body comes back wreathed in a black
+        // aura with 400hp and a completely different kit. Everything here
+        // overrides the phase-1 fields of the same name; see guestDefFor().
+        phase2: {
+            maxHp: 400,
+            skillIntervalMs: 5000,
+            aura: true, // the black smoke the client draws around the body
+            patterns: {
+                // 1. 부하 소환: summons ONE of the three squads at random and
+                // the skill is over -- the adds stay until you clear them. It
+                // won't pick this again while its last squad is still standing,
+                // so the field can't silently fill up with 45 cakes.
+                summon_minions: {
+                    variants: [
+                        { type: 'cake_slice', count: 15 },
+                        { type: 'chocolate_cake_slice', count: 15 },
+                        { type: 'laser_robot', count: 7 }
+                    ],
+                    telegraphMs: 600
+                },
+                // 2. 반갈라 베기 -> 레이저 -> 낙하물. One skill, three stages.
+                half_sweep: {
+                    telegraphMs: 300,
+                    sweepDelayMs: 200,  // 예고 후 0.2초 뒤에 벤다
+                    sideGapMs: 300,     // 오른쪽을 벤 뒤 왼쪽까지 0.3초
+                    sweepDamage: 20,
+                    sweepRange: 620,    // reaches the far side of the field
+                    laserDurationMs: 3000,
+                    laserTickMs: 500,
+                    laserDamage: 3,
+                    laserWidth: 44,
+                    laserRange: 1100,
+                    laserTrackSpeed: 90, // px/sec sideways -- slower than a cookie
+                    fallCount: 5,
+                    fallIntervalMs: 1000,
+                    fallTelegraphMs: 300,
+                    fallRadius: 60,
+                    fallTickMs: 100,
+                    fallDamage: 1 // per fallTickMs while you stand in one
+                },
+                // 3. 흑화: patches itself up and dulls everyone's damage. The
+                // heal and the shield are permanent; only the damage cut runs
+                // out (15s), and it refreshes rather than stacking.
+                empower: {
+                    telegraphMs: 400,
+                    healAmount: 100,
+                    shieldAmount: 50,
+                    playerDamageMultiplier: 0.8,
+                    durationMs: 15000
+                },
+                // 4. 창 던지기: ten thrown spears, one a second, and every one
+                // that connects feeds the boss.
+                spear_throw: {
+                    count: 10,
+                    intervalMs: 1000,
+                    telegraphMs: 200,
+                    radius: 30,
+                    damage: 7,
+                    healOnHit: 10
+                },
+                // 5. 총공격: spears rain across the whole field regardless of
+                // where anyone is standing. The opening volley is the big one.
+                barrage: {
+                    waves: 5,
+                    firstWaveCount: 20,
+                    waveCount: 10,
+                    waveMs: 1000,
+                    size: 40, // width of one falling spear
+                    damage: 3,
+                    healOnHit: 5
+                },
+                // 6. 벽 가르기: a wall across the middle pens the party in on
+                // their own half with a small squad. Clear it and the boss
+                // throws spears (창던지기와 같은 수치) before the wall drops
+                // and the skill ends.
+                arena_split: {
+                    telegraphMs: 500,
+                    wallThickness: 18,
+                    minions: [
+                        { type: 'cake_slice', count: 5 },
+                        { type: 'chocolate_cake_slice', count: 3 },
+                        { type: 'laser_robot', count: 2 }
+                    ],
+                    spearCount: 5,
+                    spearIntervalMs: 1000,
+                    spearTelegraphMs: 200,
+                    spearRadius: 30,
+                    spearDamage: 7,
+                    spearHealOnHit: 10
+                }
+            }
         }
     }
 };
+
+// The definition in force right now: phase 2 overrides maxHp/skillIntervalMs/
+// patterns while keeping the shared body fields (radius, homeY, charType).
+function guestDefFor(room) {
+    const base = GUEST_BOSS_DEFS[room.guestId];
+    if (!base) return null;
+    return room.phase === 2 && base.phase2 ? { ...base, ...base.phase2 } : base;
+}
 
 const MONSTER_RADIUS = 16;
 const STAR_RADIUS = 30;
@@ -691,7 +793,7 @@ const GACHA_TABLE = {
 const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
