@@ -440,6 +440,29 @@ const MONSTERS = {
         attackCooldown: 3000,
         telegraphMs: 400
     },
+    // A laser turret. It never moves; instead it holds a beam on the player for
+    // laserDurationMs, burning laserDamage every laserTickMs. The beam swings
+    // toward the player, but its tip can only sweep laserTrackSpeed px/sec
+    // sideways -- well under a cookie's own ~120 px/sec -- so running always
+    // gets you out of it.
+    laser_robot: {
+        name: '레이저 로봇',
+        color: '#95a5a6',
+        health: 80,
+        speed: 0, // a turret: holds its ground instead of kiting
+        aggroRange: 620,
+        preferredDistance: 0, // unused at speed 0; kept for a uniform shape
+        attackRange: 620,
+        attackCooldown: 3000,
+        telegraphMs: 400,
+        laser: true,
+        laserDurationMs: 500,
+        laserDamage: 2,
+        laserTickMs: 100, // 2 damage per 0.1s => 10 over the full 0.5s
+        laserRange: 620,
+        laserWidth: 26,
+        laserTrackSpeed: 80 // px/sec the beam's tip can chase sideways
+    },
     // A backline archer: hangs back at range and pokes for less, but has very
     // little health of its own -- meant to be mixed in behind cake_slices.
     chocolate_cake_slice: {
@@ -461,11 +484,38 @@ const MONSTERS = {
     }
 };
 
-// Story-mode floor layouts. Each floor is a bridge stretching left from the
-// start (x=0). A floor is split into one or more sequential "rooms" (see
-// `gates`); monsters are tagged with the room they belong to (`room`, default
-// 0). While any monster in a room is still alive, an energy shield seals that
-// room's entranceX/exitX (see server's storyPlayerMove handler) so the player
+// Which way a floor's bridge runs. Floors 1-2 stretch leftward along -x; floor
+// 3 stretches upward along -y. Everything that has to reason about "how far
+// along the bridge" vs "how far off the centreline" goes through these, so a
+// new direction is a data change rather than another branch in every clamp.
+// `along` travels the level's length (0 at the start, -levelLength at the far
+// end); `across` is confined to +-laneHalfWidth.
+const LEVEL_START_SLACK = 40; // how far back behind the start line you may stand
+
+function floorAxis(floorDef) {
+    return floorDef && floorDef.axis === 'y' ? 'y' : 'x';
+}
+function alongOf(floorDef, x, y) {
+    return floorAxis(floorDef) === 'y' ? y : x;
+}
+function acrossOf(floorDef, x, y) {
+    return floorAxis(floorDef) === 'y' ? x : y;
+}
+function fromAlongAcross(floorDef, along, across) {
+    return floorAxis(floorDef) === 'y' ? { x: across, y: along } : { x: along, y: across };
+}
+function clampToLane(floorDef, x, y) {
+    const along = Math.max(-floorDef.levelLength, Math.min(LEVEL_START_SLACK, alongOf(floorDef, x, y)));
+    const across = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, acrossOf(floorDef, x, y)));
+    return fromAlongAcross(floorDef, along, across);
+}
+
+// Story-mode floor layouts. Each floor is a bridge stretching away from the
+// start (0,0) along its `axis` (see the helpers above). A floor is split into
+// one or more sequential "rooms" (see `gates`); monsters are tagged with the
+// room they belong to (`room`, default 0). While any monster in a room is still
+// alive, an energy shield seals that room's `entrance`/`exit` -- both given as
+// along-axis positions (see server's storyPlayerMove handler) -- so the player
 // can't retreat or advance past it. The star sits just past the last gate --
 // attacking it clears the floor.
 const STORY_FLOOR_DEFS = {
@@ -475,7 +525,7 @@ const STORY_FLOOR_DEFS = {
         laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
         recommendedPower: 500, // shown on the tower's floor-select screen
         gates: [
-            { entranceX: -900, exitX: -1500, room: 0 }
+            { entrance: -900, exit: -1500, room: 0 }
         ],
         monsters: [
             { type: 'cake_slice', x: -1050, y: -35, room: 0 },
@@ -496,8 +546,8 @@ const STORY_FLOOR_DEFS = {
         laneHalfWidth: 70,
         recommendedPower: 600,
         gates: [
-            { entranceX: -700, exitX: -1150, room: 0 },
-            { entranceX: -1150, exitX: -2450, room: 1 }
+            { entrance: -700, exit: -1150, room: 0 },
+            { entrance: -1150, exit: -2450, room: 1 }
         ],
         monsters: [
             // Room 0: 3 cake_slices up front, a chocolate archer behind them.
@@ -518,6 +568,38 @@ const STORY_FLOOR_DEFS = {
             { type: 'chocolate_cake_slice', x: -2150, y: 30, room: 1 }
         ],
         star: { x: -2570, y: 0 }
+    },
+    // The first floor whose bridge runs UPWARD (axis: 'y') instead of leftward,
+    // so `along` is y and `across` is x. Room 0 is a wall of 10 cake slices;
+    // room 1 is three stationary laser turrets.
+    3: {
+        levelType: 'bridge',
+        axis: 'y',
+        levelLength: 2600,
+        laneHalfWidth: 70,
+        recommendedPower: 700,
+        gates: [
+            { entrance: -700, exit: -1450, room: 0 },
+            { entrance: -1450, exit: -2350, room: 1 }
+        ],
+        monsters: [
+            // Room 0: 10 cake slices waiting up the bridge (x = across, y = along).
+            { type: 'cake_slice', x: -45, y: -850, room: 0 },
+            { type: 'cake_slice', x: 0, y: -850, room: 0 },
+            { type: 'cake_slice', x: 45, y: -850, room: 0 },
+            { type: 'cake_slice', x: -30, y: -1000, room: 0 },
+            { type: 'cake_slice', x: 30, y: -1000, room: 0 },
+            { type: 'cake_slice', x: -50, y: -1150, room: 0 },
+            { type: 'cake_slice', x: -17, y: -1150, room: 0 },
+            { type: 'cake_slice', x: 17, y: -1150, room: 0 },
+            { type: 'cake_slice', x: 50, y: -1150, room: 0 },
+            { type: 'cake_slice', x: 0, y: -1300, room: 0 },
+            // Room 1: three laser robots.
+            { type: 'laser_robot', x: -50, y: -1800, room: 1 },
+            { type: 'laser_robot', x: 50, y: -1900, room: 1 },
+            { type: 'laser_robot', x: 0, y: -2050, room: 1 }
+        ],
+        star: { x: 0, y: -2500 }
     }
 };
 
@@ -544,7 +626,7 @@ const GACHA_TABLE = {
 const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

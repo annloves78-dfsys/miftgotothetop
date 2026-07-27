@@ -4,7 +4,8 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS } = require('./public/js/shared.js');
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS,
+    LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -610,9 +611,10 @@ function spawnStoryMonsters(room, floorDef) {
             x: m.x, y: m.y || 0,
             hp: def.health, maxHp: def.health,
             alive: true,
-            state: 'idle', // 'idle' | 'telegraph'
+            state: 'idle', // 'idle' | 'telegraph' | 'firing' (laser_robot)
             roomIndex: m.room || 0, // which gate/room this monster belongs to
             elementMark: null, // { element, charges, multiplier } | null
+            laser: null, // { angle, endAt, nextDamageAt } | null -- see tickLaser
             stunnedUntil: 0,
             telegraphStartAt: 0,
             nextAttackAt: 0
@@ -629,7 +631,10 @@ function anyMonsterAliveInRoom(room, roomIndex) {
 function publicMonsters(room) {
     const out = {};
     for (const [id, m] of Object.entries(room.monsters)) {
-        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark };
+        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark,
+            // Beam angle goes out so the client can draw exactly what the server
+            // is judging against (laser_robot only; null otherwise).
+            laserAngle: m.laser ? m.laser.angle : null };
     }
     return out;
 }
@@ -754,6 +759,58 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     if (!p.alive) endStoryRoom(roomId, 'lose');
 }
 
+// A raised energy shield is solid to attacks, not just to walking. Without this
+// a laser_robot in the next room (620px reach) happily burns the player through
+// the shield while they're still fighting the room in front of it.
+function shieldBetween(room, floorDef, m, p) {
+    if (!floorDef.gates) return false;
+    const mAlong = alongOf(floorDef, m.x, m.y);
+    const pAlong = alongOf(floorDef, p.x, p.y);
+    for (const gate of floorDef.gates) {
+        if (!anyMonsterAliveInRoom(room, gate.room)) continue;
+        for (const edge of [gate.entrance, gate.exit]) {
+            if ((mAlong < edge) !== (pAlong < edge)) return true;
+        }
+    }
+    return false;
+}
+
+function normalizeAngle(a) {
+    while (a > Math.PI) a -= Math.PI * 2;
+    while (a < -Math.PI) a += Math.PI * 2;
+    return a;
+}
+
+// One tick of a laser_robot's held beam. The beam swings toward the nearest
+// player, but its tip is limited to laserTrackSpeed px/sec sideways -- a cookie
+// moves ~120 px/sec, so running out of the beam is always possible. Anyone
+// caught in the corridor takes laserDamage every laserTickMs.
+function tickLaser(roomId, room, m, mid, def, nearest, alivePlayers, now) {
+    if (now >= m.laser.endAt) {
+        m.laser = null;
+        m.state = 'idle';
+        m.nextAttackAt = now + def.attackCooldown;
+        return;
+    }
+
+    // Convert the allowed sideways travel into an angular step at the target's
+    // current distance, so the limit means the same thing near and far.
+    const dist = Math.max(1, Math.hypot(nearest.x - m.x, nearest.y - m.y));
+    const maxStep = (def.laserTrackSpeed * (50 / 1000)) / dist;
+    const want = normalizeAngle(Math.atan2(nearest.y - m.y, nearest.x - m.x) - m.laser.angle);
+    m.laser.angle = normalizeAngle(m.laser.angle + Math.max(-maxStep, Math.min(maxStep, want)));
+
+    if (now < m.laser.nextDamageAt) return;
+    m.laser.nextDamageAt += def.laserTickMs;
+    for (const p of alivePlayers) {
+        if (!meleeLineHitPoint(m.x, m.y, m.laser.angle, def.laserRange, def.laserWidth, p.x, p.y, PLAYER_RADIUS)) continue;
+        const targetId = Object.keys(room.players).find(id => room.players[id] === p);
+        applyDamageToStoryPlayer(roomId, targetId,
+            def.laserDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+        if (!rooms[roomId]) return; // that hit may have ended the floor
+    }
+}
+
 function tickStoryRoom(roomId) {
     const room = rooms[roomId];
     if (!room || room.state !== 'fighting') return;
@@ -808,8 +865,18 @@ function tickStoryRoom(roomId) {
 
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive) continue;
-        if (m.stunnedUntil && now < m.stunnedUntil) continue; // frozen: no movement, no attacks
+        if (m.stunnedUntil && now < m.stunnedUntil) {
+            // Frozen: no movement, no attacks. A stun also cuts a beam that was
+            // mid-fire, rather than leaving it hanging in the air unattended.
+            if (m.laser) {
+                m.laser = null;
+                m.state = 'idle';
+                m.nextAttackAt = now + MONSTERS[m.type].attackCooldown;
+            }
+            continue;
+        }
         const def = MONSTERS[m.type];
+        const floorDefForSight = STORY_FLOOR_DEFS[room.floor];
 
         let nearest = null, nearestDist = Infinity;
         for (const p of alivePlayers) {
@@ -817,6 +884,21 @@ function tickStoryRoom(roomId) {
             if (d < nearestDist) { nearestDist = d; nearest = p; }
         }
         if (!nearest) continue;
+        // A raised shield stops an EMPLACEMENT from shooting through it. Scoped
+        // deliberately to monsters that can't move (speed 0): a laser_robot has
+        // 620px of reach and would otherwise burn the player across a sealed
+        // room while they're still fighting the room in front of it. Monsters
+        // that can walk are left exactly as they were -- they close the distance
+        // and hit you the moment they're next to you, so blocking them would
+        // only create a stalemate at the shield rather than protecting anyone.
+        const blockedByShield = def.speed === 0 && !!floorDefForSight
+            && shieldBetween(room, floorDefForSight, m, nearest);
+        if (blockedByShield && m.laser) {
+            m.laser = null;
+            m.state = 'idle';
+            m.nextAttackAt = now + def.attackCooldown;
+            continue;
+        }
         if (m.state === 'idle' && nearestDist > def.aggroRange) continue; // dormant until approached
 
         if (m.state === 'idle') {
@@ -838,19 +920,38 @@ function tickStoryRoom(roomId) {
             }
             const floorDef = STORY_FLOOR_DEFS[room.floor];
             if (floorDef) {
-                if (m.x > 40) m.x = 40;
-                if (m.x < -floorDef.levelLength) m.x = -floorDef.levelLength;
-                if (m.y > floorDef.laneHalfWidth) m.y = floorDef.laneHalfWidth;
-                if (m.y < -floorDef.laneHalfWidth) m.y = -floorDef.laneHalfWidth;
+                const kept = clampToLane(floorDef, m.x, m.y);
+                m.x = kept.x; m.y = kept.y;
             }
 
-            if (nearestDist <= def.attackRange && now >= m.nextAttackAt) {
+            if (nearestDist <= def.attackRange && now >= m.nextAttackAt && !blockedByShield) {
                 m.state = 'telegraph';
                 m.telegraphStartAt = now;
                 io.to(roomId).emit('monsterTelegraph', { id: mid });
             }
+        } else if (m.state === 'firing') {
+            tickLaser(roomId, room, m, mid, def, nearest, alivePlayers, now);
         } else if (m.state === 'telegraph') {
+            if (blockedByShield) {
+                // A shield came up (or the player ducked back behind one) while
+                // this was winding up -- drop the swing rather than firing through it.
+                m.state = 'idle';
+                m.nextAttackAt = now + def.attackCooldown;
+                continue;
+            }
             if (now - m.telegraphStartAt >= def.telegraphMs) {
+                if (def.laser) {
+                    // The beam starts locked on and then can only drift after
+                    // the player at laserTrackSpeed; see tickLaser.
+                    m.state = 'firing';
+                    m.laser = {
+                        angle: Math.atan2(nearest.y - m.y, nearest.x - m.x),
+                        endAt: now + def.laserDurationMs,
+                        nextDamageAt: now
+                    };
+                    io.to(roomId).emit('monsterAttack', { id: mid });
+                    continue;
+                }
                 m.state = 'idle';
                 m.nextAttackAt = now + def.attackCooldown;
                 const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
@@ -952,6 +1053,9 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('storyFloorStarted', {
             floor,
             floorDef: {
+                // axis matters to every clamp/camera/draw on the client, so it
+                // has to travel with the rest of the layout.
+                axis: floorDef.axis,
                 levelLength: floorDef.levelLength,
                 laneHalfWidth: floorDef.laneHalfWidth,
                 gates: floorDef.gates,
@@ -972,26 +1076,32 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
         const floorDef = STORY_FLOOR_DEFS[room.floor];
-        if (x > 40 || x < -floorDef.levelLength - 1) return; // ignore out-of-bounds claims
-        if (Math.abs(y) > floorDef.laneHalfWidth + 1) return;
+        // Bounds are checked along the bridge's own axis, so a floor running
+        // upward (axis: 'y') is clamped the same way a leftward one is.
+        let along = alongOf(floorDef, x, y);
+        const across = acrossOf(floorDef, x, y);
+        if (along > LEVEL_START_SLACK || along < -floorDef.levelLength - 1) return; // out-of-bounds claim
+        if (Math.abs(across) > floorDef.laneHalfWidth + 1) return;
 
         // Energy-shield gates: once inside (or moving into) a room, neither
         // of its edges can be crossed until every monster in that room is
         // dead. A floor can have several rooms back to back (see `gates`);
         // each is checked independently against the (possibly already
-        // reclamped) x, since only one room's shield is ever actually up at
-        // any given position.
+        // reclamped) position, since only one room's shield is ever actually
+        // up at any given point along the bridge.
         if (floorDef.gates) {
+            const wasAlong = alongOf(floorDef, p.x, p.y);
             for (const gate of floorDef.gates) {
                 if (!anyMonsterAliveInRoom(room, gate.room)) continue;
-                if (p.x <= gate.entranceX || x <= gate.entranceX) {
-                    if (x > gate.entranceX) x = gate.entranceX;
-                    if (x < gate.exitX) x = gate.exitX;
+                if (wasAlong <= gate.entrance || along <= gate.entrance) {
+                    if (along > gate.entrance) along = gate.entrance;
+                    if (along < gate.exit) along = gate.exit;
                 }
             }
         }
 
-        p.x = x; p.y = y; p.facing = facing;
+        const pos = fromAlongAcross(floorDef, along, across);
+        p.x = pos.x; p.y = pos.y; p.facing = facing;
     });
 
     socket.on('storyPlayerAttack', () => {
@@ -1222,8 +1332,8 @@ io.on('connection', (socket) => {
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
             const floorDef = STORY_FLOOR_DEFS[room.floor];
-            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
-            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+            const t = clampToLane(floorDef, targetX, targetY);
+            const tx = t.x, ty = t.y;
 
             io.to(roomId).emit('storyUltimateImpact', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
 
@@ -1244,8 +1354,8 @@ io.on('connection', (socket) => {
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
             const floorDef = STORY_FLOOR_DEFS[room.floor];
-            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
-            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+            const t = clampToLane(floorDef, targetX, targetY);
+            const tx = t.x, ty = t.y;
 
             io.to(roomId).emit('storyLightningStrike', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius });
 
@@ -1281,8 +1391,8 @@ io.on('connection', (socket) => {
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
             const floorDef = STORY_FLOOR_DEFS[room.floor];
-            const tx = Math.max(-floorDef.levelLength, Math.min(40, targetX));
-            const ty = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, targetY));
+            const t = clampToLane(floorDef, targetX, targetY);
+            const tx = t.x, ty = t.y;
 
             io.to(roomId).emit('storyMagmaZonePlaced', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius, durationMs: character.ultimateZoneDurationMs });
 

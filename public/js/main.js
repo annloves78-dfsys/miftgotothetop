@@ -1230,7 +1230,7 @@ storySoloBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-const STORY_TOTAL_FLOORS = 10; // floors 3+ are placeholders until they get real content (see STORY_FLOOR_DEFS)
+const STORY_TOTAL_FLOORS = 10; // floors 4+ are placeholders until they get real content (see STORY_FLOOR_DEFS)
 let selectedStoryFloor = 1;
 
 function isFloorUnlocked(floor) {
@@ -1482,9 +1482,22 @@ storyCanvas.addEventListener('mousedown', (e) => {
     }
 });
 
+// The camera scrolls along the bridge's own axis: sideways on a leftward floor,
+// vertically on an upward one. Both storyRender and the mouse->world mapping
+// read it from here so they can't disagree.
+function storyCamera() {
+    if (!storyPlayer) return { x: 0, y: 0 };
+    return SHARED.floorAxis(storyFloorDef) === 'y'
+        ? { x: 0, y: storyPlayer.y }
+        : { x: storyPlayer.x, y: 0 };
+}
+
 function storyWorldFromMouse() {
-    const camX = storyPlayer ? storyPlayer.x : 0;
-    return { x: storyMouseX - storyCanvas.width / 2 + camX, y: storyMouseY - storyCanvas.height / 2 };
+    const cam = storyCamera();
+    return {
+        x: storyMouseX - storyCanvas.width / 2 + cam.x,
+        y: storyMouseY - storyCanvas.height / 2 + cam.y
+    };
 }
 
 function storyCanUseSkill(now) {
@@ -1615,23 +1628,23 @@ function storyFrame() {
         if (keys['a'] || keys['A']) dx -= speed;
         if (keys['d'] || keys['D']) dx += speed;
         if (dx !== 0 || dy !== 0) {
-            let nx = storyPlayer.x + dx;
-            let ny = storyPlayer.y + dy;
-            const halfW = storyFloorDef.laneHalfWidth;
-            if (ny > halfW) ny = halfW;
-            if (ny < -halfW) ny = -halfW;
-            if (nx > 40) nx = 40;
-            if (nx < -storyFloorDef.levelLength) nx = -storyFloorDef.levelLength;
+            // Mirrors the server's storyPlayerMove clamping, along the bridge's
+            // own axis so an upward floor (axis: 'y') behaves like a leftward one.
+            const kept = SHARED.clampToLane(storyFloorDef, storyPlayer.x + dx, storyPlayer.y + dy);
+            let along = SHARED.alongOf(storyFloorDef, kept.x, kept.y);
+            const across = SHARED.acrossOf(storyFloorDef, kept.x, kept.y);
             if (storyFloorDef.gates) {
+                const wasAlong = SHARED.alongOf(storyFloorDef, storyPlayer.x, storyPlayer.y);
                 for (const gate of storyFloorDef.gates) {
                     if (!storyAnyMonsterAliveInRoom(gate.room)) continue;
-                    if (storyPlayer.x <= gate.entranceX || nx <= gate.entranceX) {
-                        if (nx > gate.entranceX) nx = gate.entranceX;
-                        if (nx < gate.exitX) nx = gate.exitX;
+                    if (wasAlong <= gate.entrance || along <= gate.entrance) {
+                        if (along > gate.entrance) along = gate.entrance;
+                        if (along < gate.exit) along = gate.exit;
                     }
                 }
             }
-            storyPlayer.x = nx; storyPlayer.y = ny;
+            const pos = SHARED.fromAlongAcross(storyFloorDef, along, across);
+            storyPlayer.x = pos.x; storyPlayer.y = pos.y;
         }
         if (mobileControlsEnabled) {
             if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
@@ -1688,17 +1701,25 @@ function quakeOffset(now, until) {
 function storyRender(now) {
     storyCtx.clearRect(0, 0, storyCanvas.width, storyCanvas.height);
     storyCtx.save();
-    const camX = storyPlayer ? storyPlayer.x : 0;
+    const cam = storyCamera();
     const q = quakeOffset(now, storyQuakeUntil);
-    storyCtx.translate(storyCanvas.width / 2 - camX + q.x, storyCanvas.height / 2 + q.y);
+    storyCtx.translate(storyCanvas.width / 2 - cam.x + q.x, storyCanvas.height / 2 - cam.y + q.y);
 
     if (storyFloorDef) {
         const halfW = storyFloorDef.laneHalfWidth;
+        const vertical = SHARED.floorAxis(storyFloorDef) === 'y';
+        // The bridge runs along the level axis; on a vertical floor the same
+        // rectangle is simply turned on its side.
+        const deckAlong = -storyFloorDef.levelLength - 200;
+        const deckLen = storyFloorDef.levelLength + 400;
+        const deck = vertical
+            ? [-halfW, deckAlong, halfW * 2, deckLen]
+            : [deckAlong, -halfW, deckLen, halfW * 2];
         storyCtx.fillStyle = '#4a3c2f';
-        storyCtx.fillRect(-storyFloorDef.levelLength - 200, -halfW, storyFloorDef.levelLength + 400, halfW * 2);
+        storyCtx.fillRect(...deck);
         storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
         storyCtx.lineWidth = 2;
-        storyCtx.strokeRect(-storyFloorDef.levelLength - 200, -halfW, storyFloorDef.levelLength + 400, halfW * 2);
+        storyCtx.strokeRect(...deck);
 
         if (storyFloorDef.star) {
             const sx = storyFloorDef.star.x, sy = storyFloorDef.star.y;
@@ -1718,12 +1739,15 @@ function storyRender(now) {
             const shieldAlpha = 0.35 + Math.sin(now / 150) * 0.1;
             storyFloorDef.gates.forEach(gate => {
                 if (!storyAnyMonsterAliveInRoom(gate.room)) return;
-                [gate.entranceX, gate.exitX].forEach(gateX => {
+                [gate.entrance, gate.exit].forEach(at => {
+                    // The shield spans the lane, so it lies across the axis the
+                    // bridge runs along.
+                    const bar = vertical ? [-halfW, at - 6, halfW * 2, 12] : [at - 6, -halfW, 12, halfW * 2];
                     storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
-                    storyCtx.fillRect(gateX - 6, -halfW, 12, halfW * 2);
+                    storyCtx.fillRect(...bar);
                     storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
                     storyCtx.lineWidth = 2;
-                    storyCtx.strokeRect(gateX - 6, -halfW, 12, halfW * 2);
+                    storyCtx.strokeRect(...bar);
                 });
             });
         }
@@ -1780,13 +1804,49 @@ function storyRender(now) {
             storyCtx.lineWidth = 3;
             storyCtx.stroke();
         }
-        storyCtx.beginPath();
-        storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS, 0, Math.PI * 2);
-        storyCtx.fillStyle = def.color;
-        storyCtx.fill();
-        storyCtx.strokeStyle = '#2c3e50';
-        storyCtx.lineWidth = 2;
-        storyCtx.stroke();
+        // The held beam, drawn at exactly the angle/length/width the server is
+        // judging against (see tickLaser), so what you dodge is what's real.
+        if (m.laserAngle !== null && m.laserAngle !== undefined && def.laser) {
+            storyCtx.save();
+            storyCtx.rotate(m.laserAngle);
+            const grad = storyCtx.createLinearGradient(0, 0, def.laserRange, 0);
+            grad.addColorStop(0, 'rgba(255, 80, 80, 0.85)');
+            grad.addColorStop(1, 'rgba(255, 80, 80, 0.15)');
+            storyCtx.fillStyle = grad;
+            storyCtx.fillRect(0, -def.laserWidth / 2, def.laserRange, def.laserWidth);
+            // Bright core down the middle.
+            storyCtx.fillStyle = 'rgba(255, 240, 240, 0.9)';
+            storyCtx.fillRect(0, -2.5, def.laserRange, 5);
+            storyCtx.restore();
+        }
+        if (def.laser) {
+            // A boxy turret instead of the usual blob, with a barrel pointing
+            // wherever the beam is (or will be) aimed.
+            const r = SHARED.MONSTER_RADIUS;
+            storyCtx.save();
+            storyCtx.rotate(m.laserAngle || 0);
+            storyCtx.fillStyle = '#7f8c8d';
+            storyCtx.fillRect(r - 4, -5, r + 8, 10);
+            storyCtx.restore();
+            storyCtx.fillStyle = def.color;
+            storyCtx.fillRect(-r, -r, r * 2, r * 2);
+            storyCtx.strokeStyle = '#2c3e50';
+            storyCtx.lineWidth = 2;
+            storyCtx.strokeRect(-r, -r, r * 2, r * 2);
+            // Single red eye.
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, 5, 0, Math.PI * 2);
+            storyCtx.fillStyle = m.state === 'firing' ? '#ff5252' : '#c0392b';
+            storyCtx.fill();
+        } else {
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS, 0, Math.PI * 2);
+            storyCtx.fillStyle = def.color;
+            storyCtx.fill();
+            storyCtx.strokeStyle = '#2c3e50';
+            storyCtx.lineWidth = 2;
+            storyCtx.stroke();
+        }
         storyCtx.restore();
 
         const barW = 32, barH = 4;
