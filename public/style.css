@@ -1601,8 +1601,13 @@ body.mc-on .gacha-odds-row {
     margin-top: auto;
 }
 
+/* .play-btn defaults to position:absolute (the lobby's corner button), which
+   stacked 멀티플레이 and 솔로플레이 on top of each other wherever a screen puts
+   two of them in a row. Inside .detail-actions they always flow normally. */
 .detail-actions .play-btn {
+    position: static;
     width: 100%;
+    margin-top: 0;
 }
 
 /* Fight screen: settings / leave raid */
