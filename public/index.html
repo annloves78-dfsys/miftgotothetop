@@ -42,8 +42,14 @@
 
     <!-- Event -->
     <div id="event-screen" class="screen hidden">
-        <h2>이벤트</h2>
-        <div id="event-list" class="event-list"></div>
+        <div class="event-header">
+            <h2 id="event-title">이벤트</h2>
+            <div class="event-ticket-count">🎫 시즌 뽑기 티켓 <span id="event-ticket-amount">0</span>장</div>
+        </div>
+        <div class="shop-layout">
+            <div id="event-categories" class="shop-categories"></div>
+            <div id="event-content" class="shop-content"></div>
+        </div>
         <button id="back-from-event-btn" class="secondary-btn">뒤로</button>
     </div>
 

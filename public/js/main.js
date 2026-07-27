@@ -289,7 +289,8 @@ const CURRENCY_LABELS = {
     material: '일반 장비강화 재료',
     materialRare: '고급 장비강화 재료',
     potion: '강화포션',
-    potionRare: '고급 강화포션'
+    potionRare: '고급 강화포션',
+    seasonTicket: '시즌 뽑기 티켓'
 };
 
 function isAdmin() {
@@ -1047,48 +1048,150 @@ shopBtn.addEventListener('click', () => {
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
 
-// ---- Event ----
-// The 이벤트 칸 itself. Cards come from SHARED.EVENTS, so running an event is a
-// data entry rather than new screens; with none running it says so.
+// ---- Event: 물과 불의 싸움 ----
+// Laid out like the shop -- categories down the left, the selected one on the
+// right. 안내 / 물 미션 / 불 미션.
 const eventBtn = document.getElementById('event-btn');
 const eventBadge = document.getElementById('event-badge');
 const backFromEventBtn = document.getElementById('back-from-event-btn');
-const eventListEl = document.getElementById('event-list');
+const eventTitleEl = document.getElementById('event-title');
+const eventTicketAmountEl = document.getElementById('event-ticket-amount');
+const eventCategoriesEl = document.getElementById('event-categories');
+const eventContentEl = document.getElementById('event-content');
 
-function activeEvents() {
-    return (SHARED.EVENTS || []).filter(e => !e.hidden);
+const EV = SHARED.EVENT;
+let eventCategory = 'info';
+
+function eventMissions(side) {
+    return (EV.missions[side] && EV.missions[side].missions) || [];
+}
+function allEventMissions() {
+    return Object.keys(EV.missions).flatMap(eventMissions);
+}
+function eventProgressOf(mission) {
+    return Math.min(mission.goal, gameData.eventProgress[mission.track] || 0);
+}
+function eventMissionDone(mission) {
+    return eventProgressOf(mission) >= mission.goal;
+}
+function eventMissionClaimed(id) {
+    return gameData.eventClaimed.includes(id);
+}
+// The both-sides bonus is a mission too, just one you can't see until it's live.
+function bothSidesCleared() {
+    return allEventMissions().every(eventMissionDone);
+}
+function claimableCount() {
+    let n = allEventMissions().filter(m => eventMissionDone(m) && !eventMissionClaimed(m.id)).length;
+    if (bothSidesCleared() && !eventMissionClaimed('both')) n += 1;
+    return n;
+}
+
+function ticketAmount() {
+    return isAdmin() ? Infinity : (gameData.currencies[SHARED.EVENT_TICKET_KEY] || 0);
 }
 
 function updateEventBadge() {
-    const open = activeEvents().filter(e => !e.locked).length;
-    eventBadge.textContent = String(open);
-    eventBadge.classList.toggle('hidden', open === 0);
+    const n = claimableCount();
+    eventBadge.textContent = String(n);
+    eventBadge.classList.toggle('hidden', n === 0);
 }
 
-function renderEventList() {
-    const list = activeEvents();
-    if (!list.length) {
-        eventListEl.innerHTML = '<p class="event-empty">진행 중인 이벤트가 없습니다.</p>';
-        return;
+function grantTickets(n) {
+    gameData.currencies[SHARED.EVENT_TICKET_KEY] =
+        (gameData.currencies[SHARED.EVENT_TICKET_KEY] || 0) + n;
+    saveGameData(gameData);
+}
+
+function claimEventMission(id) {
+    if (eventMissionClaimed(id)) return;
+    if (id === 'both') {
+        if (!bothSidesCleared()) return;
+        gameData.eventClaimed.push('both');
+        grantTickets(EV.bothClearedReward);
+    } else {
+        const mission = allEventMissions().find(m => m.id === id);
+        if (!mission || !eventMissionDone(mission)) return;
+        gameData.eventClaimed.push(id);
+        grantTickets(mission.reward);
     }
-    eventListEl.innerHTML = '';
-    list.forEach(ev => {
-        const card = document.createElement('div');
-        card.className = 'event-card' + (ev.locked ? ' locked' : '');
-        card.dataset.eventId = ev.id;
-        card.innerHTML = `<div class="event-icon">${ev.locked ? '🔒' : (ev.icon || '🎉')}</div>`
-            + `<div class="event-body">`
-            + `<div class="event-name">${ev.name}</div>`
-            + `<div class="event-period">${ev.period || '상시'}</div>`
-            + `<div class="event-desc">${ev.description || ''}</div>`
-            + `</div>`
-            + `<div class="event-reward">${ev.reward || ''}</div>`;
-        eventListEl.appendChild(card);
+    saveGameData(gameData);
+    renderEventScreen();
+    updateEventBadge();
+}
+
+function missionRowHtml(m) {
+    const have = eventProgressOf(m);
+    const done = eventMissionDone(m);
+    const claimed = eventMissionClaimed(m.id);
+    const pct = (have / m.goal) * 100;
+    const button = claimed
+        ? '<span class="ev-claimed">수령 완료</span>'
+        : `<button class="ev-claim-btn" data-mission="${m.id}"${done ? '' : ' disabled'}>🎫 ${m.reward}장 받기</button>`;
+    return `<div class="ev-mission${claimed ? ' claimed' : ''}">`
+        + `<div class="ev-mission-main">`
+        + `<div class="ev-mission-text">${m.text}</div>`
+        + `<div class="ev-mission-bar"><div class="ev-mission-fill" style="width:${pct}%"></div></div>`
+        + `<div class="ev-mission-count">${have} / ${m.goal}</div>`
+        + `</div>${button}</div>`;
+}
+
+function renderEventScreen() {
+    eventTitleEl.textContent = `${EV.icon} ${EV.name}`;
+    eventTicketAmountEl.textContent = isAdmin() ? '∞' : String(ticketAmount());
+
+    const cats = [['info', '안내'], ...Object.entries(EV.missions).map(([k, v]) => [k, v.label])];
+    eventCategoriesEl.innerHTML = '';
+    cats.forEach(([key, label]) => {
+        const btn = document.createElement('button');
+        btn.className = 'shop-cat-btn' + (key === eventCategory ? ' selected' : '');
+        btn.dataset.eventCat = key;
+        btn.textContent = label;
+        btn.addEventListener('click', () => { eventCategory = key; renderEventScreen(); });
+        eventCategoriesEl.appendChild(btn);
     });
+
+    if (eventCategory === 'info') {
+        const bonusClaimed = eventMissionClaimed('both');
+        const bonusBtn = bonusClaimed
+            ? '<span class="ev-claimed">수령 완료</span>'
+            : `<button class="ev-claim-btn" data-mission="both"${bothSidesCleared() ? '' : ' disabled'}>🎫 ${EV.bothClearedReward}장 받기</button>`;
+        eventContentEl.innerHTML = `<div class="ev-info">`
+            + `<p class="ev-info-period">기간: ${EV.period}</p>`
+            + `<p>물과 불이 맞붙습니다. 양쪽 미션을 깨서 <b>시즌 뽑기 티켓</b>을 모으고,`
+            + ` 뽑기 화면의 <b>시즌 뽑기</b>에서 <b>물방울맛 쿠키</b>와 <b>화염맛 쿠키</b>를 노려보세요.</p>`
+            + `<div class="ev-sides">`
+            + Object.entries(EV.missions).map(([, side]) => {
+                const done = side.missions.filter(eventMissionDone).length;
+                return `<div class="ev-side"><div class="ev-side-label">${side.label}</div>`
+                    + `<div class="ev-side-count">${done} / ${side.missions.length}</div></div>`;
+            }).join('')
+            + `</div>`
+            + `<div class="ev-mission ev-bonus"><div class="ev-mission-main">`
+            + `<div class="ev-mission-text">양쪽 미션 전부 완료</div></div>${bonusBtn}</div>`
+            + `</div>`;
+    } else {
+        eventContentEl.innerHTML = eventMissions(eventCategory).map(missionRowHtml).join('');
+    }
+}
+
+eventContentEl.addEventListener('click', (e) => {
+    const btn = e.target.closest ? e.target.closest('.ev-claim-btn') : null;
+    if (!btn || btn.disabled) return;
+    claimEventMission(btn.dataset.mission);
+});
+
+// Called wherever the game finishes something a mission counts. Bumping a track
+// the event doesn't use is harmless, so callers don't have to know the missions.
+function recordEventProgress(track, amount = 1) {
+    gameData.eventProgress[track] = (gameData.eventProgress[track] || 0) + amount;
+    saveGameData(gameData);
+    updateEventBadge();
 }
 
 eventBtn.addEventListener('click', () => {
-    renderEventList();
+    eventCategory = 'info';
+    renderEventScreen();
     showScreen('event');
 });
 backFromEventBtn.addEventListener('click', () => showScreen('lobby'));
@@ -1493,10 +1596,15 @@ socket.on('storyFloorResult', ({ result, floor }) => {
         resultTitle.textContent = '층 클리어!';
         resultTitle.style.color = '#2ecc71';
         resultDesc.textContent = `${floor}층을 클리어했습니다.`;
-        if (!gameData.clearedStoryFloors.includes(floor)) {
+        const clearedBefore = gameData.clearedStoryFloors.includes(floor);
+        if (!clearedBefore) {
             gameData.clearedStoryFloors.push(floor);
             saveGameData(gameData);
         }
+        // 물 미션: the per-floor ones only count the first clear of that floor,
+        // but "아무 층이나 5회" counts every run.
+        if (!clearedBefore) recordEventProgress(`story${floor}`);
+        recordEventProgress('storyAny');
     } else {
         resultTitle.textContent = '패배...';
         resultTitle.style.color = '#e74c3c';
@@ -2388,7 +2496,10 @@ socket.on('raidResult', ({ result }) => {
         resultTitle.textContent = '승리!';
         resultTitle.style.color = '#2ecc71';
         resultDesc.textContent = '보스를 물리쳤습니다.';
-        if (currentRoomState) recordClear(currentRoomState.bossId, performance.now() - raidStartAt);
+        if (currentRoomState) {
+            recordClear(currentRoomState.bossId, performance.now() - raidStartAt);
+            recordEventProgress(currentRoomState.bossId); // 불 미션: boss1 / boss2
+        }
     } else {
         resultTitle.textContent = '전멸...';
         resultTitle.style.color = '#e74c3c';

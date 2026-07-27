@@ -437,11 +437,46 @@ const GUEST_ARENA_HALF_W = 470;
 const GUEST_ARENA_HALF_H = 330;
 const GUEST_PARTY_SIZE = 4;
 
-// Events shown in the lobby's 이벤트 칸. Empty until one is actually running --
-// adding one is a data entry here, not new code:
-//   { id, name, icon, period, description, reward, locked }
-// `period` is free text ("상시", "7/28 ~ 8/4"), `locked` greys the card out.
-const EVENTS = [];
+// The lobby's 이벤트 칸, laid out like the shop: categories down the left, the
+// selected one's content on the right. Running a different event later is a
+// data change here rather than new screens.
+//
+// 물과 불의 싸움: two mission tracks, one per side. Clearing everything on both
+// sides pays a bonus. Tickets bought here are the only way into 시즌 뽑기.
+const EVENT_TICKET_KEY = 'seasonTicket';
+
+const EVENT = {
+    id: 'water_vs_fire',
+    name: '물과 불의 싸움',
+    icon: '🌊',
+    period: '상시',
+    // Each mission: { id, text, goal, track, reward } -- `track` is what the
+    // game reports progress against (see recordEventProgress in main.js).
+    missions: {
+        water: {
+            label: '💧 물 미션',
+            missions: [
+                { id: 'w1', text: '스토리 1층 클리어', goal: 1, track: 'story1', reward: 1 },
+                { id: 'w2', text: '스토리 2층 클리어', goal: 1, track: 'story2', reward: 1 },
+                { id: 'w3', text: '스토리 3층 클리어', goal: 1, track: 'story3', reward: 2 },
+                { id: 'w4', text: '스토리 아무 층이나 5회 클리어', goal: 5, track: 'storyAny', reward: 2 }
+            ]
+        },
+        fire: {
+            label: '🔥 불 미션',
+            missions: [
+                { id: 'f1', text: '스톤 골렘 격파', goal: 1, track: 'boss1', reward: 1 },
+                { id: 'f2', text: '시하라얼 격파', goal: 1, track: 'boss2', reward: 2 },
+                { id: 'f3', text: '게스트 레이드 1차 격파', goal: 1, track: 'guestPhase1', reward: 2 },
+                { id: 'f4', text: '게스트 레이드 2차까지 격파', goal: 1, track: 'guestWin', reward: 3 }
+            ]
+        }
+    },
+    bothClearedReward: 5 // 양쪽 다 완료했을 때의 보너스 티켓
+};
+
+// Kept as a list so the 이벤트 칸 can show several at once later.
+const EVENTS = [EVENT];
 
 const GUEST_BOSS_DEFS = {
     guest1: {
@@ -805,7 +840,7 @@ const GACHA_TABLE = {
 const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

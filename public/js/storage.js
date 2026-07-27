@@ -9,7 +9,8 @@ const defaultCurrencies = {
     material: 0,      // 일반 장비강화 재료
     materialRare: 0,  // 고급 장비강화 재료
     potion: 0,        // 강화포션
-    potionRare: 0     // 고급 강화포션
+    potionRare: 0,    // 고급 강화포션
+    seasonTicket: 0   // 시즌 뽑기 티켓; earned from the 이벤트 칸's missions
 };
 
 const defaultData = {
@@ -20,6 +21,9 @@ const defaultData = {
     clearedStoryFloors: [],
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
     currencies: { ...defaultCurrencies },
+    // 이벤트 진행도: { [track]: count } and the mission ids already cashed in.
+    eventProgress: {},
+    eventClaimed: [],
     admin: false // 관리자 전용; see admin_gate.js
 };
 
@@ -45,6 +49,8 @@ function loadGameData() {
             // Same story for currencies: a save from before a currency existed
             // would otherwise leave it undefined rather than 0.
             data.currencies = { ...defaultCurrencies, ...(data.currencies || {}) };
+            data.eventProgress = data.eventProgress || {};
+            data.eventClaimed = data.eventClaimed || [];
             return data;
         }
     } catch (e) {
