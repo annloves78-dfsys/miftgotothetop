@@ -492,29 +492,32 @@ const EVENT = {
     name: '물과 불의 싸움',
     icon: '🌊',
     period: '상시',
-    // Each mission: { id, text, goal, track, reward } -- `track` is what the
-    // game reports progress against (see recordEventProgress in main.js).
+    // Each mission: { id, name, text, goal, reward } plus ONE source of progress:
+    //   track     -- a counter the game bumps (see recordEventProgress in main.js)
+    //   condition -- a live check of the save instead of a counter
     missions: {
         water: {
-            label: '💧 물 미션',
+            label: '💧 물',
+            icon: '💧',
             missions: [
-                { id: 'w1', text: '스토리 1층 클리어', goal: 1, track: 'story1', reward: 1 },
-                { id: 'w2', text: '스토리 2층 클리어', goal: 1, track: 'story2', reward: 1 },
-                { id: 'w3', text: '스토리 3층 클리어', goal: 1, track: 'story3', reward: 2 },
-                { id: 'w4', text: '스토리 아무 층이나 5회 클리어', goal: 5, track: 'storyAny', reward: 2 }
+                { id: 'w1', name: '한 번 더!', text: '뽑기 10번 하기', goal: 10, track: 'gachaPull', reward: 2 },
+                { id: 'w2', name: '두 번째 층', text: '스토리 2층 클리어', goal: 1, track: 'story2', reward: 1 },
+                { id: 'w3', name: '에픽의 주인', text: '에픽 캐릭터 가지고 있기', goal: 1, condition: 'ownEpic', reward: 1 },
+                { id: 'w4', name: '1차 돌파', text: '게스트 레이드 1차 레이드 클리어', goal: 1, track: 'guestPhase1', reward: 2 }
             ]
         },
         fire: {
-            label: '🔥 불 미션',
+            label: '🔥 불',
+            icon: '🔥',
             missions: [
-                { id: 'f1', text: '스톤 골렘 격파', goal: 1, track: 'boss1', reward: 1 },
-                { id: 'f2', text: '시하라얼 격파', goal: 1, track: 'boss2', reward: 2 },
-                { id: 'f3', text: '게스트 레이드 1차 격파', goal: 1, track: 'guestPhase1', reward: 2 },
-                { id: 'f4', text: '게스트 레이드 2차까지 격파', goal: 1, track: 'guestWin', reward: 3 }
+                { id: 'f1', name: '더 뽑아!', text: '뽑기 15번 하기', goal: 15, track: 'gachaPull', reward: 3 },
+                { id: 'f2', name: '첫 발걸음', text: '스토리 1층 가기', goal: 1, track: 'storyEnter1', reward: 1 },
+                { id: 'f3', name: '검투사 사냥', text: '시하라얼 한 번 이상 잡기', goal: 1, track: 'boss2', reward: 2 },
+                { id: 'f4', name: '2차 돌파', text: '게스트 레이드 2차 클리어', goal: 1, track: 'guestWin', reward: 3 }
             ]
         }
     },
-    bothClearedReward: 5 // 양쪽 다 완료했을 때의 보너스 티켓
+    bothClearedReward: 5 // 전체 클리어 보너스 티켓
 };
 
 // Kept as a list so the 이벤트 칸 can show several at once later.

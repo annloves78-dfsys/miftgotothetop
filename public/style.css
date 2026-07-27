@@ -134,7 +134,37 @@ html, body {
     color: #f1c40f;
 }
 
-/* Mission rows inside the shop-style content pane. */
+/* Left rail: one big 물 / 불 tab each, with how far that side has got. */
+.shop-cat-btn.ev-cat {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+}
+
+.ev-cat-icon { font-size: 26px; }
+.ev-cat-body { display: flex; flex-direction: column; }
+.ev-cat-label { font-size: 16px; font-weight: bold; }
+.ev-cat-count { font-size: 12px; color: #bdc3c7; }
+.shop-cat-btn.ev-cat.selected .ev-cat-count { color: #2c3e50; }
+
+/* The bar across the top of the list: overall completion + its reward. */
+.ev-total {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #2c3e6b, #223055);
+    border: 2px solid #f1c40f;
+    margin-bottom: 14px;
+}
+
+.ev-total-badge { font-size: 30px; }
+.ev-total-main { flex: 1; text-align: left; }
+.ev-total-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
+
+/* One mission row: step badge, name/goal/progress, reward, claim. */
 .ev-mission {
     display: flex;
     align-items: center;
@@ -147,16 +177,37 @@ html, body {
 }
 
 .ev-mission.claimed { opacity: 0.55; }
+
+.ev-mission-badge {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 3px solid #5dade2;
+    background: #1b2437;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.ev-badge-icon { font-size: 17px; line-height: 1; }
+.ev-badge-step { font-size: 10px; color: #bdc3c7; }
+
 .ev-mission-main { flex: 1; text-align: left; }
-.ev-mission-text { font-size: 14px; }
+.ev-mission-name { font-size: 15px; font-weight: bold; }
+.ev-mission-text { font-size: 12px; color: #bdc3c7; margin-top: 2px; }
 
 .ev-mission-bar {
-    margin-top: 6px;
-    height: 6px;
-    border-radius: 3px;
-    background: #2c3e50;
+    position: relative;
+    margin-top: 7px;
+    height: 16px;
+    border-radius: 8px;
+    background: #1b2437;
     overflow: hidden;
 }
+
+.ev-mission-bar.big { height: 18px; }
 
 .ev-mission-fill {
     height: 100%;
@@ -164,20 +215,41 @@ html, body {
 }
 
 .ev-mission-count {
-    margin-top: 4px;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 11px;
-    color: #bdc3c7;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
+.ev-reward-chip {
+    width: 62px;
+    padding: 6px 0;
+    border-radius: 8px;
+    background: #6c3483;
+    border: 2px solid #a569bd;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.ev-reward-icon { display: block; font-size: 18px; line-height: 1; }
+.ev-reward-amount { font-size: 12px; font-weight: bold; }
+
 .ev-claim-btn {
-    padding: 8px 14px;
+    width: 86px;
+    padding: 12px 0;
     border-radius: 8px;
     border: 2px solid #f39c12;
     background: linear-gradient(180deg, #e67e22, #d35400);
     color: #fff;
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: bold;
     white-space: nowrap;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 .ev-claim-btn:disabled {
@@ -187,32 +259,12 @@ html, body {
 }
 
 .ev-claimed {
-    font-size: 13px;
+    width: 86px;
+    font-size: 12px;
     color: #7f8c8d;
-    white-space: nowrap;
-}
-
-.ev-info { text-align: left; font-size: 14px; line-height: 1.7; }
-.ev-info-period { color: #f1c40f; font-size: 13px; }
-
-.ev-sides {
-    display: flex;
-    gap: 14px;
-    margin: 14px 0;
-}
-
-.ev-side {
-    flex: 1;
-    padding: 12px;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.28);
-    border: 2px solid #34495e;
     text-align: center;
+    flex-shrink: 0;
 }
-
-.ev-side-label { font-size: 14px; }
-.ev-side-count { font-size: 20px; font-weight: bold; margin-top: 4px; }
-.ev-bonus { border-color: #f1c40f; }
 
 /* Shop */
 .shop-layout {
