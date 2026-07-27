@@ -91,8 +91,10 @@ function activateGuestLocalSlot(index) {
     GUEST_SLOT_FIELDS.forEach(f => { guestLocal[f] = incoming[f]; });
 }
 
+// Four cookies in both modes. (Multiplayer used to cut you down to one; only
+// the cookie you're controlling is ever drawn, so there was no need.)
 function guestPartyCapacity() {
-    return guestIsMulti ? 1 : SHARED.GUEST_PARTY_SIZE;
+    return SHARED.GUEST_PARTY_SIZE;
 }
 
 // The cookies actually taken in: the visible slots, holes dropped.
@@ -151,9 +153,7 @@ function renderGuestPartySlots() {
         }
         guestPartySlotsEl.appendChild(slot);
     }
-    guestPartyHintEl.textContent = guestIsMulti
-        ? '멀티플레이는 캐릭터 1명만 데려갑니다.'
-        : `빈 칸을 눌러 캐릭터를 고르세요. (${guestPartyLineup().length}/${cap})`;
+    guestPartyHintEl.textContent = `빈 칸을 눌러 캐릭터를 고르세요. (${guestPartyLineup().length}/${cap})`;
 }
 
 function renderGuestDetail() {
@@ -203,15 +203,10 @@ guestLeaveBtn.addEventListener('click', () => leaveGuestRaidIfAny());
 
 function guestStartClick(isMulti) {
     if (guestPhase === 'idle') {
-        // Switching to multiplayer cuts the party down to one cookie (four each
-        // would be a mess on screen). That first click only re-cuts and shows the
-        // new party -- always -- so you get to pick WHICH cookie comes along
-        // before a second click actually queues.
-        if (guestIsMulti !== isMulti) {
-            guestIsMulti = isMulti;
-            renderGuestDetail();
-            return;
-        }
+        // Both modes take the same four cookies now, so a single click starts
+        // straight away -- the old first-click-only-re-cuts step just looked
+        // like the button was doing nothing.
+        guestIsMulti = isMulti;
         if (!guestPartyReady()) return;
         const lineup = guestPartyLineup();
         if (isMulti) {
@@ -381,6 +376,11 @@ socket.on('guestBarrageCleared', () => { guestBarrage = null; });
 socket.on('guestWallRaised', (d) => { guestWall = d; });
 socket.on('guestWallDropped', () => { guestWall = null; });
 socket.on('guestBossShield', ({ shieldHp }) => { if (guestState) guestState.bossShieldHp = shieldHp; });
+socket.on('guestBossDesperation', ({ shieldHp }) => {
+    if (!guestState) return;
+    guestState.bossShieldHp = shieldHp;
+    guestHitFlashes.push({ windup: true, until: performance.now() + 900 });
+});
 socket.on('guestBossHealed', ({ bossHp }) => { if (guestState) { guestState.bossHp = bossHp; updateGuestHpBars(); } });
 socket.on('guestDiscardPrompt', ({ party, partyHp, partyMaxHp, partyAlive }) => {
     guestCollapseOverlay.classList.add('hidden');

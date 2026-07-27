@@ -1016,6 +1016,7 @@ function createGuestRoom(guestId, solo) {
         stuckSpears: [], // 창 찍기 leaves these behind; see tickGuestRoom
         activeBuffs: [],
         phase: 1,
+        desperationUsed: false, // 2차 last-stand shield fires once
         phaseTransitioned: false, // the boss doesn't die -- the floor collapses instead
         discardChoices: {}, // playerId -> the slot they threw away entering 2차
         monsters: {}, // 부하 소환 (2차) fills this
@@ -1203,6 +1204,17 @@ function damageGuestBoss(roomId, room, amount, byId) {
     }
     room.bossHp = Math.max(0, room.bossHp - amount);
     io.to(roomId).emit('guestBossDamaged', { bossHp: room.bossHp, by: byId });
+
+    // Last stand: crossing under the threshold for the first time buys it a
+    // fresh shield. Checked after the hp update so the hit that takes it there
+    // still lands in full.
+    const def = guestDefFor(room);
+    if (def.desperationShield && !room.desperationUsed
+        && room.bossHp > 0 && room.bossHp <= def.desperationHpThreshold) {
+        room.desperationUsed = true;
+        room.bossShieldHp = def.desperationShield;
+        io.to(roomId).emit('guestBossDesperation', { shieldHp: room.bossShieldHp });
+    }
     if (room.bossHp > 0) return;
     room.phaseTransitioned = true;
     room.bossState = 'idle';
@@ -1260,6 +1272,7 @@ function startGuestPhase2(roomId) {
     room.bossHp = def.maxHp;
     room.bossMaxHp = def.maxHp;
     room.bossShieldHp = 0;
+    room.desperationUsed = false;
     room.playerDamageDebuffUntil = 0;
     room.playerDamageMultiplier = 1;
     room.bossState = 'idle';
@@ -2822,12 +2835,12 @@ io.on('connection', (socket) => {
     // ---- Guest raid ----
     socket.on('joinGuestRaid', ({ guestId, party, solo }) => {
         if (!GUEST_BOSS_DEFS[guestId]) return;
-        // Multiplayer brings ONE cookie each (four apiece would be a mess on
-        // screen); solo brings the full party.
+        // Both modes bring a full party of four; only the cookie you are
+        // actually controlling is ever drawn, so two players is still two
+        // cookies on the field.
         const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
-        const size = solo ? GUEST_PARTY_SIZE : 1;
-        const chosen = wanted.slice(0, size);
-        while (chosen.length < size) chosen.push('kicker');
+        const chosen = wanted.slice(0, GUEST_PARTY_SIZE);
+        while (chosen.length < GUEST_PARTY_SIZE) chosen.push('kicker');
 
         let roomId = solo ? null : findOpenGuestRoom(guestId);
         if (!roomId) roomId = createGuestRoom(guestId, solo);

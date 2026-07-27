@@ -125,9 +125,11 @@ const CHARACTERS = {
     volcano: {
         name: '화산맛 쿠키',
         shortName: '화산', // shown on the lobby's character-select button
-        color: '#d35400',
-        colorLeft: '#3498db', // blue
-        colorRight: '#e67e22', // orange
+        // Blue/red. Deliberately deeper shades than 레드 드레곤맛's blue/red so
+        // the two don't read as the same cookie at a glance.
+        color: '#c0392b',
+        colorLeft: '#2980b9', // blue
+        colorRight: '#c0392b', // red
         grade: '에픽',
         element: '불',
         role: '대미지 딜러',
@@ -490,6 +492,10 @@ const GUEST_BOSS_DEFS = {
             maxHp: 400,
             skillIntervalMs: 5000,
             aura: true, // the black smoke the client draws around the body
+            // Last stand: the first time it drops under 100 it throws up a 200
+            // shield. Once only -- it can't keep buying itself another wall.
+            desperationHpThreshold: 100,
+            desperationShield: 200,
             patterns: {
                 // 1. 부하 소환: summons ONE of the three squads at random and
                 // the skill is over -- the adds stay until you clear them. It
