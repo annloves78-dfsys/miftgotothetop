@@ -5,7 +5,8 @@ const io = require('socket.io')(http);
 const path = require('path');
 
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS,
-    LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane } = require('./public/js/shared.js');
+    LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
+    GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -976,6 +977,424 @@ function tickStoryRoom(roomId) {
     io.to(roomId).emit('storyTick', { monsters: publicMonsters(room), projectiles: publicProjectiles(room) });
 }
 
+// ==================== Guest raid ====================
+// Square arena, a fixed boss (no boss picking), and a party of GUEST_PARTY_SIZE
+// cookies per player that you swap between mid-fight. Each cookie keeps its own
+// hp across swaps -- benching a hurt cookie does not heal it.
+
+function createGuestRoom(guestId, solo) {
+    const roomId = `guest_${guestId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const def = GUEST_BOSS_DEFS[guestId];
+    rooms[roomId] = {
+        kind: 'guest',
+        guestId,
+        solo: !!solo,
+        state: 'waiting',
+        players: {},
+        bossHp: def.maxHp,
+        bossMaxHp: def.maxHp,
+        bossX: 0,
+        bossY: def.homeY,
+        bossFacing: Math.PI / 2, // faces down the field, toward the party
+        bossState: 'idle', // 'idle' | 'casting'
+        bossPattern: null,
+        bossRuntime: null,
+        nextSkillAt: 0,
+        stuckSpears: [], // 창 찍기 leaves these behind; see tickGuestRoom
+        activeBuffs: [],
+        phaseTransitioned: false, // the boss doesn't die -- the floor collapses instead
+        loopHandle: null
+    };
+    return roomId;
+}
+
+function findOpenGuestRoom(guestId) {
+    for (const [roomId, room] of Object.entries(rooms)) {
+        if (room.kind === 'guest' && room.guestId === guestId && room.state === 'waiting'
+            && !room.solo && Object.keys(room.players).length < 2) {
+            return roomId;
+        }
+    }
+    return null;
+}
+
+// A party entry's cookie is the source of truth for its max hp. p.charType/hp/
+// maxHp mirror whichever slot is active so all the shared combat helpers
+// (resolveAttack, damageReductionMultiplier, ...) keep working unchanged.
+function activateGuestSlot(p, index) {
+    p.active = index;
+    p.charType = p.party[index];
+    p.hp = p.partyHp[index];
+    p.maxHp = p.partyMaxHp[index];
+}
+
+function makeGuestPlayer(party, slotIndex) {
+    const maxHp = party.map(id => CHARACTERS[id].health);
+    const p = {
+        party,
+        partyHp: maxHp.slice(),
+        partyMaxHp: maxHp.slice(),
+        partyAlive: party.map(() => true),
+        partyRevivesUsed: party.map(() => 0),
+        active: 0,
+        x: slotIndex === 0 ? -90 : 90,
+        y: GUEST_ARENA_HALF_H - 70,
+        facing: -Math.PI / 2,
+        alive: true,
+        ready: false,
+        shieldHp: 0,
+        lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0,
+        lastSwapTime: 0,
+        attackHealBoostUntil: 0
+    };
+    activateGuestSlot(p, 0);
+    return p;
+}
+
+function publicGuestPlayers(room) {
+    const out = {};
+    for (const [id, p] of Object.entries(room.players)) {
+        out[id] = {
+            x: p.x, y: p.y, facing: p.facing, alive: p.alive, ready: !!p.ready,
+            charType: p.charType, hp: p.hp, maxHp: p.maxHp, shieldHp: p.shieldHp || 0,
+            party: p.party, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp,
+            partyAlive: p.partyAlive, active: p.active
+        };
+    }
+    return out;
+}
+
+function endGuestRoom(roomId, result) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.loopHandle) clearInterval(room.loopHandle);
+    room.state = 'ended';
+    io.to(roomId).emit('guestResult', { result });
+    delete rooms[roomId];
+}
+
+// Heals EVERY cookie of every player, benched ones included -- the whole point
+// of "팀 전체를 힐하는 능력을 쓰면 사용하고 있지 않아도 전부 회복".
+function healGuestTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        let changed = false;
+        for (let i = 0; i < p.party.length; i++) {
+            if (!p.partyAlive[i]) continue; // a downed cookie needs more than a heal
+            const healed = Math.min(p.partyMaxHp[i], p.partyHp[i] + amount);
+            if (healed !== p.partyHp[i]) { p.partyHp[i] = healed; changed = true; }
+        }
+        if (!changed) continue;
+        p.hp = p.partyHp[p.active];
+        io.to(roomId).emit('guestPlayerHealed', {
+            id, hp: p.hp, partyHp: p.partyHp
+        });
+    }
+}
+
+function shieldGuestTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = amount;
+        io.to(roomId).emit('guestPlayerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
+function applyDamageToGuestPlayer(roomId, playerId, dmg) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const p = room.players[playerId];
+    if (!p || !p.alive) return;
+    const character = CHARACTERS[p.charType];
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), null));
+    if (p.shieldHp > 0) {
+        const absorbed = Math.min(p.shieldHp, dmg);
+        p.shieldHp -= absorbed;
+        dmg -= absorbed;
+    }
+    p.hp = Math.max(0, p.hp - dmg);
+
+    let revived = false, swappedTo = null;
+    if (p.hp <= 0) {
+        // The cheat-death passive is per cookie, so it uses that slot's counter.
+        const slotState = { hp: p.hp, maxHp: p.maxHp, revivesUsed: p.partyRevivesUsed[p.active], alive: true };
+        revived = tryRevive(slotState, character);
+        if (revived) {
+            p.hp = slotState.hp;
+            p.partyRevivesUsed[p.active] = slotState.revivesUsed;
+        } else {
+            p.partyAlive[p.active] = false;
+            // Auto-swap to the next cookie still standing; the player is only
+            // out once the whole party is down.
+            const next = p.partyAlive.findIndex(a => a);
+            if (next >= 0) {
+                p.partyHp[p.active] = 0;
+                activateGuestSlot(p, next);
+                swappedTo = next;
+            } else {
+                p.alive = false;
+            }
+        }
+    }
+    p.partyHp[p.active] = p.hp;
+
+    io.to(roomId).emit('guestPlayerDamaged', {
+        id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0,
+        partyHp: p.partyHp, partyAlive: p.partyAlive, active: p.active, charType: p.charType
+    });
+    if (revived) io.to(roomId).emit('guestPlayerRevived', { id: playerId, hp: p.hp });
+    if (swappedTo !== null) io.to(roomId).emit('guestForcedSwap', { id: playerId, active: swappedTo, charType: p.charType });
+
+    if (Object.values(room.players).every(pl => !pl.alive)) endGuestRoom(roomId, 'lose');
+}
+
+// Every point of damage the boss takes funnels through here so the phase
+// transition can't be missed. The boss does NOT die at 0 -- the ground gives way
+// and the second raid begins (not built yet, so the run stops there).
+function damageGuestBoss(roomId, room, amount, byId) {
+    if (!room || room.state !== 'fighting' || room.phaseTransitioned) return;
+    room.bossHp = Math.max(0, room.bossHp - amount);
+    io.to(roomId).emit('guestBossDamaged', { bossHp: room.bossHp, by: byId });
+    if (room.bossHp > 0) return;
+    room.phaseTransitioned = true;
+    room.bossState = 'idle';
+    room.bossPattern = null;
+    room.bossRuntime = null;
+    room.stuckSpears = [];
+    io.to(roomId).emit('guestFloorCollapse', {});
+    // Phase 2 isn't built yet; hold here so the collapse can play out.
+    setTimeout(() => endGuestRoom(roomId, 'phase1'), 2600);
+}
+
+function guestAlivePlayers(room) {
+    return Object.values(room.players).filter(p => p.alive);
+}
+
+function pickGuestTarget(room) {
+    const alive = guestAlivePlayers(room);
+    if (!alive.length) return null;
+    return alive[Math.floor(Math.random() * alive.length)];
+}
+
+function startGuestFight(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.kind !== 'guest' || room.state !== 'waiting') return;
+    if (Object.keys(room.players).length === 0) return;
+    const def = GUEST_BOSS_DEFS[room.guestId];
+
+    room.state = 'fighting';
+    room.bossHp = def.maxHp;
+    room.bossMaxHp = def.maxHp;
+    room.nextSkillAt = Date.now() + def.skillIntervalMs;
+
+    io.to(roomId).emit('guestStarted', {
+        guestId: room.guestId,
+        bossHp: room.bossHp,
+        bossMaxHp: room.bossMaxHp,
+        bossX: room.bossX, bossY: room.bossY,
+        players: publicGuestPlayers(room)
+    });
+
+    room.loopHandle = setInterval(() => tickGuestRoom(roomId), 50);
+}
+
+function beginGuestSkill(roomId, room, def, now) {
+    // Pick the target FIRST: committing to 'casting' without a runtime would
+    // leave the boss stuck in a state no tick branch can advance.
+    const target = pickGuestTarget(room);
+    if (!target) {
+        room.nextSkillAt = now + def.skillIntervalMs;
+        return;
+    }
+    const keys = Object.keys(def.patterns);
+    const pick = keys[Math.floor(Math.random() * keys.length)];
+    room.bossPattern = pick;
+    room.bossState = 'casting';
+
+    if (pick === 'spear_jab') {
+        const p = def.patterns.spear_jab;
+        room.bossRuntime = {
+            wave: 0,
+            phase: 'telegraph',
+            at: now,
+            angle: Math.atan2(target.y - room.bossY, target.x - room.bossX)
+        };
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'spear_jab', wave: 0, angle: room.bossRuntime.angle,
+            range: p.range, width: p.width, telegraphMs: p.telegraphMs
+        });
+    } else if (pick === 'spear_drop') {
+        const p = def.patterns.spear_drop;
+        room.bossRuntime = { wave: 0, phase: 'telegraph', at: now, x: target.x, y: target.y };
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'spear_drop', wave: 0, x: target.x, y: target.y,
+            radius: p.markRadius, telegraphMs: p.telegraphMs
+        });
+    } else if (pick === 'big_slash') {
+        const p = def.patterns.big_slash;
+        const dist = Math.hypot(target.x - room.bossX, target.y - room.bossY);
+        const near = dist <= p.nearThreshold;
+        room.bossRuntime = {
+            phase: 'windup',
+            at: now,
+            near,
+            windupMs: near ? p.nearWindupMs : p.farWindupMs,
+            x: near ? room.bossX : target.x,
+            y: near ? room.bossY : target.y,
+            radius: near ? p.nearRadius : p.farRadius
+        };
+        // Deliberately NOT a red danger zone -- 크게 베기 is 예고 없이. The client
+        // only gets a "the boss is winding up" cue.
+        io.to(roomId).emit('guestWindup', {
+            skill: 'big_slash', near, windupMs: room.bossRuntime.windupMs
+        });
+    }
+}
+
+function guestCircleHit(room, roomId, x, y, radius, damage) {
+    for (const p of guestAlivePlayers(room)) {
+        if (Math.hypot(p.x - x, p.y - y) > radius + PLAYER_RADIUS) continue;
+        const id = Object.keys(room.players).find(k => room.players[k] === p);
+        applyDamageToGuestPlayer(roomId, id, damage);
+        if (!rooms[roomId]) return;
+    }
+}
+
+function tickGuestRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const def = GUEST_BOSS_DEFS[room.guestId];
+    const now = Date.now();
+
+    // Team buffs (the healer's ultimate) tick independently of the boss.
+    if (room.activeBuffs.length) {
+        room.activeBuffs = room.activeBuffs.filter(b => now < b.endAt);
+        for (const buff of room.activeBuffs) {
+            if (now - buff.lastTickAt < buff.tickMs) continue;
+            buff.lastTickAt += buff.tickMs;
+            if (buff.type === 'team_heal_over_time') healGuestTeam(room, roomId, buff.healPerTick);
+            else if (buff.type === 'magma_zone') {
+                if (Math.hypot(buff.x - room.bossX, buff.y - room.bossY) <= buff.radius + def.radius) {
+                    damageGuestBoss(roomId, room, buff.damage, buff.casterId);
+                    if (!rooms[roomId]) return;
+                }
+            }
+        }
+    }
+
+    // Spears left stuck in the ground burn whoever stands on them.
+    for (const spear of room.stuckSpears) {
+        if (now < spear.nextTickAt) continue;
+        spear.nextTickAt += def.patterns.spear_drop.stuckTickMs;
+        for (const p of guestAlivePlayers(room)) {
+            if (Math.hypot(p.x - spear.x, p.y - spear.y) > def.patterns.spear_drop.stuckRadius + PLAYER_RADIUS) continue;
+            const id = Object.keys(room.players).find(k => room.players[k] === p);
+            applyDamageToGuestPlayer(roomId, id, def.patterns.spear_drop.stuckDamage);
+            if (!rooms[roomId]) return;
+        }
+    }
+
+    if (room.phaseTransitioned) {
+        io.to(roomId).emit('guestTick', guestTickPayload(room));
+        return;
+    }
+
+    // Face whoever it is about to hit, so the body/spears point sensibly.
+    const focus = guestAlivePlayers(room)[0];
+    if (focus) room.bossFacing = Math.atan2(focus.y - room.bossY, focus.x - room.bossX);
+
+    if (room.bossState === 'idle') {
+        if (now >= room.nextSkillAt && guestAlivePlayers(room).length) {
+            beginGuestSkill(roomId, room, def, now);
+        }
+    } else if (room.bossPattern === 'spear_jab') {
+        const p = def.patterns.spear_jab;
+        const rt = room.bossRuntime;
+        if (rt.phase === 'telegraph' && now - rt.at >= p.telegraphMs) {
+            io.to(roomId).emit('guestSkillHit', { skill: 'spear_jab', wave: rt.wave, angle: rt.angle, range: p.range, width: p.width });
+            for (const pl of guestAlivePlayers(room)) {
+                if (!meleeLineHitPoint(room.bossX, room.bossY, rt.angle, p.range, p.width, pl.x, pl.y, PLAYER_RADIUS)) continue;
+                const id = Object.keys(room.players).find(k => room.players[k] === pl);
+                applyDamageToGuestPlayer(roomId, id, p.damage);
+                if (!rooms[roomId]) return;
+            }
+            rt.wave += 1;
+            if (rt.wave >= p.waves) {
+                room.bossState = 'idle';
+                room.bossPattern = null;
+                room.nextSkillAt = now + def.skillIntervalMs;
+            } else {
+                // Re-aims for each thrust, so standing still through all five hurts.
+                const t = pickGuestTarget(room);
+                rt.phase = 'telegraph';
+                rt.at = now;
+                rt.angle = t ? Math.atan2(t.y - room.bossY, t.x - room.bossX) : rt.angle;
+                io.to(roomId).emit('guestTelegraph', {
+                    skill: 'spear_jab', wave: rt.wave, angle: rt.angle,
+                    range: p.range, width: p.width, telegraphMs: p.telegraphMs
+                });
+            }
+        }
+    } else if (room.bossPattern === 'spear_drop') {
+        const p = def.patterns.spear_drop;
+        const rt = room.bossRuntime;
+        if (rt.phase === 'telegraph' && now - rt.at >= p.telegraphMs) {
+            io.to(roomId).emit('guestSkillHit', { skill: 'spear_drop', wave: rt.wave, x: rt.x, y: rt.y, radius: p.markRadius });
+            guestCircleHit(room, roomId, rt.x, rt.y, p.markRadius, p.damage);
+            if (!rooms[roomId]) return;
+            // ...and the spear stays stuck where it landed.
+            room.stuckSpears.push({ x: rt.x, y: rt.y, nextTickAt: now + p.stuckTickMs });
+            io.to(roomId).emit('guestSpearStuck', { x: rt.x, y: rt.y, radius: p.stuckRadius });
+
+            rt.wave += 1;
+            if (rt.wave >= p.waves) {
+                // All six done -> every stuck spear vanishes at once.
+                room.stuckSpears = [];
+                io.to(roomId).emit('guestSpearsCleared', {});
+                room.bossState = 'idle';
+                room.bossPattern = null;
+                room.nextSkillAt = now + def.skillIntervalMs;
+            } else {
+                rt.phase = 'wait';
+                rt.at = now;
+            }
+        } else if (rt.phase === 'wait' && now - rt.at >= p.waveIntervalMs - p.telegraphMs) {
+            const t = pickGuestTarget(room);
+            rt.phase = 'telegraph';
+            rt.at = now;
+            if (t) { rt.x = t.x; rt.y = t.y; }
+            io.to(roomId).emit('guestTelegraph', {
+                skill: 'spear_drop', wave: rt.wave, x: rt.x, y: rt.y,
+                radius: p.markRadius, telegraphMs: p.telegraphMs
+            });
+        }
+    } else if (room.bossPattern === 'big_slash') {
+        const p = def.patterns.big_slash;
+        const rt = room.bossRuntime;
+        if (now - rt.at >= rt.windupMs) {
+            io.to(roomId).emit('guestSkillHit', {
+                skill: 'big_slash', near: rt.near, x: rt.x, y: rt.y, radius: rt.radius
+            });
+            guestCircleHit(room, roomId, rt.x, rt.y, rt.radius, p.damage);
+            if (!rooms[roomId]) return;
+            room.bossState = 'idle';
+            room.bossPattern = null;
+            room.nextSkillAt = now + def.skillIntervalMs;
+        }
+    }
+
+    if (!rooms[roomId]) return;
+    io.to(roomId).emit('guestTick', guestTickPayload(room));
+}
+
+function guestTickPayload(room) {
+    return {
+        bossHp: room.bossHp,
+        bossFacing: room.bossFacing,
+        stuckSpears: room.stuckSpears.map(s => ({ x: s.x, y: s.y })),
+        players: publicGuestPlayers(room)
+    };
+}
+
 io.on('connection', (socket) => {
     socket.on('joinRaid', ({ bossId, charType, solo }) => {
         if (!BOSS_DEFS[bossId]) return;
@@ -1742,6 +2161,246 @@ io.on('connection', (socket) => {
             roomId, bossId: room.bossId, count: Object.keys(room.players).length,
             players: publicPlayers(room)
         });
+    });
+
+    // ---- Guest raid ----
+    socket.on('joinGuestRaid', ({ guestId, party, solo }) => {
+        if (!GUEST_BOSS_DEFS[guestId]) return;
+        // Multiplayer brings ONE cookie each (four apiece would be a mess on
+        // screen); solo brings the full party.
+        const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
+        const size = solo ? GUEST_PARTY_SIZE : 1;
+        const chosen = wanted.slice(0, size);
+        while (chosen.length < size) chosen.push('kicker');
+
+        let roomId = solo ? null : findOpenGuestRoom(guestId);
+        if (!roomId) roomId = createGuestRoom(guestId, solo);
+        const room = rooms[roomId];
+        if (room.state !== 'waiting') return;
+
+        room.players[socket.id] = makeGuestPlayer(chosen, Object.keys(room.players).length);
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+
+        io.to(roomId).emit('guestRoomUpdate', {
+            roomId, guestId, count: Object.keys(room.players).length,
+            players: publicGuestPlayers(room)
+        });
+    });
+
+    socket.on('startGuestRaid', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (room && room.kind === 'guest') startGuestFight(roomId);
+    });
+
+    socket.on('guestPlayerReady', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'waiting') return;
+        const p = room.players[socket.id];
+        if (!p) return;
+        p.ready = true;
+        io.to(roomId).emit('guestRoomUpdate', {
+            roomId, guestId: room.guestId, count: Object.keys(room.players).length,
+            players: publicGuestPlayers(room)
+        });
+        const list = Object.values(room.players);
+        if (list.length >= 2 && list.every(pl => pl.ready)) startGuestFight(roomId);
+    });
+
+    socket.on('leaveGuestRaid', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest') return;
+        delete room.players[socket.id];
+        socket.leave(roomId);
+        socket.data.roomId = null;
+        if (Object.keys(room.players).length === 0) {
+            if (room.loopHandle) clearInterval(room.loopHandle);
+            delete rooms[roomId];
+            return;
+        }
+        io.to(roomId).emit('guestRoomUpdate', {
+            roomId, guestId: room.guestId, count: Object.keys(room.players).length,
+            players: publicGuestPlayers(room)
+        });
+    });
+
+    socket.on('guestPlayerMove', ({ x, y, facing }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return;
+        // Square field, so the bounds are a box rather than a radius.
+        if (Math.abs(x) > GUEST_ARENA_HALF_W + 1 || Math.abs(y) > GUEST_ARENA_HALF_H + 1) return;
+        p.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, x));
+        p.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, y));
+        p.facing = facing;
+    });
+
+    // Swapping keeps the incoming cookie's hp exactly where it was left.
+    socket.on('guestSwap', ({ index }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (typeof index !== 'number' || index < 0 || index >= p.party.length) return;
+        if (index === p.active || !p.partyAlive[index]) return;
+        p.partyHp[p.active] = p.hp; // bank the outgoing cookie's damage
+        activateGuestSlot(p, index);
+        io.to(roomId).emit('guestSwapped', {
+            id: socket.id, active: p.active, charType: p.charType,
+            hp: p.hp, maxHp: p.maxHp, partyHp: p.partyHp
+        });
+    });
+
+    socket.on('guestPlayerAttack', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        const def = GUEST_BOSS_DEFS[room.guestId];
+        const now = Date.now();
+        const rapid = rapidStrikeActive(character, p, now);
+        if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid)) return;
+        p.lastAttackTime = now;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
+        if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
+            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
+
+        const swing = resolveAttack(character, p, now, rapid);
+        advanceAttackSequence(character, p);
+        if (!meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width,
+            room.bossX, room.bossY, def.radius)) return;
+
+        damageGuestBoss(roomId, room, swing.damage, socket.id);
+        if (!rooms[roomId]) return;
+        if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
+            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+            healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        }
+    });
+
+    socket.on('guestPlayerSkill', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        const def = GUEST_BOSS_DEFS[room.guestId];
+        if (!character.skillType) return;
+        const now = Date.now();
+        if (now - p.lastSkillTime < character.skillCooldown) return;
+        p.lastSkillTime = now;
+        socket.to(roomId).emit('guestPlayerSkillUsed', { id: socket.id });
+
+        const distToBoss = Math.hypot(p.x - room.bossX, p.y - room.bossY) - def.radius;
+        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
+            if (distToBoss <= character.skillRange) damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+        } else if (character.skillType === 'guard_stance' || character.skillType === 'shield_block') {
+            p.guardStanceUntil = now + character.skillDurationMs;
+        } else if (character.skillType === 'kick' || character.skillType === 'flying_kick') {
+            if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth,
+                room.bossX, room.bossY, def.radius) && character.skillDamage) {
+                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            }
+        } else if (character.skillType === 'self_heal') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+        } else if (character.skillType === 'spin_heal') {
+            if (distToBoss <= character.skillRadius) {
+                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+                if (rooms[roomId]) healGuestTeam(room, roomId, character.skillHealOnHit);
+            }
+        } else if (character.skillType === 'earthquake') {
+            // Only one enemy in a guest raid, so this always takes the small-group branch.
+            io.to(roomId).emit('guestEarthquake', { id: socket.id });
+            damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+        }
+        // speed_boost is client-side only.
+    });
+
+    socket.on('guestPlayerUltimate', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = CHARACTERS[p.charType];
+        const def = GUEST_BOSS_DEFS[room.guestId];
+        if (!character.ultimateType) return;
+        const now = Date.now();
+        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        p.lastUltimateTime = now;
+        socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
+
+        const aimed = () => {
+            const tx = payload && payload.targetX, ty = payload && payload.targetY;
+            if (typeof tx !== 'number' || typeof ty !== 'number' || !Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+            return {
+                x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, tx)),
+                y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, ty))
+            };
+        };
+        const hitsBoss = (t, radius) => Math.hypot(t.x - room.bossX, t.y - room.bossY) <= radius + def.radius;
+
+        if (character.ultimateType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time', tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs, lastTickAt: now
+            });
+        } else if (character.ultimateType === 'targeted_aoe' || character.ultimateType === 'lightning_strike') {
+            const t = aimed();
+            if (!t) return;
+            io.to(roomId).emit('guestUltimateImpact', {
+                id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius,
+                bolt: character.ultimateType === 'lightning_strike'
+            });
+            if (hitsBoss(t, character.ultimateRadius)) damageGuestBoss(roomId, room, character.ultimateDamage, socket.id);
+        } else if (character.ultimateType === 'magma_zone') {
+            const t = aimed();
+            if (!t) return;
+            io.to(roomId).emit('guestMagmaZonePlaced', {
+                id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius,
+                durationMs: character.ultimateZoneDurationMs
+            });
+            room.activeBuffs.push({
+                type: 'magma_zone', casterId: socket.id, x: t.x, y: t.y,
+                radius: character.ultimateRadius, damage: character.ultimateZoneDamagePerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs, lastTickAt: now
+            });
+        } else if (character.ultimateType === 'attack_heal_boost') {
+            p.attackHealBoostUntil = now + character.ultimateDurationMs;
+        } else if (character.ultimateType === 'awakening') {
+            p.awakenUntil = now + character.ultimateDurationMs;
+            if (character.ultimateSelfHeal) {
+                p.hp = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
+                p.partyHp[p.active] = p.hp;
+                io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            }
+        } else if (character.ultimateType === 'awakening_rapid') {
+            p.rapidStrikeUntil = now + character.ultimateDurationMs;
+            p.rapidAttackCount = 0;
+        } else if (character.ultimateType === 'team_shield') {
+            shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'undying_soul') {
+            p.undyingSoulUntil = now + character.ultimateDurationMs;
+            p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+        } else if (character.ultimateType === 'element_mark') {
+            p.elementMarkUntil = now + character.ultimateDurationMs;
+        }
     });
 
     socket.on('disconnect', () => {

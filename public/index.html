@@ -209,6 +209,10 @@
                 <div class="icon">⚔️</div>
                 <div class="name">보스 레이드</div>
             </div>
+            <div id="guest-raid-mode-card" class="mode-card">
+                <div class="icon">👑</div>
+                <div class="name">게스트 레이드</div>
+            </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
     </div>
@@ -366,6 +370,77 @@
         <button id="back-from-detail-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- Guest raid: no boss picking; you build a party instead -->
+    <div id="guest-detail-screen" class="screen hidden">
+        <button id="guest-leave-btn" class="leave-party-btn hidden">나가기</button>
+        <div class="detail-layout">
+            <div class="detail-left">
+                <div id="guest-party-slots" class="guest-party-slots"></div>
+                <p id="guest-party-hint" class="settings-hint">캐릭터를 눌러 4명을 정하세요.</p>
+                <div id="guest-partner-preview" class="char-preview hidden">
+                    <div id="guest-partner-icon" class="char-icon-circle"></div>
+                    <div id="guest-partner-name" class="char-name"></div>
+                </div>
+            </div>
+            <div class="detail-right">
+                <h2 id="guest-boss-name">번개지옥맛 쿠키</h2>
+                <div id="guest-boss-icon" class="boss-icon-circle">👑</div>
+                <div class="detail-specs">
+                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="guest-boss-power">-</span></div>
+                    <div class="spec-row"><span class="spec-label">체력</span><span id="guest-boss-hp">-</span></div>
+                </div>
+                <div class="detail-actions">
+                    <button id="guest-multi-btn" class="play-btn">멀티플레이</button>
+                    <button id="guest-solo-btn" class="play-btn">솔로플레이</button>
+                </div>
+            </div>
+        </div>
+        <!-- The roster you pick your party from, down the right-hand edge. -->
+        <div id="guest-roster" class="guest-roster"></div>
+        <button id="back-from-guest-detail-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- Guest raid fight -->
+    <div id="guest-fight-screen" class="screen hidden">
+        <button id="guest-fight-menu-btn" class="menu-btn" aria-label="메뉴">☰</button>
+        <div id="guest-fight-settings" class="settings-menu hidden">
+            <button id="guest-fight-leave-btn" class="secondary-btn">나가기</button>
+        </div>
+        <div id="guest-boss-hp-container" class="hp-container top">
+            <div class="hp-label" id="guest-boss-hp-label">번개지옥맛 쿠키</div>
+            <div class="hp-bar-bg"><div id="guest-boss-hp-bar" class="hp-bar-fill boss"></div></div>
+        </div>
+        <div id="guest-my-hp-container" class="hp-container bottom-left">
+            <div class="hp-label">나</div>
+            <div class="cooldown-row"><span class="cooldown-label">스킬</span><span id="guest-my-skill-cd">사용가능</span></div>
+            <div class="cooldown-row"><span class="cooldown-label">궁극기</span><span id="guest-my-ultimate-cd">사용가능</span></div>
+            <div class="hp-bar-bg"><div id="guest-my-hp-bar" class="hp-bar-fill mine"></div><span id="guest-my-shield-badge" class="shield-badge hidden">🛡</span></div>
+        </div>
+        <div id="guest-partner-hp-container" class="hp-container bottom-right hidden">
+            <div class="hp-label">파트너</div>
+            <div class="hp-bar-bg"><div id="guest-partner-hp-bar" class="hp-bar-fill partner"></div></div>
+        </div>
+        <canvas id="guestCanvas" width="960" height="680"></canvas>
+        <!-- Party bar: click a cookie to swap to it. Its hp carries over. -->
+        <div id="guest-party-bar" class="guest-party-bar"></div>
+        <div id="guest-collapse-overlay" class="guest-collapse hidden">
+            <div class="guest-collapse-text">땅이 무너진다...</div>
+            <div class="guest-collapse-sub">2차 레이드 시작</div>
+        </div>
+        <div id="mobile-controls-guest" class="mobile-controls hidden">
+            <div id="mc-joystick-guest" class="mc-joystick-zone">
+                <div class="mc-joystick-base"><div class="mc-joystick-thumb"></div></div>
+            </div>
+            <div class="mc-actions">
+                <button id="mc-skill-guest" class="mc-btn mc-skill">🌀<span class="mc-cd"></span></button>
+                <div id="mc-ultimate-guest" class="mc-aim-zone">
+                    <div class="mc-aim-base"><div class="mc-aim-thumb">🔥<span class="mc-cd"></span></div></div>
+                </div>
+                <button id="mc-attack-guest" class="mc-btn mc-attack">⚔</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Fight -->
     <div id="fight-screen" class="screen hidden">
         <button id="settings-btn" class="settings-btn">⚙</button>
@@ -427,5 +502,6 @@
     <script src="js/boss.js"></script>
     <script src="js/player.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/guest_raid.js"></script>
 </body>
 </html>

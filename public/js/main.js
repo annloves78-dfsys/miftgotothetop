@@ -14,6 +14,8 @@ const screens = {
     signup: document.getElementById('signup-screen'),
     account: document.getElementById('account-screen'),
     controls: document.getElementById('controls-screen'),
+    guestDetail: document.getElementById('guest-detail-screen'),
+    guestFight: document.getElementById('guest-fight-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
     bossDetail: document.getElementById('boss-detail-screen'),
@@ -620,6 +622,8 @@ function applyMobileControlsVisibility() {
     if (!mobileControlsFight) return;
     mobileControlsFight.classList.toggle('hidden', !mobileControlsEnabled);
     mobileControlsStory.classList.toggle('hidden', !mobileControlsEnabled);
+    const guestControls = document.getElementById('mobile-controls-guest');
+    if (guestControls) guestControls.classList.toggle('hidden', !mobileControlsEnabled);
     document.body.classList.toggle('mc-on', mobileControlsEnabled);
 }
 updateControlsScreen();

@@ -419,6 +419,65 @@ const BOSS_LIST = [
     { id: 'boss3', name: '???', locked: true }
 ];
 
+// ---- Guest raid ----
+// Fought in a big SQUARE field rather than the boss raid's circle. The boss
+// holds the far (top) edge and the party comes in from the bottom. Unlike the
+// boss raid there is no boss list to pick from -- the first guest raid is
+// always 번개지옥맛 쿠키 -- and you bring a party of GUEST_PARTY_SIZE cookies
+// that you swap between mid-fight.
+const GUEST_ARENA_HALF_W = 470;
+const GUEST_ARENA_HALF_H = 330;
+const GUEST_PARTY_SIZE = 4;
+
+const GUEST_BOSS_DEFS = {
+    guest1: {
+        id: 'guest1',
+        name: '번개지옥맛 쿠키',
+        charType: 'lightninghell', // borrows that cookie's purple/yellow for the body
+        maxHp: 500,
+        radius: 46,
+        recommendedPower: 2000, // for a full party of 4 combined
+        homeY: -235, // sits at the back of the field
+        skillIntervalMs: 1000, // picks a new skill every second it is idle
+        patterns: {
+            // 창 찌르기: telegraphs a red line, thrusts 0.3s later, five times over.
+            spear_jab: {
+                telegraphMs: 300,
+                waves: 5,
+                range: 560,
+                width: 54,
+                damage: 10
+            },
+            // 창 찍기: paints a 50px circle on the player, slams down 0.4s later
+            // for 30, then LEAVES the spear stuck in the ground. The embedded
+            // shaft is 30px across and burns anyone touching it for stuckDamage
+            // a second. Six of them, one second apart; they all vanish when the
+            // sixth is done.
+            spear_drop: {
+                telegraphMs: 400,
+                markRadius: 50,
+                damage: 30,
+                waves: 6,
+                waveIntervalMs: 1000,
+                stuckRadius: 30,
+                stuckDamage: 5,
+                stuckTickMs: 1000
+            },
+            // 크게 베기: no red warning at all. If someone is close it sweeps its
+            // own surroundings within 0.7s; if everyone is far it sweeps out
+            // where they are within 0.6s.
+            big_slash: {
+                nearWindupMs: 700,
+                farWindupMs: 600,
+                nearThreshold: 230, // closer than this counts as 근처
+                nearRadius: 215, // circle centred on the boss
+                farRadius: 200, // circle centred on the player it picked
+                damage: 20
+            }
+        }
+    }
+};
+
 const MONSTER_RADIUS = 16;
 const STAR_RADIUS = 30;
 const PROJECTILE_RADIUS = 6; // arrow hitbox; see projectileSpeed on MONSTERS
@@ -626,7 +685,7 @@ const GACHA_TABLE = {
 const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
