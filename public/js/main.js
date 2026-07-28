@@ -39,6 +39,8 @@ const equipPicker = document.getElementById('equip-picker');
 const equipPickerTitle = document.getElementById('equip-picker-title');
 const equipPickerList = document.getElementById('equip-picker-list');
 const equipPickerClose = document.getElementById('equip-picker-close');
+const equipPickerPurse = document.getElementById('equip-picker-purse');
+const equipPickerMsg = document.getElementById('equip-picker-msg');
 const equipPickerUnequip = document.getElementById('equip-picker-unequip');
 const charDetailSlotEls = [...document.querySelectorAll('#character-detail-screen .equip-slot[data-slot]')];
 // 각성 칸은 에이션트 이상만 가지므로 슬롯 목록도 등급에 따라 달라진다.
@@ -412,9 +414,48 @@ function equipPayload(charType) {
     const out = {};
     equipSlotsFor(charType).map(s => s.key).forEach(slot => {
         const entry = bagEntry(worn[slot]);
-        if (entry) out[slot] = entry.itemId;
+        if (entry) out[slot] = { id: entry.itemId, level: entry.level || 0 };
     });
     return out;
+}
+
+// ---- 장비 강화 ----
+// 재료 + 코인을 쓰고 확률만큼 성공한다. 강화포션을 쓰면 확률을 건너뛴다.
+// 실패해도 레벨은 그대로고 재료와 코인만 없어진다.
+function upgradeEquip(uid, usePotion) {
+    const entry = bagEntry(uid);
+    const item = entry && SHARED.equipmentFor(entry.itemId);
+    if (!item) return { ok: false, msg: '없는 장비입니다.' };
+    const cost = SHARED.equipUpgradeCost(item, entry.level || 0);
+    if (!cost) return { ok: false, msg: '이미 최대 강화입니다.' };
+    const missing = [];
+    if (currencyAmount(cost.materialKey) < cost.material) missing.push(CURRENCY_LABELS[cost.materialKey]);
+    if (currencyAmount('coins') < cost.coins) missing.push(CURRENCY_LABELS.coins);
+    if (usePotion && currencyAmount(cost.potionKey) < cost.potion) missing.push(CURRENCY_LABELS[cost.potionKey]);
+    if (missing.length) return { ok: false, msg: `${missing.join(', ')}이(가) 모자랍니다.` };
+
+    if (!isAdmin()) {
+        const spend = { coins: -cost.coins };
+        spend[cost.materialKey] = (spend[cost.materialKey] || 0) - cost.material;
+        if (usePotion) spend[cost.potionKey] = (spend[cost.potionKey] || 0) - cost.potion;
+        grantCurrencies(spend);
+    }
+    const success = usePotion || Math.random() < cost.chance;
+    if (success) entry.level = (entry.level || 0) + 1;
+    saveGameData(gameData);
+    return {
+        ok: true, success, level: entry.level || 0,
+        msg: success
+            ? `${item.name} 강화 성공! Lv${cost.to}이 되었습니다.`
+            : `${item.name} 강화 실패... 재료와 코인만 사용되었습니다. (Lv${cost.from} 유지)`
+    };
+}
+
+// 강화 비용을 버튼에 적을 한 줄로.
+function upgradeCostText(cost, usePotion) {
+    const parts = [`${CURRENCY_ICONS[cost.materialKey]}${cost.material}`, `${CURRENCY_ICONS.coins}${cost.coins}`];
+    if (usePotion) parts.unshift(`${CURRENCY_ICONS[cost.potionKey]}${cost.potion}`);
+    return `${parts.join(' · ')} · ${usePotion ? '확정' : Math.round(cost.chance * 100) + '%'}`;
 }
 
 function equipBonusOf(charType) {
@@ -1277,6 +1318,7 @@ let equipPickerSlot = null;
 function openEquipPicker(slot) {
     const slotDef = equipSlotsFor(viewingCharacterId).find(s => s.key === slot);
     if (!slotDef || !viewingCharacterId) return;
+    showEquipPickerMsg('', false);
     equipPickerSlot = slot;
     equipPickerTitle.textContent = `${slotDef.icon} ${slotDef.name}`;
     renderEquipPicker();
@@ -1288,7 +1330,24 @@ function closeEquipPicker() {
     equipPicker.classList.add('hidden');
 }
 
+// 강화 결과 한 줄. 성공이면 초록, 실패/부족이면 빨강.
+function showEquipPickerMsg(text, good) {
+    if (!equipPickerMsg) return;
+    equipPickerMsg.textContent = text || '';
+    equipPickerMsg.classList.toggle('hidden', !text);
+    equipPickerMsg.classList.toggle('good', !!good);
+}
+
+// 강화에 쓰는 것만 추려서 창 위에 보여준다.
+function renderEquipPickerPurse() {
+    if (!equipPickerPurse) return;
+    equipPickerPurse.innerHTML = ['coins', 'material', 'materialRare', 'potion', 'potionRare']
+        .map(k => `<span class="equip-purse-pill" title="${CURRENCY_LABELS[k]}">${CURRENCY_ICONS[k]} ${currencyText(k)}</span>`)
+        .join('');
+}
+
 function renderEquipPicker() {
+    renderEquipPickerPurse();
     const charType = viewingCharacterId;
     const worn = equippedOf(charType);
     const rows = inventoryItems()
@@ -1305,6 +1364,8 @@ function renderEquipPicker() {
     }
 
     equipPickerList.innerHTML = rows.map(({ entry, item }) => {
+        const lv = entry.level || 0;
+        const cost = SHARED.equipUpgradeCost(item, lv);
         const isOn = worn[equipPickerSlot] === entry.uid;
         const otherOwner = !isOn && wornBy(entry.uid);
         let ownerLine = '';
@@ -1318,13 +1379,20 @@ function renderEquipPicker() {
         const wornLine = otherOwner
             ? `<div class="equip-item-worn">${(SHARED.CHARACTERS[otherOwner] || {}).name || otherOwner}가 착용 중 — 가져오면 벗겨집니다</div>`
             : '';
+        const upgradeLine = cost
+            ? `<div class="equip-upgrade">
+                    <button class="equip-up-btn" data-uid="${entry.uid}" data-potion="0">🔨 강화 <span class="equip-up-cost">${upgradeCostText(cost, false)}</span></button>
+                    <button class="equip-up-btn potion" data-uid="${entry.uid}" data-potion="1">✨ 포션 강화 <span class="equip-up-cost">${upgradeCostText(cost, true)}</span></button>
+               </div>`
+            : '<div class="equip-upgrade"><span class="equip-up-max">최대 강화</span></div>';
         return `
             <div class="equip-item${isOn ? ' equipped' : ''}" data-uid="${entry.uid}">
                 <span class="equip-item-icon">${item.icon}</span>
                 <span class="equip-item-main">
-                    <div class="equip-item-name">${item.name} <span class="${gradeClass(item.grade)}">${item.grade}</span></div>
-                    <div class="equip-item-stats">${equipStatText(item) || '능력치 없음'}</div>
+                    <div class="equip-item-name">${item.name} <span class="equip-item-lv">Lv${lv}</span> <span class="${gradeClass(item.grade)}">${item.grade}</span></div>
+                    <div class="equip-item-stats">${equipStatText(SHARED.equipStatsAtLevel(item, lv)) || '능력치 없음'}</div>
                     ${ownerLine}${wornLine}
+                    ${upgradeLine}
                 </span>
                 ${isOn ? '<span class="equip-item-worn">착용 중</span>' : ''}
             </div>`;
@@ -1332,6 +1400,16 @@ function renderEquipPicker() {
 }
 
 equipPickerList.addEventListener('click', (e) => {
+    const upBtn = e.target.closest('.equip-up-btn');
+    if (upBtn) {
+        // 강화 버튼을 눌렀을 때는 장착까지 되지 않게 여기서 끝낸다.
+        e.stopPropagation();
+        const res = upgradeEquip(Number(upBtn.dataset.uid), upBtn.dataset.potion === '1');
+        showEquipPickerMsg(res.msg, res.ok && res.success);
+        renderEquipPicker();
+        if (viewingCharacterId) openCharacterDetail(viewingCharacterId);
+        return;
+    }
     const row = e.target.closest('.equip-item');
     if (!row || !equipPickerSlot) return;
     equipItem(viewingCharacterId, Number(row.dataset.uid));

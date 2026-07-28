@@ -2729,3 +2729,70 @@ body.mc-on .cd-equip-col .equip-value { font-size: 11px; }
 .menu-item-btn.danger-btn:hover {
     background: #3a1e1b;
 }
+
+/* 장비 강화: 가진 재료 / 결과 한 줄 / 항목마다 붙는 강화 버튼 */
+.equip-picker-purse {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.equip-purse-pill {
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: #1a1f2b;
+    border: 1px solid #34495e;
+    font-size: 13px;
+    color: #ecf0f1;
+}
+
+.equip-picker-msg {
+    margin-bottom: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: #3a1e1b;
+    border: 1px solid #c0392b;
+    color: #e8a49c;
+    font-size: 13px;
+}
+
+.equip-picker-msg.good {
+    background: #16321f;
+    border-color: #27ae60;
+    color: #8fe0ac;
+}
+
+.equip-item-lv {
+    color: #f1c40f;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.equip-upgrade {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.equip-up-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid #7f8c8d;
+    background: #202737;
+    color: #ecf0f1;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.equip-up-btn:hover { border-color: #f39c12; }
+.equip-up-btn.potion { border-color: #8e44ad; }
+.equip-up-btn.potion:hover { border-color: #bb8fce; }
+.equip-up-cost { color: #bdc3c7; font-size: 11px; }
+.equip-up-max { font-size: 12px; color: #f1c40f; }
+
+body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }

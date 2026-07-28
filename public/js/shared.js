@@ -1669,6 +1669,83 @@ function ownerBonusActive(item, charType) {
     return !!(item && item.ownerChar && item.ownerChar === charType && item.ownerBonus);
 }
 
+// ---- 장비 강화 ----
+// 재료 + 코인을 써서 장비의 Lv를 올린다. 올라갈수록 성공 확률이 떨어지고,
+// 강화포션을 쓰면 확률을 건너뛰고 무조건 성공한다. 실패해도 레벨이 내려가지는
+// 않는다 -- 재료와 코인만 날아간다.
+const EQUIP_MAX_LEVEL = 5;
+const EQUIP_BONUS_KEYS = ['bonusAttack', 'bonusHealth', 'bonusSpeed', 'bonusDamageTaken', 'bonusCooldown', 'bonusRevive'];
+// [Lv0->1, Lv1->2, ...]
+const EQUIP_UPGRADE_STEPS = [
+    { material: 1, coins: 100, chance: 1 },
+    { material: 2, coins: 200, chance: 0.8 },
+    { material: 3, coins: 400, chance: 0.65 },
+    { material: 5, coins: 700, chance: 0.5 },
+    { material: 8, coins: 1200, chance: 0.35 }
+];
+
+// 희귀 이상은 고급 재료 / 고급 포션을 쓴다.
+function equipUsesRareMaterial(grade) {
+    const idx = GRADE_ORDER.indexOf(grade);
+    return idx >= 0 && idx >= GRADE_ORDER.indexOf('희귀');
+}
+
+// 지금 레벨에서 한 단계 올리는 데 드는 것. 최대치면 null.
+function equipUpgradeCost(item, level) {
+    const lv = Math.max(0, Math.floor(level || 0));
+    if (!item || lv >= EQUIP_MAX_LEVEL) return null;
+    const step = EQUIP_UPGRADE_STEPS[lv];
+    const rare = equipUsesRareMaterial(item.grade);
+    return {
+        from: lv, to: lv + 1,
+        materialKey: rare ? 'materialRare' : 'material',
+        material: step.material,
+        coins: step.coins,
+        chance: step.chance,
+        potionKey: rare ? 'potionRare' : 'potion',
+        potion: 1
+    };
+}
+
+// Lv당 능력치가 25%씩 커진다. 배수형(받는 피해 / 재사용 대기시간)은 "줄어드는
+// 폭"이 그만큼 커지고, 부활 횟수는 강화로 늘지 않는다.
+function equipLevelScale(level) {
+    return 1 + 0.25 * Math.max(0, Math.floor(level || 0));
+}
+
+function scaledBonus(key, value, level) {
+    const lv = Math.max(0, Math.floor(level || 0));
+    if (!lv || !value) return value;
+    if (key === 'bonusRevive') return value;
+    if (key === 'bonusDamageTaken' || key === 'bonusCooldown') {
+        const cut = (1 - value) * equipLevelScale(lv);
+        return Math.max(0.5, Math.round((1 - cut) * 1000) / 1000);
+    }
+    return Math.round(value * equipLevelScale(lv));
+}
+
+// 화면에 보여줄 용도: 이 레벨에서의 능력치만 담은 사본.
+function equipStatsAtLevel(src, level) {
+    const out = {};
+    if (!src) return out;
+    EQUIP_BONUS_KEYS.forEach(k => {
+        if (src[k]) out[k] = scaledBonus(k, src[k], level);
+    });
+    return out;
+}
+
+// 장착 정보 한 칸을 { id, level }로 정규화한다. 그냥 문자열이면 Lv0.
+// 클라이언트가 보낸 값이 여기로 들어오므로 레벨은 여기서 잘라낸다.
+function equipEntryOf(v) {
+    if (typeof v === 'string') return { id: v, level: 0 };
+    if (v && typeof v === 'object' && typeof v.id === 'string') {
+        let lv = Number(v.level);
+        if (!Number.isFinite(lv) || lv < 0) lv = 0;
+        return { id: v.id, level: Math.min(EQUIP_MAX_LEVEL, Math.floor(lv)) };
+    }
+    return null;
+}
+
 // 장착한 장비 id 목록({slot: itemId})을 합산해 하나의 보너스로 만든다.
 // 슬롯이 안 맞는 id나 없는 id는 그냥 무시한다 -- 서버가 클라이언트가 보낸
 // 것을 검증하는 자리이기도 하다.
@@ -1681,15 +1758,17 @@ function equipBonusFor(equipped, charType) {
         ? EQUIP_SLOT_KEYS.concat(AWAKEN_SLOT.key)
         : EQUIP_SLOT_KEYS;
     for (const slot of slots) {
-        const item = equipmentFor(equipped[slot]);
+        const worn = equipEntryOf(equipped[slot]);
+        const item = worn && equipmentFor(worn.id);
         if (!item || item.slot !== slot) continue;
+        const lv = worn.level;
         const parts = ownerBonusActive(item, charType) ? [item, item.ownerBonus] : [item];
         for (const p of parts) {
-            if (p.bonusAttack) out.attack += p.bonusAttack;
-            if (p.bonusHealth) out.health += p.bonusHealth;
-            if (p.bonusSpeed) out.speed += p.bonusSpeed;
-            if (p.bonusDamageTaken) out.damageTaken *= p.bonusDamageTaken;
-            if (p.bonusCooldown) out.cooldown *= p.bonusCooldown;
+            if (p.bonusAttack) out.attack += scaledBonus('bonusAttack', p.bonusAttack, lv);
+            if (p.bonusHealth) out.health += scaledBonus('bonusHealth', p.bonusHealth, lv);
+            if (p.bonusSpeed) out.speed += scaledBonus('bonusSpeed', p.bonusSpeed, lv);
+            if (p.bonusDamageTaken) out.damageTaken *= scaledBonus('bonusDamageTaken', p.bonusDamageTaken, lv);
+            if (p.bonusCooldown) out.cooldown *= scaledBonus('bonusCooldown', p.bonusCooldown, lv);
             if (p.bonusRevive) out.revive += p.bonusRevive;
         }
     }
@@ -1728,7 +1807,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
