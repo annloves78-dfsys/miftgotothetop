@@ -7,7 +7,7 @@ const path = require('path');
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
-    equipBonusFor } = require('./public/js/shared.js');
+    equipBonusFor, formStat, reviveCountFor } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -142,6 +142,9 @@ function bonusFrom(equip, charType) {
 }
 function bonusOf(p) { return (p && p.bonus) || NO_EQUIP_BONUS; }
 
+// 각성한 쿠키는 몇몇 수치가 통째로 바뀜다. 지금 각성 상태인지는 p가 들고 있다.
+function stat(character, p, key) { return formStat(character, !!(p && p.awakened), key); }
+
 // 장비의 재사용 대기시간 감소는 스킬과 궁극기에만 붙는다 (기본공격은 그대로).
 function skillCooldownFor(character, p) {
     return character.skillCooldown * bonusOf(p).cooldown;
@@ -187,7 +190,7 @@ function effectiveAttackDamage(character, p, now) {
     }
     // 나비모드 has no end time -- it is on until it is switched off.
     if (butterflyActive(character, p)) return character.ultimateAttackDamage + bonusOf(p).attack;
-    return character.attackDamage + bonusOf(p).attack;
+    return stat(character, p, 'attackDamage') + bonusOf(p).attack;
 }
 
 // 나비모드 (sugarfly): a toggle rather than a timer, so it is checked by a
@@ -227,6 +230,39 @@ function toggleButterflyMode(character, p, now) {
 
 // 슈가 플라이맛's passive: every Nth landed hit heals the cookie itself.
 // Returns how much to heal (0 most swings).
+// 번개악마맛: 적중할 때마다 확률적으로 최대 체력의 일부를 회복한다.
+// 흥혈 베기가 맞았을 때의 회복과는 별개라, 둘 다 터질 수 있다.
+function passiveChanceHeal(character, p, swing) {
+    let heal = 0;
+    if (character.passiveHitHealChance && Math.random() < character.passiveHitHealChance) {
+        heal += Math.round(p.maxHp * character.passiveHitHealRatio);
+    }
+    if (swing && swing.vampire && character.attackVampireHealRatio) {
+        heal += Math.round(p.maxHp * character.attackVampireHealRatio);
+    }
+    return heal;
+}
+
+// 크게베기는 베기 전에 짧게 예열한다. 방에 남아 있을 때만 터지게 하기 위해
+// 매번 룸과 플레이어가 아직 있는지 다시 확인한다.
+function afterWindup(roomId, playerId, windupMs, run) {
+    setTimeout(() => {
+        const room = rooms[roomId];
+        if (!room || room.state !== 'fighting') return;
+        const p = room.players[playerId];
+        if (!p || !p.alive) return;
+        run(room, p);
+    }, windupMs || 0);
+}
+
+// 순간이동은 자기 최대 체력의 일정 비율을 채운다. 각성하면 비율이 올라간다.
+function healSelfBySkill(character, p, announce) {
+    if (!character.skillHealRatio) return;
+    const before = p.hp;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * stat(character, p, 'skillHealRatio')));
+    if (p.hp !== before) announce();
+}
+
 function passiveHitHeal(character, p) {
     if (!character.attackHealEveryHits) return 0;
     p.hitStreak = (p.hitStreak || 0) + 1;
@@ -277,6 +313,12 @@ function resolveAttack(character, p, now, rapid) {
     const damage = character.attackType === 'alternating_punch'
         ? resolveAlternatingPunchDamage(character, p, rapid)
         : effectiveAttackDamage(character, p, now);
+    if (isVampireSwing(character, p)) {
+        return {
+            range: character.attackVampireRange, width: character.attackVampireWidth,
+            damage, originX, originY, vampire: true
+        };
+    }
     return { range: character.attackRange, width: character.attackWidth, damage, originX, originY };
 }
 
@@ -291,7 +333,16 @@ function attackCooldownFor(character, p, rapid) {
 
 // Steps whichever "which swing comes next" counter this attack type keeps.
 // Must run after resolveAttack, which reads that counter.
+// 번개악마맛의 4번째 공격은 흥혈 베기다. 0-based 카운터라 마지막 칸이 그것.
+function isVampireSwing(character, p) {
+    if (character.attackType !== 'vampire_slash') return false;
+    return ((p.attackSeq || 0) % character.attackVampireEvery) === character.attackVampireEvery - 1;
+}
+
 function advanceAttackSequence(character, p) {
+    if (character.attackType === 'vampire_slash') {
+        p.attackSeq = ((p.attackSeq || 0) + 1) % character.attackVampireEvery;
+    }
     if (character.attackType === 'combo_two_stage') {
         p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
     } else if (character.attackType === 'dual_spear') {
@@ -311,10 +362,23 @@ function outgoingDamageMultiplier(target, now) {
 // Cheat-death passive (lightning). Called the moment a player's hp hits 0:
 // spends one revive charge and returns them to a fraction of max hp instead of
 // letting them go down. Returns true if the death was cancelled.
-function tryRevive(p, character) {
-    if (!character.passiveReviveCount) return false;
-    if ((p.revivesUsed || 0) >= character.passiveReviveCount) return false;
+// `equipRevive` is the +N a 각성 장비 adds on top of the passive's own count.
+function tryRevive(p, character, equipRevive) {
+    const allowed = reviveCountFor(character, equipRevive);
+    if (!allowed) return false;
+    if ((p.revivesUsed || 0) >= allowed) return false;
     p.revivesUsed = (p.revivesUsed || 0) + 1;
+    // 각성: 정해진 번째 부활에서 통째로 강해진다. 체력 상한이 올라가므로
+    // 그 순간만큼은 새 최대치로 꽉 채워서 일어난다.
+    if (character.awakenOnReviveNo && p.revivesUsed >= character.awakenOnReviveNo && !p.awakened) {
+        p.awakened = true;
+        const grown = formStat(character, true, 'health');
+        // 게스트 레이드는 슬롯 껍데기를 넘기므로 장비 체력을 따로 실어 보낸다.
+        const fromGear = p.equipHealth != null ? p.equipHealth : bonusOf(p).health;
+        if (grown != null) p.maxHp = grown + fromGear;
+        p.hp = p.maxHp;
+        return true;
+    }
     p.hp = Math.max(1, Math.round(p.maxHp * character.passiveReviveHpRatio));
     p.alive = true;
     return true;
@@ -377,7 +441,7 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     p.hp = Math.max(0, p.hp - dmg);
     let revived = false;
     if (p.hp <= 0) {
-        revived = tryRevive(p, character);
+        revived = tryRevive(p, character, bonusOf(p).revive);
         if (!revived) p.alive = false;
     }
     io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0, ...(extra || {}) });
@@ -920,7 +984,7 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
 
 // The same thing for the raid boss, which keeps its mark on the room rather
 // than on itself and heals/burns through the raid room's own helpers.
-function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, now) {
+function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, now, swing) {
     let dmg = baseDamage;
 
     // Element mark: a matching-element attacker deals bonus damage vs a marked
@@ -938,7 +1002,7 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
 
     // Some cookies heal whenever the attack actually connects (only a chance to
     // proc, if attackHealChance is set). The ultimate can raise the amount.
-    const selfHeal = passiveHitHeal(character, p);
+    const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
     if (selfHeal) {
         p.hp = Math.min(p.maxHp, p.hp + selfHeal);
         io.to(roomId).emit('playerHealed', { id: attackerId, hp: p.hp });
@@ -1029,7 +1093,7 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     p.hp = Math.max(0, p.hp - dmg);
     let revived = false;
     if (p.hp <= 0) {
-        revived = tryRevive(p, character);
+        revived = tryRevive(p, character, bonusOf(p).revive);
         if (!revived) p.alive = false;
     }
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
@@ -1595,10 +1659,16 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
     let revived = false, swappedTo = null;
     if (p.hp <= 0) {
         // The cheat-death passive is per cookie, so it uses that slot's counter.
-        const slotState = { hp: p.hp, maxHp: p.maxHp, revivesUsed: p.partyRevivesUsed[p.active], alive: true };
-        revived = tryRevive(slotState, character);
+        const slotState = {
+            hp: p.hp, maxHp: p.maxHp, revivesUsed: p.partyRevivesUsed[p.active],
+            alive: true, awakened: !!p.awakened, equipHealth: bonusOf(p).health
+        };
+        revived = tryRevive(slotState, character, bonusOf(p).revive);
         if (revived) {
             p.hp = slotState.hp;
+            p.maxHp = slotState.maxHp;
+            p.partyMaxHp[p.active] = slotState.maxHp;
+            p.awakened = slotState.awakened;
             p.partyRevivesUsed[p.active] = slotState.revivesUsed;
         } else {
             p.partyAlive[p.active] = false;
@@ -2685,7 +2755,8 @@ io.on('connection', (socket) => {
             return;
         }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
-            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
+            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear'
+            && character.attackType !== 'vampire_slash') return;
 
         let anyHit = false;
         const swing = resolveAttack(character, p, now, rapid);
@@ -2704,7 +2775,7 @@ io.on('connection', (socket) => {
         }
 
         if (anyHit) {
-            const selfHeal = passiveHitHeal(character, p);
+            const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
             if (selfHeal) {
                 p.hp = Math.min(p.maxHp, p.hp + selfHeal);
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
@@ -2883,12 +2954,13 @@ io.on('connection', (socket) => {
         }
         // 마그마맛 때파기 / 물방울맛 물방울 터트리기: both pick a spot and
         // mark whatever is standing near it. 때파기 also puts the cookie there.
-        else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+        else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst'
+            || character.skillType === 'blink_heal') {
             const t = targetPoint(payload);
             if (!t) return;
             const floorDef = floorDefFor(room.floor);
             const spot = clampToLane(floorDef, t.x, t.y);
-            if (character.skillType === 'burrow_mark') {
+            if (character.skillType === 'burrow_mark' || character.skillType === 'blink_heal') {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
@@ -2898,6 +2970,8 @@ io.on('connection', (socket) => {
             });
             markMonstersInCircle(roomId, room, spot.x, spot.y,
                 character.skillRadius, character.element, skillMarkOpts(character));
+            healSelfBySkill(character, p, () =>
+                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp }));
         }
         // speed_boost is purely client-side; nothing more to do here.
     });
@@ -2959,6 +3033,31 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('storyPlayerHealed', { id, hp: pl.hp });
             }
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'great_slash') {
+            // 0.3초 예열 -> 엄청 큰 반공간 베기. 예열을 먼저 알려서 피할 틈을 준다.
+            io.to(roomId).emit('storyGreatSlash', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                windupMs: character.ultimateWindupMs
+            });
+            p.speedBoostUntil = now + character.ultimateSpeedDurationMs;
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                let landed = false;
+                const dmg = stat(character, pl, 'ultimateDamage');
+                for (const [mid, m] of Object.entries(rm.monsters)) {
+                    if (!m.alive) continue;
+                    if (!meleeLineHitPoint(pl.x, pl.y, pl.facing, character.ultimateRange,
+                        character.ultimateWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                    landed = true;
+                    m.hp = Math.max(0, m.hp - dmg);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+                if (landed && character.ultimateHealRatio) {
+                    pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                    io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: pl.hp });
+                }
+            });
         } else if (character.ultimateType === 'butterfly_mode') {
             const off = toggleButterflyMode(character, p, now);
             io.to(roomId).emit('storyButterflyMode', { id: socket.id, on: !off });
@@ -3095,11 +3194,12 @@ io.on('connection', (socket) => {
             return;
         }
         if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
-            || character.attackType === 'combo_two_stage' || character.attackType === 'dual_spear') {
+            || character.attackType === 'combo_two_stage' || character.attackType === 'dual_spear'
+            || character.attackType === 'vampire_slash') {
             const swing = resolveAttack(character, p, now, rapid);
             advanceAttackSequence(character, p);
             if (meleeLineHit(swing.originX, swing.originY, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
-                landRaidHitOnBoss(roomId, room, socket.id, p, character, swing.damage, now);
+                landRaidHitOnBoss(roomId, room, socket.id, p, character, swing.damage, now, swing);
             }
         }
     });
@@ -3148,11 +3248,12 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
-        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst'
+            || character.skillType === 'blink_heal') {
             const t = targetPoint(payload);
             if (!t) return;
             const spot = clampToArena(t.x, t.y, ARENA_RADIUS - PLAYER_RADIUS);
-            if (character.skillType === 'burrow_mark') {
+            if (character.skillType === 'burrow_mark' || character.skillType === 'blink_heal') {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('playerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
@@ -3162,6 +3263,8 @@ io.on('connection', (socket) => {
             });
             markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
                 character.element, skillMarkOpts(character), 'bossMarked');
+            healSelfBySkill(character, p, () =>
+                io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp }));
         } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // A spinning kick hits regardless of facing, unlike the basic attack.
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
@@ -3250,6 +3353,24 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('playerHealed', { id, hp: pl.hp });
             }
             shieldTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'great_slash') {
+            io.to(roomId).emit('greatSlash', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                windupMs: character.ultimateWindupMs
+            });
+            p.speedBoostUntil = now + character.ultimateSpeedDurationMs;
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                if (!meleeLineHit(pl.x, pl.y, pl.facing, character.ultimateRange,
+                    character.ultimateWidth, BOSS_RADIUS)) return;
+                rm.bossHp = Math.max(0, rm.bossHp - stat(character, pl, 'ultimateDamage'));
+                io.to(roomId).emit('bossDamaged', { bossHp: rm.bossHp, by: socket.id });
+                if (rm.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                if (character.ultimateHealRatio) {
+                    pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                    io.to(roomId).emit('playerHealed', { id: socket.id, hp: pl.hp });
+                }
+            });
         } else if (character.ultimateType === 'butterfly_mode') {
             const off = toggleButterflyMode(character, p, now);
             io.to(roomId).emit('butterflyMode', { id: socket.id, on: !off });
@@ -3542,7 +3663,8 @@ io.on('connection', (socket) => {
             return;
         }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
-            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
+            && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear'
+            && character.attackType !== 'vampire_slash') return;
 
         const swing = resolveAttack(character, p, now, rapid);
         advanceAttackSequence(character, p);
@@ -3552,7 +3674,7 @@ io.on('connection', (socket) => {
 
         damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
         if (!rooms[roomId]) return;
-        const selfHeal = passiveHitHeal(character, p);
+        const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
         if (selfHeal) {
             p.hp = Math.min(p.maxHp, p.hp + selfHeal);
             p.partyHp[p.active] = p.hp;
@@ -3648,14 +3770,15 @@ io.on('connection', (socket) => {
             p.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, p.y + Math.sin(p.facing) * reach));
             io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
             if (hit.length) damageGuestTargets(roomId, room, hit.slice(0, 1), character.skillDamage, socket.id);
-        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst'
+            || character.skillType === 'blink_heal') {
             const t = targetPoint(payload);
             if (!t) return;
             const spot = {
                 x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, t.x)),
                 y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, t.y))
             };
-            if (character.skillType === 'burrow_mark') {
+            if (character.skillType === 'burrow_mark' || character.skillType === 'blink_heal') {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
@@ -3667,6 +3790,10 @@ io.on('connection', (socket) => {
                 character.skillRadius, character.element, skillMarkOpts(character));
             markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
                 character.element, skillMarkOpts(character), 'guestBossMarked');
+            healSelfBySkill(character, p, () => {
+                p.partyHp[p.active] = p.hp;
+                io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            });
         }
         // speed_boost is client-side only.
     });
@@ -3699,6 +3826,25 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('guestPlayerHealed', { id, hp: pl.hp, partyHp: pl.partyHp });
             }
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            return;
+        }
+        if (character.ultimateType === 'great_slash') {
+            io.to(roomId).emit('guestGreatSlash', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                windupMs: character.ultimateWindupMs
+            });
+            p.speedBoostUntil = now + character.ultimateSpeedDurationMs;
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                const hit = guestLineTargets(rm, pl.x, pl.y, pl.facing,
+                    character.ultimateRange, character.ultimateWidth);
+                if (!hit.length) return;
+                damageGuestTargets(roomId, rm, hit, stat(character, pl, 'ultimateDamage'), socket.id);
+                if (!rooms[roomId] || !character.ultimateHealRatio) return;
+                pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                pl.partyHp[pl.active] = pl.hp;
+                io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: pl.hp, partyHp: pl.partyHp });
+            });
             return;
         }
         if (character.ultimateType === 'butterfly_mode') {

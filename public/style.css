@@ -2669,3 +2669,18 @@ body.mc-on .reward-chip { min-width: 54px; padding: 5px 6px; }
 
 body.mc-on .equip-picker-panel { padding: 12px; }
 body.mc-on .equip-item { padding: 7px 9px; }
+
+/* 장비 칸이 여섯 개까지 늘어나면 .cd-body 밖으로 넘치고, 넘친 부분은
+   밑에 오는 스킬 칸이 덮어버려서 마지막 칸(부츠)이 안 눌렸다. 칸 안에서
+   스크롤되게 해서 밖으로 샐지 않게 한다. */
+.cd-equip-col {
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.gacha-ticket-count {
+    font-size: 15px;
+    color: #f1c40f;
+    margin-left: 10px;
+    vertical-align: middle;
+}

@@ -65,6 +65,7 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
         if (stats.skillType === 'speed_boost') return withEquipSpeed(stats.skillSpeedValue, equipSpeed);
         if (stats.skillType === 'charge_dash') return withEquipSpeed(stats.speed + stats.skillSpeedBonus, equipSpeed);
         if (stats.ultimateType === 'undying_soul') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
+        if (stats.ultimateType === 'great_slash') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
         return stats.speed * stats.ultimateSpeedMultiplier;

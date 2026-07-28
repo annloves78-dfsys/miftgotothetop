@@ -57,6 +57,7 @@ let guestIsTargetingSkill = false; // 때파기 / 물방울 터트리기 aim lik
 let guestPhaseNo = 1;        // 1차 / 2차
 let guestMonsters = {};      // 부하 소환 (2차)
 let guestProjectiles = {};
+let guestGreatSlashes = []; // 크게베기의 벤 자리
 let guestDrops = {}; // id -> thrown 물방울 in flight
 let guestDropSplashes = []; // [{x, y, until}]
 let guestFallZones = [];
@@ -448,7 +449,7 @@ socket.on('guestPhase2Started', (data) => {
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestImpacts = []; guestFallZones = [];
     guestMonsters = {}; guestProjectiles = {};
-    guestDrops = {}; guestDropSplashes = [];
+    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = [];
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     if (me) syncGuestMobileIcons(me.charType);
     updateGuestHpBars();
@@ -542,6 +543,13 @@ socket.on('guestSkillMark', (d) => {
 socket.on('guestUltimateMark', (d) => {
     guestImpacts.push({ ...d, until: performance.now() + 700 });
 });
+socket.on('guestGreatSlash', (d) => {
+    guestGreatSlashes.push({ ...d, until: performance.now() + d.windupMs + 250 });
+    if (guestLocal && d.id === socket.id) {
+        guestLocal.speedBoostUntil = performance.now() + guestStats().ultimateSpeedDurationMs;
+    }
+});
+
 socket.on('guestButterflyMode', ({ id, on }) => {
     if (!guestLocal || id !== socket.id) return;
     guestLocal.butterflyOn = on;
@@ -576,7 +584,7 @@ socket.on('guestResult', ({ result }) => {
     guestDiscardOverlay.classList.add('hidden');
     guestDiscardChoicesEl.classList.remove('locked');
     guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
-    guestDrops = {}; guestDropSplashes = [];
+    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = [];
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
     const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
@@ -721,6 +729,7 @@ function tryGuestUseUltimate() {
     if (stats.ultimateType === 'awakening') guestLocal.awakenUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'awakening_rapid') guestLocal.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') guestLocal.speedBoostUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'great_slash') guestLocal.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
     socket.emit('guestPlayerUltimate');
 }
 
@@ -1063,6 +1072,8 @@ function guestRender(now) {
         guestCtx.fillRect(-8, -2, 16, 4);
         guestCtx.restore();
     });
+    guestGreatSlashes = guestGreatSlashes.filter(g => now < g.until);
+    drawGreatSlashes(guestCtx, guestGreatSlashes, now);
     drawThrownDrops(guestCtx, guestDrops, now);
     guestDropSplashes = guestDropSplashes.filter(s => now < s.until);
     drawDropSplashes(guestCtx, guestDropSplashes, now);

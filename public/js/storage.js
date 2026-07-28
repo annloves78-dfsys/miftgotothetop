@@ -6,6 +6,7 @@ const STORAGE_KEY = 'boss_raid_save';
 const defaultCurrencies = {
     coins: 0,
     diamonds: 0,
+    ticketNormal: 0,  // 일반 뽑기 티켓. 스토리를 깔 때마다 하나씩 들어온다
     material: 0,      // 일반 장비강화 재료
     materialRare: 0,  // 고급 장비강화 재료
     potion: 0,        // 강화포션
@@ -21,10 +22,8 @@ const defaultData = {
     clearedBosses: [],
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
-    // Every cookie starts unlocked EXCEPT the season-limited ones -- those are
-    // what 레전더리 뽑기 is for.
-    unlockedCharacters: Object.keys(SHARED.CHARACTERS)
-        .filter(id => !SHARED.CHARACTERS[id].seasonLimited),
+    // 처음에는 자두맛 하나뿐이다. 나머지는 뽑기로 얻거나 영혼석을 모아야 한다.
+    unlockedCharacters: ['kicker'],
     clearedStoryFloors: [],
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
     currencies: { ...defaultCurrencies },
@@ -52,15 +51,10 @@ function loadGameData() {
         if (saved) {
             const parsed = JSON.parse(saved);
             const data = { ...freshDefaults(), ...parsed };
-            // Saves made before a cookie existed won't have it in their stored
-            // unlockedCharacters array (the merge above just keeps the old
-            // array) — there's no unlock system yet, so patch every cookie in.
-            // ...but never patch in a season-limited cookie: those have to be
-            // pulled from 레전더리 뽑기, so an old save must not be handed one.
-            Object.keys(SHARED.CHARACTERS).forEach(id => {
-                if (SHARED.CHARACTERS[id].seasonLimited) return;
-                if (!data.unlockedCharacters.includes(id)) data.unlockedCharacters.push(id);
-            });
+            // 이제 잠금 해제가 진짜로 있는 시스템이다. 예전처럼 모든 쿠키를
+            // 집어넣지 않고, 기본 쿠키인 자두맛만 보장한다.
+            if (!Array.isArray(data.unlockedCharacters)) data.unlockedCharacters = [];
+            if (!data.unlockedCharacters.includes('kicker')) data.unlockedCharacters.push('kicker');
             // Same story for currencies: a save from before a currency existed
             // would otherwise leave it undefined rather than 0.
             data.currencies = { ...defaultCurrencies, ...(data.currencies || {}) };

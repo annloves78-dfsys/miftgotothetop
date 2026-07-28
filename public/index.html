@@ -79,7 +79,7 @@
                 <span class="gacha-banner-icon">🎲</span>
                 <span class="gacha-banner-text">
                     <span class="gacha-banner-name">일반 뽑기</span>
-                    <span class="gacha-banner-desc">티켓 없이 뽑기 (테스트 중)</span>
+                    <span id="gacha-normal-desc" class="gacha-banner-desc">일반 뽑기 티켓 0장 보유 (1회당 1장)</span>
                 </span>
             </button>
             <button id="gacha-legendary-btn" class="gacha-banner">
@@ -110,7 +110,7 @@
     <!-- Gacha: normal banner pull -->
     <div id="gacha-pull-screen" class="screen hidden">
         <button id="gacha-pull-back-btn" class="back-corner-btn">← 뒤로</button>
-        <h2>일반 뽑기</h2>
+        <h2>일반 뽑기 <span id="gacha-ticket-count" class="gacha-ticket-count">🏷️ 0장</span></h2>
         <div class="gacha-odds-section">
             <div id="gacha-odds-list" class="gacha-odds-list"></div>
         </div>
@@ -337,7 +337,7 @@
                     <div id="char-detail-icon" class="char-icon-circle huge"></div>
                 </div>
                 <div class="char-equip-section cd-equip-col">
-                    <div id="char-detail-awaken-slot" class="equip-slot hidden"><span class="equip-icon">✨</span><span class="equip-label">각성</span><span class="equip-value">-</span></div>
+                    <div id="char-detail-awaken-slot" class="equip-slot clickable hidden" data-slot="awaken"><span class="equip-icon">✨</span><span class="equip-label">각성</span><span class="equip-value">-</span></div>
                     <div class="equip-slot clickable" data-slot="weapon"><span class="equip-icon">🗡</span><span class="equip-label">무기</span><span class="equip-value">-</span></div>
                     <div class="equip-slot clickable" data-slot="helmet"><span class="equip-icon">🪖</span><span class="equip-label">투구</span><span class="equip-value">-</span></div>
                     <div class="equip-slot clickable" data-slot="armor"><span class="equip-icon">🥼</span><span class="equip-label">갑옷</span><span class="equip-value">-</span></div>

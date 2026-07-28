@@ -41,6 +41,13 @@ const equipPickerList = document.getElementById('equip-picker-list');
 const equipPickerClose = document.getElementById('equip-picker-close');
 const equipPickerUnequip = document.getElementById('equip-picker-unequip');
 const charDetailSlotEls = [...document.querySelectorAll('#character-detail-screen .equip-slot[data-slot]')];
+// 각성 칸은 에이션트 이상만 가지므로 슬롯 목록도 등급에 따라 달라진다.
+function equipSlotsFor(charType) {
+    const grade = (SHARED.CHARACTERS[charType] || {}).grade;
+    return SHARED.hasAwakenSlot(grade)
+        ? SHARED.EQUIP_SLOTS.concat(SHARED.AWAKEN_SLOT)
+        : SHARED.EQUIP_SLOTS;
+}
 const towerRewardsEl = document.getElementById('tower-rewards');
 const detailBossRewardsEl = document.getElementById('detail-boss-rewards');
 const resultRewardsEl = document.getElementById('result-rewards');
@@ -70,11 +77,8 @@ const charDetailPower = document.getElementById('char-detail-power');
 
 // Cookie Run Kingdom-style rarity ladder. From 에이션트 up, cookies get an
 // extra "각성" (awakening) equipment slot above their weapon slot.
-const GRADE_ORDER = ['일반', '희귀', '에픽', '레전더리', '에이션트', '비스트', '게스트'];
-function hasAwakenSlot(grade) {
-    const idx = GRADE_ORDER.indexOf(grade);
-    return idx >= GRADE_ORDER.indexOf('에이션트');
-}
+// 등급 사다리와 각성 칸 판정은 서버도 써야 해서 shared.js로 옮겼다.
+// 전역 이름이 같아서 여기서 따로 선언하지 않고 SHARED.로 바로 쓴다.
 // Badge colour per grade; shared by the character detail screen and gacha results.
 const GRADE_CLASSES = {
     '희귀': 'rare',
@@ -300,6 +304,7 @@ const adminCurrencyListEl = document.getElementById('admin-currency-list');
 const CURRENCY_LABELS = {
     coins: '코인',
     diamonds: '다이아',
+    ticketNormal: '일반 뽑기 티켓',
     material: '일반 장비강화 재료',
     materialRare: '고급 장비강화 재료',
     potion: '강화포션',
@@ -312,6 +317,7 @@ const CURRENCY_LABELS = {
 const CURRENCY_ICONS = {
     coins: '🪙',
     diamonds: '💎',
+    ticketNormal: '🏷️',
     material: '🪨',
     materialRare: '💊',
     potion: '🧪',
@@ -323,7 +329,7 @@ const CURRENCY_ICONS = {
 
 // The pills in the lobby's top-right corner. Tickets are left out -- they have
 // their own counters on the event and 레전더리 뽑기 screens.
-const LOBBY_CURRENCIES = ['coins', 'diamonds', 'material', 'materialRare', 'potion', 'potionRare'];
+const LOBBY_CURRENCIES = ['coins', 'diamonds', 'ticketNormal', 'material', 'materialRare', 'potion', 'potionRare'];
 
 // ---- 장비 ----
 // 가방은 계정 공용, 장착은 쿠키별. 한 uid는 동시에 한 쿠키에만 붙는다.
@@ -386,7 +392,7 @@ function unequipSlot(charType, slot) {
 function equipPayload(charType) {
     const worn = equippedOf(charType);
     const out = {};
-    SHARED.EQUIP_SLOT_KEYS.forEach(slot => {
+    equipSlotsFor(charType).map(s => s.key).forEach(slot => {
         const entry = bagEntry(worn[slot]);
         if (entry) out[slot] = entry.itemId;
     });
@@ -405,6 +411,7 @@ function equipStatText(src) {
     if (src.bonusSpeed) parts.push(`이동 속도 ${src.bonusSpeed > 0 ? '+' : ''}${src.bonusSpeed}`);
     if (src.bonusDamageTaken) parts.push(`받는 피해 ${Math.round((1 - src.bonusDamageTaken) * 100)}% 감소`);
     if (src.bonusCooldown) parts.push(`재사용 대기시간 ${Math.round((1 - src.bonusCooldown) * 100)}% 감소`);
+    if (src.bonusRevive) parts.push(`부활 횟수 +${src.bonusRevive}`);
     return parts.join(' · ');
 }
 
@@ -528,6 +535,15 @@ function passiveText(stats) {
     if (stats.attackHealEveryHits) {
         parts.push(`기본 공격을 ${stats.attackHealEveryHits}번 적중시킬 때마다 체력을 ${stats.attackHealSelf}만큼 회복합니다.`);
     }
+    if (stats.passiveHitHealChance) {
+        parts.push(`공격을 적중시킬 때마다 ${Math.round(stats.passiveHitHealChance * 100)}% 확률로`
+            + ` 최대 체력의 ${Math.round(stats.passiveHitHealRatio * 100)}%를 회복합니다.`);
+    }
+    if (stats.awakenOnReviveNo) {
+        parts.push(`쓰러져도 반드시 한 번 부활합니다. 각성 장비를 끼면 부활이 한 번 더 생기고,`
+            + ` ${stats.awakenOnReviveNo}번째 부활에서 각성해 체력 ${stats.awakenedForm.health},`
+            + ` 기본공격 ${stats.awakenedForm.attackDamage}, 궁극기 피해 ${stats.awakenedForm.ultimateDamage}가 됩니다.`);
+    }
     if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
     }
@@ -549,6 +565,12 @@ function describeAbility(stats, kind) {
             return `1타는 좌우로 넓게 휘둘러 (가로 ${a.width}px, 전방 ${a.range}px) ${a.damage}의 피해를 줍니다.`
                 + ` 1타 후 ${sec(stats.comboFollowupCooldown)}초 만에 2타를 이어서 쓸 수 있고, 2타는 전방으로 길게 (${b.range}px) 찔러 ${b.damage}의 피해를 줍니다.`
                 + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
+        if (stats.attackType === 'vampire_slash') {
+            return `보라빛 대검으로 전방 ${stats.attackRange}px를 베어 ${stats.attackDamage}의 피해를 줍니다.`
+                + ` ${stats.attackVampireEvery}번째 공격은 흥혈 베기로 바뀌어 더 넓게(${stats.attackVampireRange}px) 베고,`
+                + ` 적중하면 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 회복합니다.`
+                + ` (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
             return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
@@ -586,6 +608,10 @@ function describeAbility(stats, kind) {
                 return `방패를 들어 막습니다. ${sec(stats.skillDurationMs)}초 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어들며, 공격해도 풀리지 않습니다.${cd}`;
             case 'earthquake':
                 return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.skillThresholdCount}명 이하면 모든 적에게 ${stats.skillDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
+            case 'blink_heal':
+                return `직접 지정한 위치로 순간이동합니다. 내려앉은 자리 반경 ${stats.skillRadius}px 안의 적은`
+                    + ` ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 받고, 이동하면서 자신의 최대 체력`
+                    + ` ${Math.round(stats.skillHealRatio * 100)}%를 회복합니다.${cd}`;
             case 'mark_burst':
                 return `떨어뜨릴 위치를 직접 지정해 물방울을 터뜨립니다. 반경 ${stats.skillRadius}px 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다. 피해는 없습니다.${cd}`;
             case 'burrow_mark':
@@ -631,6 +657,11 @@ function describeAbility(stats, kind) {
                 return `팀 전체에게 ${stats.ultimateShieldAmount}짜리 보호막을 씌우고 체력을 ${stats.ultimateHealAmount}만큼 회복시킵니다.${cd}`;
             case 'team_guard':
                 return `팀원 모두의 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복시키고, ${stats.ultimateShieldAmount}짜리 보호막을 씨워줍니다.${cd}`;
+            case 'great_slash':
+                return `${sec(stats.ultimateWindupMs)}초 예열 뒤 전방 ${stats.ultimateRange}px를 엄청 크게(가로 ${stats.ultimateWidth}px)`
+                    + ` 베어 ${stats.ultimateDamage}의 피해를 줍니다. 적중하면 최대 체력의`
+                    + ` ${Math.round(stats.ultimateHealRatio * 100)}%를 회복하고, ${sec(stats.ultimateSpeedDurationMs)}초 동안`
+                    + ` 이동 속도가 ${stats.ultimateSpeedBonus} 빨라집니다.${cd}`;
             case 'butterfly_mode':
                 return `나비모드가 됩니다. 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다. 지속 시간은 없지만 ${sec(stats.ultimateSelfDamageIntervalMs)}초마다 자신의 체력을 ${stats.ultimateSelfDamage}씩 깎습니다. 궁극기 버튼을 한 번 더 누르면 해제되며, 해제한 순간부터 ${sec(stats.ultimateCooldownMs)}초가 카운트됩니다.`;
             default:
@@ -715,7 +746,10 @@ const SKILL_ICONS = {
     wide_slash: '🪓',
     team_guard: '🫂',
     charge_dash: '🏃',
-    butterfly_mode: '🦋'
+    butterfly_mode: '🦋',
+    vampire_slash: '🗡',
+    blink_heal: '💫',
+    great_slash: '⚔️'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -1003,6 +1037,29 @@ function setupUltimateJoystick(zoneEl, isStory) {
 // Dashed landing circle for a targeted ultimate. Passing the caster's position
 // also draws a guide line from them to the spot, which is what makes the
 // stick-aimed cast readable.
+// 크게베기. 예열 동안은 벤 자리가 흐리게 차오르고, 베는 순간 확 밝아졌다가
+// 짧게 사라진다. 예고가 보여야 피할 틈이 생긴다.
+function drawGreatSlashes(c, slashes, now) {
+    slashes.forEach(g => {
+        const age = now - (g.until - g.windupMs - 250);
+        const charging = age < g.windupMs;
+        const t = charging ? age / g.windupMs : 1 - (age - g.windupMs) / 250;
+        c.save();
+        c.translate(g.x, g.y);
+        c.rotate(g.facing);
+        c.fillStyle = charging
+            ? `rgba(155, 89, 182, ${0.10 + 0.25 * t})`
+            : `rgba(230, 126, 34, ${0.55 * Math.max(0, t)})`;
+        c.fillRect(0, -g.width / 2, g.range, g.width);
+        c.strokeStyle = charging
+            ? `rgba(186, 104, 200, ${0.5 + 0.4 * t})`
+            : `rgba(255, 214, 165, ${Math.max(0, t)})`;
+        c.lineWidth = 3;
+        c.strokeRect(0, -g.width / 2, g.range, g.width);
+        c.restore();
+    });
+}
+
 // 던져진 물방울. Drawn straight from the throw: its velocity never changes,
 // so the client can place it exactly without a per-tick sync from the server.
 function drawThrownDrops(c, drops, now) {
@@ -1153,8 +1210,8 @@ function openCharacterSelect(returnScreen, pickTarget) {
 function charactersByGradeDesc() {
     const order = Object.keys(SHARED.CHARACTERS);
     return Object.entries(SHARED.CHARACTERS).sort(([idA, a], [idB, b]) => {
-        const ga = GRADE_ORDER.indexOf(a.grade);
-        const gb = GRADE_ORDER.indexOf(b.grade);
+        const ga = SHARED.GRADE_ORDER.indexOf(a.grade);
+        const gb = SHARED.GRADE_ORDER.indexOf(b.grade);
         if (ga !== gb) return gb - ga;
         return order.indexOf(idB) - order.indexOf(idA);
     });
@@ -1201,7 +1258,7 @@ function attackDamageText(stats) {
 let equipPickerSlot = null;
 
 function openEquipPicker(slot) {
-    const slotDef = SHARED.EQUIP_SLOTS.find(s => s.key === slot);
+    const slotDef = equipSlotsFor(viewingCharacterId).find(s => s.key === slot);
     if (!slotDef || !viewingCharacterId) return;
     equipPickerSlot = slot;
     equipPickerTitle.textContent = `${slotDef.icon} ${slotDef.name}`;
@@ -1225,7 +1282,7 @@ function renderEquipPicker() {
 
     if (!rows.length) {
         equipPickerList.innerHTML = `<p class="equip-picker-empty">가지고 있는 ${
-            (SHARED.EQUIP_SLOTS.find(s => s.key === equipPickerSlot) || {}).name || ''
+            (equipSlotsFor(viewingCharacterId).find(s => s.key === equipPickerSlot) || {}).name || ''
         } 장비가 없습니다. 스토리나 보스를 깨면 떨어집니다.</p>`;
         return;
     }
@@ -1282,7 +1339,10 @@ charDetailSlotEls.forEach(el => {
 // 장착한 장비를 슬롯에 썬다.
 function renderCharDetailEquipment(charType) {
     const worn = equippedOf(charType);
+    const allowed = equipSlotsFor(charType).map(s => s.key);
     charDetailSlotEls.forEach(el => {
+        if (!allowed.includes(el.dataset.slot)) { el.classList.add('hidden'); return; }
+        if (el.dataset.slot !== 'awaken') el.classList.remove('hidden');
         const entry = bagEntry(worn[el.dataset.slot]);
         const item = entry && SHARED.equipmentFor(entry.itemId);
         const valueEl = el.querySelector('.equip-value');
@@ -1299,7 +1359,6 @@ function openCharacterDetail(id) {
     charDetailName.textContent = stats.name;
     charDetailGrade.textContent = stats.grade || '-';
     charDetailGrade.className = gradeClass(stats.grade);
-    charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
     const bonus = equipBonusOf(id);
@@ -1311,6 +1370,7 @@ function openCharacterDetail(id) {
     charDetailPower.textContent = String(
         (Number(String(attackDamageText(stats)).split(' / ')[0]) || 0) + bonus.attack
         + (stats.health || 0) + bonus.health);
+    charDetailAwakenSlot.classList.toggle('hidden', !SHARED.hasAwakenSlot(stats.grade));
     renderCharDetailEquipment(id);
     charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
@@ -1645,6 +1705,8 @@ const backFromGachaBtn = document.getElementById('back-from-gacha-btn');
 const gachaNormalBtn = document.getElementById('gacha-normal-btn');
 const gachaPullBackBtn = document.getElementById('gacha-pull-back-btn');
 const gachaResultEl = document.getElementById('gacha-result');
+const gachaTicketEl = document.getElementById('gacha-ticket-count');
+const gachaNormalDescEl = document.getElementById('gacha-normal-desc');
 const gachaPull1Btn = document.getElementById('gacha-pull-1-btn');
 const gachaPull10Btn = document.getElementById('gacha-pull-10-btn');
 const gachaSoulListEl = document.getElementById('gacha-soul-list');
@@ -1790,21 +1852,40 @@ gachaSoulListEl.addEventListener('click', (e) => {
     if (btn && !btn.disabled) claimCharacterFromSoulStones(btn.dataset.char);
 });
 
+// 일반 뽑기는 한 번에 티켓 한 장. 모자라면 아예 뽑히지 않는다.
 function doGachaPull(count) {
+    const have = currencyAmount('ticketNormal');
+    if (have < count) {
+        gachaResultEl.innerHTML = `<p class="gacha-result-empty">일반 뽑기 티켓이 모자랍니다.`
+            + ` (${currencyText('ticketNormal')} / ${count}장 필요) 스토리를 깔 때마다 한 장씩 들어옵니다.</p>`;
+        return;
+    }
+    if (!isAdmin()) grantCurrencies({ ticketNormal: -count });
     const results = [];
     for (let i = 0; i < count; i++) results.push(rollGachaOnce());
     applyGachaResults(results);
     renderGachaResults(results);
     renderSoulStones();
+    updateGachaTicketLabel();
+}
+
+// 티켓이 몇 장 남았는지를 뽑기 화면과 배너에 같이 보여준다.
+function updateGachaTicketLabel() {
+    if (gachaTicketEl) gachaTicketEl.textContent = `🏷️ ${currencyText('ticketNormal')}장`;
+    if (gachaNormalDescEl) gachaNormalDescEl.textContent = `일반 뽑기 티켓 ${currencyText('ticketNormal')}장 보유 (1회당 1장)`;
 }
 
 gachaPull1Btn.addEventListener('click', () => doGachaPull(1));
 gachaPull10Btn.addEventListener('click', () => doGachaPull(10));
 
-gachaBtn.addEventListener('click', () => showScreen('gacha'));
+gachaBtn.addEventListener('click', () => {
+    updateGachaTicketLabel();
+    showScreen('gacha');
+});
 backFromGachaBtn.addEventListener('click', () => showScreen('lobby'));
 gachaNormalBtn.addEventListener('click', () => {
     gachaResultEl.innerHTML = '<p class="gacha-result-empty">뽑기 버튼을 눌러보세요.</p>';
+    updateGachaTicketLabel();
     renderGachaOdds();
     renderSoulStones();
     showScreen('gachaPull');
@@ -2062,6 +2143,7 @@ let storyImpactEffects = []; // [{x, y, radius, until}]
 // between the server's 50ms ticks instead of visibly stepping.
 let storyProjectiles = {};
 let storyProjectileSparks = []; // [{x, y, until}] brief flash where an arrow landed
+let storyGreatSlashes = []; // [{x, y, facing, range, width, windupMs, until}] 크게베기
 let storyDrops = {}; // id -> thrown 물방울 in flight
 let storyDropSplashes = []; // [{x, y, until}]
 let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
@@ -2087,6 +2169,7 @@ socket.on('storyFloorStarted', (data) => {
     storyProjectileSparks = [];
     storyDrops = {};
     storyDropSplashes = [];
+    storyGreatSlashes = [];
     storyQuakeUntil = 0;
     updateStoryHpBar();
     // 서버가 공격력·체력·받는 피해를 맡고, 이동 속도와 쿠다운 표시는 클라이언트 몴이다.
@@ -2181,6 +2264,14 @@ socket.on('storyUltimateMark', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 700 });
 });
 // 나비모드 is a toggle, so the server tells us which way it went.
+socket.on('storyGreatSlash', (d) => {
+    storyGreatSlashes.push({ ...d, until: performance.now() + d.windupMs + 250 });
+    if (storyPlayer && d.id === socket.id) {
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        storyPlayer.speedBoostUntil = performance.now() + stats.ultimateSpeedDurationMs;
+    }
+});
+
 socket.on('storyButterflyMode', ({ id, on }) => {
     if (!storyPlayer || id !== socket.id) return;
     storyPlayer.butterflyOn = on;
@@ -2362,6 +2453,7 @@ function tryStoryUseUltimate() {
     if (stats.ultimateType === 'awakening') storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'great_slash') storyPlayer.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
     socket.emit('storyPlayerUltimate');
 }
 
@@ -2760,6 +2852,8 @@ function storyRender(now) {
         storyCtx.restore();
     });
 
+    storyGreatSlashes = storyGreatSlashes.filter(g => now < g.until);
+    drawGreatSlashes(storyCtx, storyGreatSlashes, now);
     drawThrownDrops(storyCtx, storyDrops, now);
     storyDropSplashes = storyDropSplashes.filter(s => now < s.until);
     drawDropSplashes(storyCtx, storyDropSplashes, now);
@@ -3041,6 +3135,7 @@ let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in are
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
 let raidQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
+let raidGreatSlashes = []; // 크게베기의 벤 자리
 let raidDrops = {}; // id -> thrown 물방울 in flight
 let raidDropSplashes = []; // [{x, y, until}]
 
@@ -3076,6 +3171,7 @@ socket.on('raidStarted', (data) => {
     magmaZones = [];
     raidDrops = {};
     raidDropSplashes = [];
+    raidGreatSlashes = [];
     bossMark = null;
     raidQuakeUntil = 0;
     resetDetailActions();
@@ -3117,6 +3213,12 @@ socket.on('skillMark', ({ x, y, radius }) => {
 socket.on('ultimateMark', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 700 });
 });
+socket.on('greatSlash', (d) => {
+    raidGreatSlashes.push({ ...d, until: performance.now() + d.windupMs + 250 });
+    const me = players[socket.id];
+    if (me && d.id === socket.id) me.speedBoostUntil = performance.now() + me.stats.ultimateSpeedDurationMs;
+});
+
 socket.on('butterflyMode', ({ id, on }) => {
     const p = players[id];
     if (!p) return;
@@ -3532,6 +3634,8 @@ function render(now) {
     }
     Object.values(players).forEach(p => p.draw(ctx, now));
 
+    raidGreatSlashes = raidGreatSlashes.filter(g => now < g.until);
+    drawGreatSlashes(ctx, raidGreatSlashes, now);
     drawThrownDrops(ctx, raidDrops, now);
     raidDropSplashes = raidDropSplashes.filter(s => now < s.until);
     drawDropSplashes(ctx, raidDropSplashes, now);

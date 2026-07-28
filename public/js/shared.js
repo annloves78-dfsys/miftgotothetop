@@ -473,6 +473,64 @@ const CHARACTERS = {
         ultimateSelfDamageIntervalMs: 2000,
         ultimateCooldownMs: 30000
     },
+    // 비스트 등급의 빛 속성 딜러. 죽어도 한 번 일어나고, 각성 장비를 끼면
+    // 한 번 더 일어나며 그 두 번째 부활에서 각성해 수치가 통째로 바뀜다.
+    lightningdevil: {
+        name: '번개악마맛 쿠키',
+        shortName: '번개악마',
+        color: '#e67e22',
+        colorLeft: '#e67e22', // 주황
+        colorRight: '#4a1d7a', // 진한 보라
+        grade: '비스트',
+        element: '빛',
+        role: '대미지 딜러',
+        health: 130,
+        speed: 2,
+        // 보라빛 대검: 다른 근접 쿠키와 같은 직선 복도이되, 4번째마다
+        // 흥혈 베기로 바뀌어 적중하면 최대 체력의 일부를 빨아온다.
+        attackType: 'vampire_slash',
+        attackRange: 150,
+        attackWidth: 60,
+        attackDamage: 10,
+        attackCooldown: 500,
+        attackVampireEvery: 4, // 매 4번째 공격이 흥혈 베기
+        attackVampireRange: 175, // 흥혈 베기만 조금 더 크게 벌다
+        attackVampireWidth: 80,
+        attackVampireHealRatio: 0.2,
+        // 패시브 1: 적중할 때마다 확률적으로 큰 회복이 터진다.
+        passiveHitHealChance: 0.2,
+        passiveHitHealRatio: 0.25,
+        // 패시브 2: 쓰러져도 한 번은 반드시 일어난다. 각성 장비(붉은 번개
+        // 모자)를 끼면 한 번이 더 생기고, 그 두 번째 부활이 각성이 된다.
+        passiveReviveCount: 1,
+        passiveReviveHpRatio: 0.5,
+        awakenOnReviveNo: 2,
+        // 순간이동: 때파기와 같은 모양이되 내려앉는 범위가 훨씬 작고,
+        // 대신 이동하면서 자기 체력을 채운다.
+        skillType: 'blink_heal',
+        skillRadius: 90,
+        skillMarkUses: 3,
+        skillMarkMultiplier: 1.3,
+        skillHealRatio: 0.1,
+        skillCooldown: 10000,
+        // 크게베기: 0.3초 예열 뒤에 엄청 큰 반공간을 벤다.
+        ultimateType: 'great_slash',
+        ultimateWindupMs: 300,
+        ultimateRange: 320,
+        ultimateWidth: 200,
+        ultimateDamage: 50,
+        ultimateHealRatio: 0.1,
+        ultimateSpeedBonus: 0.5,
+        ultimateSpeedDurationMs: 10000,
+        ultimateCooldownMs: 30000,
+        // 각성 형태. 여기 적힌 것만 덮어쓴다.
+        awakenedForm: {
+            health: 150,
+            attackDamage: 12,
+            skillHealRatio: 0.2,
+            ultimateDamage: 70
+        }
+    },
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
@@ -1472,8 +1530,8 @@ const GACHA_TABLE = {
 // 양을 받으므로 재료가 모자라면 상위 층을 반복해서 파머는 것이 정상 경로다.
 // key는 스토리는 'story<층>', 보스 레이드는 보스 id 그대로.
 const CLEAR_REWARDS = {
-    story1: { material: 1, potion: 1, coins: 100, diamonds: 10 },
-    story2: { material: 3, potion: 5, coins: 300, diamonds: 10 },
+    story1: { material: 1, potion: 1, coins: 100, diamonds: 10, ticketNormal: 1 },
+    story2: { material: 3, potion: 5, coins: 300, diamonds: 10, ticketNormal: 1 },
     boss1: { material: 10, coins: 1000, potion: 15 },   // 스톤 골렘
     boss2: { materialRare: 10, coins: 1100, potionRare: 10 } // 시하라얼
 };
@@ -1483,7 +1541,7 @@ const CLEAR_DROPS = {
     story1: ['wood_stick', 'cloth_cap'],
     story2: ['leather_vest', 'runner_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
-    boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots']
+    boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
 };
 function clearDropsFor(key) { return CLEAR_DROPS[key] || null; }
 
@@ -1493,6 +1551,15 @@ function clearRewardFor(key) { return CLEAR_REWARDS[key] || null; }
 // ==================== 장비 ====================
 // 가방은 계정 공용이고 장착은 쿠키별이다. 한 장비를 다른 쿠키에 끼우면
 // 원래 끼고 있던 쿠키에서는 자동으로 벗겨진다 (한 개를 둘이 나눠 끼지 못함).
+// 각성 슬롯은 등급이 에이션트 이상인 쿠키만 가진다. 무기/투구와 달리
+// 모두가 가지는 칸이 아니라 EQUIP_SLOTS와 따로 둔다.
+const GRADE_ORDER = ['일반', '희귀', '에픽', '레전더리', '에이션트', '비스트', '게스트'];
+const AWAKEN_SLOT = { key: 'awaken', name: '각성', icon: '✨' };
+function hasAwakenSlot(grade) {
+    const idx = GRADE_ORDER.indexOf(grade);
+    return idx >= 0 && idx >= GRADE_ORDER.indexOf('에이션트');
+}
+
 const EQUIP_SLOTS = [
     { key: 'weapon', name: '무기', icon: '🗡' },
     { key: 'helmet', name: '투구', icon: '🪖' },
@@ -1509,11 +1576,19 @@ const EQUIP_SLOT_KEYS = EQUIP_SLOTS.map(s => s.key);
 //   bonusSpeed        이동 속도 +N
 //   bonusDamageTaken  받는 피해 배수 (0.95 = 5% 감소)
 //   bonusCooldown     스킬/궁극기 재사용 대기시간 배수 (0.9 = 10% 감소)
-const EQUIP_STAT_KEYS = ['bonusAttack', 'bonusHealth', 'bonusSpeed', 'bonusDamageTaken', 'bonusCooldown'];
+//   bonusRevive       부활 횟수 +N (각성 장비에만 붙는다)
+const EQUIP_STAT_KEYS = ['bonusAttack', 'bonusHealth', 'bonusSpeed', 'bonusDamageTaken', 'bonusCooldown', 'bonusRevive'];
 
 // ownerChar가 있는 장비는 그 쿠키가 낌 때만 ownerBonus가 붙는다.
 // 다른 쿠키가 끼면 기본 능력치만 남고 전용 효과는 아예 발동하지 않는다.
 const EQUIPMENT = {
+    // ---- 각성 장비 ----
+    // 부활이 한 번 늘어난다. 번개악마맛은 그 두 번째 부활에서 각성하기 때문에
+    // 이 모자가 각성의 전제 조건이다.
+    red_lightning_cap: {
+        name: '붉은 번개 모자', slot: 'awaken', grade: '비스트', icon: '⚡',
+        bonusRevive: 1
+    },
     // ---- 스토리 1층 ----
     wood_stick: {
         name: '낡은 나무 막대', slot: 'weapon', grade: '일반', icon: '🪓',
@@ -1572,6 +1647,20 @@ const EQUIPMENT = {
     }
 };
 
+// 각성한 쿠키는 awakenedForm에 적힌 항목만 그 값으로 바뀜다. 적혀 있지
+// 않은 항목은 원래 수치를 그대로 쓴다.
+function formStat(character, awakened, key) {
+    if (awakened && character.awakenedForm && character.awakenedForm[key] != null) {
+        return character.awakenedForm[key];
+    }
+    return character[key];
+}
+
+// 부활 횟수는 패시브 + 각성 장비.
+function reviveCountFor(character, equipRevive) {
+    return (character.passiveReviveCount || 0) + (equipRevive || 0);
+}
+
 function equipmentFor(id) {
     return (id && Object.prototype.hasOwnProperty.call(EQUIPMENT, id)) ? EQUIPMENT[id] : null;
 }
@@ -1585,9 +1674,14 @@ function ownerBonusActive(item, charType) {
 // 슬롯이 안 맞는 id나 없는 id는 그냥 무시한다 -- 서버가 클라이언트가 보낸
 // 것을 검증하는 자리이기도 하다.
 function equipBonusFor(equipped, charType) {
-    const out = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldown: 1 };
+    const out = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldown: 1, revive: 0 };
     if (!equipped) return out;
-    for (const slot of EQUIP_SLOT_KEYS) {
+    // 각성 칸은 등급이 되는 쿠키에게만 있다. 등급이 모자라면 가방에
+    // 모자가 있어도 아예 슬롯 자체가 없으므로 읽지 않는다.
+    const slots = hasAwakenSlot((CHARACTERS[charType] || {}).grade)
+        ? EQUIP_SLOT_KEYS.concat(AWAKEN_SLOT.key)
+        : EQUIP_SLOT_KEYS;
+    for (const slot of slots) {
         const item = equipmentFor(equipped[slot]);
         if (!item || item.slot !== slot) continue;
         const parts = ownerBonusActive(item, charType) ? [item, item.ownerBonus] : [item];
@@ -1597,6 +1691,7 @@ function equipBonusFor(equipped, charType) {
             if (p.bonusSpeed) out.speed += p.bonusSpeed;
             if (p.bonusDamageTaken) out.damageTaken *= p.bonusDamageTaken;
             if (p.bonusCooldown) out.cooldown *= p.bonusCooldown;
+            if (p.bonusRevive) out.revive += p.bonusRevive;
         }
     }
     // 속도가 0 이하가 되면 움직일 수 없으므로 바닥을 둔다.
@@ -1634,7 +1729,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
