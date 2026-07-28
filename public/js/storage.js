@@ -24,8 +24,9 @@ const defaultData = {
     clearedStoryFloors: [],
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
     currencies: { ...defaultCurrencies },
-    // 이벤트 진행도: { [track]: count } and the mission ids already cashed in.
-    eventProgress: {},
+    // 이벤트: the stage ids already cleared, plus 'both' once the 전체 클리어
+    // bonus has been taken.
+    eventCleared: [],
     eventClaimed: [],
     admin: false // 관리자 전용; see admin_gate.js
 };
@@ -55,7 +56,7 @@ function loadGameData() {
             // Same story for currencies: a save from before a currency existed
             // would otherwise leave it undefined rather than 0.
             data.currencies = { ...defaultCurrencies, ...(data.currencies || {}) };
-            data.eventProgress = data.eventProgress || {};
+            data.eventCleared = data.eventCleared || [];
             data.eventClaimed = data.eventClaimed || [];
             return data;
         }

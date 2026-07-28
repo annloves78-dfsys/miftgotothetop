@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS,
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor } = require('./public/js/shared.js');
 
@@ -657,7 +657,7 @@ function publicProjectiles(room) {
 // can block its line of fire, and which events go on the wire -- so those four
 // things are handed in and the behaviour itself is written once.
 function storyMonsterCtx(roomId, room) {
-    const floorDef = STORY_FLOOR_DEFS[room.floor];
+    const floorDef = floorDefFor(room.floor);
     return {
         roomId, room, floorDef,
         damagePlayer: (playerId, dmg, mark) => applyDamageToStoryPlayer(roomId, playerId, dmg, mark),
@@ -2166,7 +2166,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinStoryFloor', ({ floor, charType }) => {
-        const floorDef = STORY_FLOOR_DEFS[floor];
+        const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
         const character = CHARACTERS[charType] || CHARACTERS.kicker;
 
@@ -2210,7 +2210,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'story') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const floorDef = STORY_FLOOR_DEFS[room.floor];
+        const floorDef = floorDefFor(room.floor);
         // Bounds are checked along the bridge's own axis, so a floor running
         // upward (axis: 'y') is clamped the same way a leftward one is.
         let along = alongOf(floorDef, x, y);
@@ -2259,7 +2259,7 @@ io.on('connection', (socket) => {
         const swing = resolveAttack(character, p, now, rapid);
         const baseAttackDamage = swing.damage;
         advanceAttackSequence(character, p);
-        const floorDef = STORY_FLOOR_DEFS[room.floor];
+        const floorDef = floorDefFor(room.floor);
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
             if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
@@ -2464,7 +2464,7 @@ io.on('connection', (socket) => {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
-            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const floorDef = floorDefFor(room.floor);
             const t = clampToLane(floorDef, targetX, targetY);
             const tx = t.x, ty = t.y;
 
@@ -2486,7 +2486,7 @@ io.on('connection', (socket) => {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
-            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const floorDef = floorDefFor(room.floor);
             const t = clampToLane(floorDef, targetX, targetY);
             const tx = t.x, ty = t.y;
 
@@ -2523,7 +2523,7 @@ io.on('connection', (socket) => {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
-            const floorDef = STORY_FLOOR_DEFS[room.floor];
+            const floorDef = floorDefFor(room.floor);
             const t = clampToLane(floorDef, targetX, targetY);
             const tx = t.x, ty = t.y;
 

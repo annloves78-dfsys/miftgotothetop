@@ -1062,39 +1062,42 @@ const eventContentEl = document.getElementById('event-content');
 const EV = SHARED.EVENT;
 let eventCategory = 'water';
 
-function eventMissions(side) {
-    return (EV.missions[side] && EV.missions[side].missions) || [];
+function eventStages(side) {
+    return (EV.stages[side] && EV.stages[side].stages) || [];
 }
-function allEventMissions() {
-    return Object.keys(EV.missions).flatMap(eventMissions);
+function allEventStages() {
+    return Object.keys(EV.stages).flatMap(eventStages);
 }
-// A mission either counts something up, or asks a question about the save.
-const EVENT_CONDITIONS = {
-    // "에픽 캐릭터 가지고 있기"
-    ownEpic: () => Object.keys(SHARED.CHARACTERS)
-        .some(id => SHARED.CHARACTERS[id].grade === '에픽' && isCharacterUnlocked(id))
-};
-
-function eventProgressOf(mission) {
-    if (mission.condition) {
-        const met = EVENT_CONDITIONS[mission.condition] && EVENT_CONDITIONS[mission.condition]();
-        return met ? mission.goal : 0;
-    }
-    return Math.min(mission.goal, gameData.eventProgress[mission.track] || 0);
+function eventStageById(id) {
+    return allEventStages().find(s => s.id === id) || null;
 }
-function eventMissionDone(mission) {
-    return eventProgressOf(mission) >= mission.goal;
+function eventStageCleared(id) {
+    return gameData.eventCleared.includes(id);
 }
-function eventMissionClaimed(id) {
-    return gameData.eventClaimed.includes(id);
+// Stages open one at a time, like tower floors: you have to clear the one
+// before it on the same side.
+function eventStageUnlocked(side, index) {
+    if (isAdmin()) return true; // 관리자 전용: every stage is open
+    if (index === 0) return true;
+    const prev = eventStages(side)[index - 1];
+    return !!prev && eventStageCleared(prev.id);
 }
-// The both-sides bonus is a mission too, just one you can't see until it's live.
 function bothSidesCleared() {
-    return allEventMissions().every(eventMissionDone);
+    return allEventStages().every(s => eventStageCleared(s.id));
 }
+function eventBonusClaimed() {
+    return gameData.eventClaimed.includes('both');
+}
+// What the lobby badge counts: stages you could go clear right now, plus the
+// 전체 클리어 bonus once it is sitting there waiting to be taken.
 function claimableCount() {
-    let n = allEventMissions().filter(m => eventMissionDone(m) && !eventMissionClaimed(m.id)).length;
-    if (bothSidesCleared() && !eventMissionClaimed('both')) n += 1;
+    let n = 0;
+    Object.keys(EV.stages).forEach(side => {
+        eventStages(side).forEach((s, i) => {
+            if (!eventStageCleared(s.id) && eventStageUnlocked(side, i)) n += 1;
+        });
+    });
+    if (bothSidesCleared() && !eventBonusClaimed()) n += 1;
     return n;
 }
 
@@ -1114,52 +1117,55 @@ function grantTickets(n) {
     saveGameData(gameData);
 }
 
-function claimEventMission(id) {
-    if (eventMissionClaimed(id)) return;
-    if (id === 'both') {
-        if (!bothSidesCleared()) return;
-        gameData.eventClaimed.push('both');
-        grantTickets(EV.bothClearedReward);
-    } else {
-        const mission = allEventMissions().find(m => m.id === id);
-        if (!mission || !eventMissionDone(mission)) return;
-        gameData.eventClaimed.push(id);
-        grantTickets(mission.reward);
-    }
+// The 전체 클리어 bonus is the only thing here you press a button to take --
+// stage tickets are paid the moment the stage is first cleared.
+function claimEventBonus() {
+    if (eventBonusClaimed() || !bothSidesCleared()) return;
+    gameData.eventClaimed.push('both');
+    grantTickets(EV.bothClearedReward);
     saveGameData(gameData);
     renderEventScreen();
     updateEventBadge();
 }
 
-function claimCellHtml(id, reward, ready, claimed) {
-    if (claimed) return '<span class="ev-claimed">획득 완료</span>';
-    return `<button class="ev-claim-btn" data-mission="${id}"${ready ? '' : ' disabled'}>획득</button>`;
+// Paid on the FIRST clear of a stage; replaying it is for practice only.
+function rewardEventStage(id) {
+    const stage = eventStageById(id);
+    if (!stage || eventStageCleared(id)) return 0;
+    gameData.eventCleared.push(id);
+    grantTickets(stage.reward);
+    saveGameData(gameData);
+    updateEventBadge();
+    return stage.reward;
 }
 
-// One mission card, read top to bottom: badge, name, goal, progress, reward, claim.
-function missionCardHtml(m, index, sideIcon) {
-    const have = eventProgressOf(m);
-    const done = eventMissionDone(m);
-    const claimed = eventMissionClaimed(m.id);
-    const pct = (have / m.goal) * 100;
-    return `<div class="ev-mission${claimed ? ' claimed' : ''}">`
-        + `<div class="ev-mission-badge"><span class="ev-badge-icon">${sideIcon}</span>`
+// One stage card, read top to bottom: badge, name, 권장 전투력, reward, 입장.
+function stageCardHtml(stage, index, side, sideKey) {
+    const cleared = eventStageCleared(stage.id);
+    const unlocked = eventStageUnlocked(sideKey, index);
+    const btn = !unlocked
+        ? `<button class="ev-claim-btn" disabled>🔒 잠김</button>`
+        : `<button class="ev-claim-btn" data-stage="${stage.id}">${cleared ? '재도전' : '입장'}</button>`;
+    return `<div class="ev-mission ev-stage${cleared ? ' claimed' : ''}${unlocked ? '' : ' locked'}">`
+        + `<div class="ev-mission-badge"><span class="ev-badge-icon">${side.icon}</span>`
         + `<span class="ev-badge-step">${index + 1}</span></div>`
-        + `<div class="ev-mission-name">${m.name}</div>`
-        + `<div class="ev-mission-text">${m.text}</div>`
-        + `<div class="ev-mission-bar"><div class="ev-mission-fill" style="width:${pct}%"></div>`
-        + `<span class="ev-mission-count">${have}/${m.goal}</span></div>`
+        + `<div class="ev-mission-name">${stage.name}</div>`
+        + `<div class="ev-mission-text">권장 전투력 ${stage.def.recommendedPower}<br>`
+        + `${cleared ? '<span class="ev-stage-done">✔ 클리어</span>' : (unlocked ? '앞 스테이지 클리어 완료' : '앞 스테이지를 먼저 클리어')}</div>`
         + `<div class="ev-reward-chip"><span class="ev-reward-icon">🎫</span>`
-        + `<span class="ev-reward-amount">${m.reward}</span></div>`
-        + claimCellHtml(m.id, m.reward, done, claimed)
+        + `<span class="ev-reward-amount">${stage.reward}</span></div>`
+        + btn
         + `</div>`;
 }
 
-// The bar across the top: overall completion and the 전체 클리어 reward.
+// The bar across the top: how many stages are done and the 전체 클리어 reward.
 function eventHeaderHtml() {
-    const all = allEventMissions();
-    const done = all.filter(eventMissionDone).length;
-    const claimed = eventMissionClaimed('both');
+    const all = allEventStages();
+    const done = all.filter(s => eventStageCleared(s.id)).length;
+    const claimed = eventBonusClaimed();
+    const claimCell = claimed
+        ? '<span class="ev-claimed">획득 완료</span>'
+        : `<button class="ev-claim-btn" data-bonus="1"${bothSidesCleared() ? '' : ' disabled'}>획득</button>`;
     return `<div class="ev-total">`
         + `<div class="ev-total-badge">🏆</div>`
         + `<div class="ev-total-main">`
@@ -1169,7 +1175,7 @@ function eventHeaderHtml() {
         + `</div>`
         + `<div class="ev-reward-chip"><span class="ev-reward-icon">🎫</span>`
         + `<span class="ev-reward-amount">${EV.bothClearedReward}</span></div>`
-        + claimCellHtml('both', EV.bothClearedReward, bothSidesCleared(), claimed)
+        + claimCell
         + `</div>`;
 }
 
@@ -1178,37 +1184,38 @@ function renderEventScreen() {
     eventTicketAmountEl.textContent = isAdmin() ? '∞' : String(ticketAmount());
 
     eventCategoriesEl.innerHTML = '';
-    Object.entries(EV.missions).forEach(([key, side]) => {
-        const cleared = side.missions.filter(eventMissionDone).length;
+    Object.entries(EV.stages).forEach(([key, side]) => {
+        const cleared = side.stages.filter(s => eventStageCleared(s.id)).length;
         const btn = document.createElement('button');
         btn.className = 'shop-cat-btn ev-cat' + (key === eventCategory ? ' selected' : '');
         btn.dataset.eventCat = key;
         btn.innerHTML = `<span class="ev-cat-icon">${side.icon}</span>`
             + `<span class="ev-cat-body"><span class="ev-cat-label">${side.label}</span>`
-            + `<span class="ev-cat-count">${cleared} / ${side.missions.length}</span></span>`;
+            + `<span class="ev-cat-count">${cleared} / ${side.stages.length}</span></span>`;
         btn.addEventListener('click', () => { eventCategory = key; renderEventScreen(); });
         eventCategoriesEl.appendChild(btn);
     });
 
-    const side = EV.missions[eventCategory] || EV.missions.water;
+    const sideKey = EV.stages[eventCategory] ? eventCategory : 'water';
+    const side = EV.stages[sideKey];
     eventContentEl.innerHTML = eventHeaderHtml()
         + `<div class="ev-mission-grid">`
-        + side.missions.map((m, i) => missionCardHtml(m, i, side.icon)).join('')
+        + side.stages.map((s, i) => stageCardHtml(s, i, side, sideKey)).join('')
         + `</div>`;
 }
 
 eventContentEl.addEventListener('click', (e) => {
     const btn = e.target.closest ? e.target.closest('.ev-claim-btn') : null;
     if (!btn || btn.disabled) return;
-    claimEventMission(btn.dataset.mission);
+    if (btn.dataset.bonus) claimEventBonus();
+    else if (btn.dataset.stage) enterEventStage(btn.dataset.stage);
 });
 
-// Called wherever the game finishes something a mission counts. Bumping a track
-// the event doesn't use is harmless, so callers don't have to know the missions.
-function recordEventProgress(track, amount = 1) {
-    gameData.eventProgress[track] = (gameData.eventProgress[track] || 0) + amount;
-    saveGameData(gameData);
-    updateEventBadge();
+// Event stages run on the story engine -- the stage id IS the "floor" the room
+// is opened with (see floorDefFor in shared.js).
+function enterEventStage(id) {
+    if (!SHARED.EVENT_STAGE_DEFS[id]) return;
+    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker' });
 }
 
 eventBtn.addEventListener('click', () => {
@@ -1368,7 +1375,6 @@ gachaSoulListEl.addEventListener('click', (e) => {
 function doGachaPull(count) {
     const results = [];
     for (let i = 0; i < count; i++) results.push(rollGachaOnce());
-    recordEventProgress('gachaPull', count); // 뽑기 N번 하기
     applyGachaResults(results);
     renderGachaResults(results);
     renderSoulStones();
@@ -1422,6 +1428,9 @@ storySoloBtn.addEventListener('click', () => {
 // ---- Story tower: floor select ----
 const STORY_TOTAL_FLOORS = 10; // floors 4+ are placeholders until they get real content (see STORY_FLOOR_DEFS)
 let selectedStoryFloor = 1;
+// What the story engine was actually entered with -- a floor number from the
+// tower, or an event stage id. Decides where 나가기 sends you back to.
+let activeStoryFloor = null;
 
 function isFloorUnlocked(floor) {
     if (isAdmin()) return true; // 관리자 전용: every difficulty is open
@@ -1467,7 +1476,6 @@ backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
 towerPlayBtn.addEventListener('click', () => {
     if (towerPlayBtn.disabled) return;
     if (!SHARED.STORY_FLOOR_DEFS[selectedStoryFloor]) return; // no content for this floor yet
-    recordEventProgress(`storyEnter${selectedStoryFloor}`); // "스토리 N층 가기"
     socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType: gameData.selectedCharacter || 'kicker' });
 });
 
@@ -1506,6 +1514,7 @@ let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (vo
 let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 
 socket.on('storyFloorStarted', (data) => {
+    activeStoryFloor = data.floor; // a floor number, or an event stage id
     storyFloorDef = data.floorDef;
     storyMonsters = data.monsters;
     const p = data.player;
@@ -1615,35 +1624,49 @@ socket.on('storyReviveBlast', () => {
 
 socket.on('storyFloorResult', ({ result, floor }) => {
     stopStoryLoop();
-    selectedStoryFloor = floor;
+    const stage = eventStageById(floor);
+    if (!stage) selectedStoryFloor = floor;
     if (result === 'win') {
-        resultTitle.textContent = '층 클리어!';
+        resultTitle.textContent = stage ? '스테이지 클리어!' : '층 클리어!';
         resultTitle.style.color = '#2ecc71';
-        resultDesc.textContent = `${floor}층을 클리어했습니다.`;
-        const clearedBefore = gameData.clearedStoryFloors.includes(floor);
-        if (!clearedBefore) {
-            gameData.clearedStoryFloors.push(floor);
-            saveGameData(gameData);
+        if (stage) {
+            const earned = rewardEventStage(stage.id); // 0 on a replay
+            resultDesc.textContent = earned
+                ? `${stage.name} 클리어! 시즌 뽑기 티켓 ${earned}장을 받았습니다.`
+                : `${stage.name}을(를) 다시 클리어했습니다. (티켓은 첫 클리어에만)`;
+        } else {
+            resultDesc.textContent = `${floor}층을 클리어했습니다.`;
+            if (!gameData.clearedStoryFloors.includes(floor)) {
+                gameData.clearedStoryFloors.push(floor);
+                saveGameData(gameData);
+            }
         }
-        // 물 미션: the per-floor ones only count the first clear of that floor,
-        // but "아무 층이나 5회" counts every run.
-        if (!clearedBefore) recordEventProgress(`story${floor}`);
-        recordEventProgress('storyAny');
     } else {
         resultTitle.textContent = '패배...';
         resultTitle.style.color = '#e74c3c';
         resultDesc.textContent = '몬스터에게 쓰러졌습니다.';
     }
-    resultReturnScreen = 'storyTower';
-    resultBackBtn.textContent = '올라가기';
+    if (stage) {
+        renderEventScreen();
+        resultReturnScreen = 'event';
+        resultBackBtn.textContent = '이벤트로';
+    } else {
+        resultReturnScreen = 'storyTower';
+        resultBackBtn.textContent = '올라가기';
+    }
     showScreen('result');
 });
 
 storyLeaveBtn.addEventListener('click', () => {
     stopStoryLoop();
     socket.emit('leaveRaid');
-    renderTower();
-    showScreen('storyTower');
+    if (eventStageById(activeStoryFloor)) {
+        renderEventScreen();
+        showScreen('event');
+    } else {
+        renderTower();
+        showScreen('storyTower');
+    }
 });
 
 function updateStoryHpBar() {
@@ -2522,7 +2545,6 @@ socket.on('raidResult', ({ result }) => {
         resultDesc.textContent = '보스를 물리쳤습니다.';
         if (currentRoomState) {
             recordClear(currentRoomState.bossId, performance.now() - raidStartAt);
-            recordEventProgress(currentRoomState.bossId); // 불 미션: boss1 / boss2
         }
     } else {
         resultTitle.textContent = '전멸...';
@@ -2534,7 +2556,10 @@ socket.on('raidResult', ({ result }) => {
 });
 
 resultBackBtn.addEventListener('click', () => {
-    if (resultReturnScreen === 'storyTower') {
+    if (resultReturnScreen === 'event') {
+        renderEventScreen();
+        showScreen('event');
+    } else if (resultReturnScreen === 'storyTower') {
         renderTower();
         showScreen('storyTower');
     } else {

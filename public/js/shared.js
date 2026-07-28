@@ -483,8 +483,11 @@ const GUEST_PARTY_SIZE = 4;
 // selected one's content on the right. Running a different event later is a
 // data change here rather than new screens.
 //
-// 물과 불의 싸움: two mission tracks, one per side. Clearing everything on both
-// sides pays a bonus. Tickets bought here are the only way into 시즌 뽑기.
+// 물과 불의 싸움: two sides, each a short ladder of its own playable stages.
+// A stage is an ordinary story-mode bridge (same shape as STORY_FLOOR_DEFS), so
+// it runs on the story engine untouched -- see floorDefFor. First clear pays its
+// tickets; clearing both ladders pays a bonus. Tickets are the only way into
+// 시즌 뽑기.
 const EVENT_TICKET_KEY = 'seasonTicket';
 
 const EVENT = {
@@ -492,36 +495,217 @@ const EVENT = {
     name: '물과 불의 싸움',
     icon: '🌊',
     period: '상시',
-    // Each mission: { id, name, text, goal, reward } plus ONE source of progress:
-    //   track     -- a counter the game bumps (see recordEventProgress in main.js)
-    //   condition -- a live check of the save instead of a counter
-    missions: {
+    // Each stage: { id, name, reward, def }. `id` doubles as the floor key the
+    // story engine is entered with, so it must not collide with a floor number.
+    // A stage unlocks when the one before it on the same side is cleared.
+    stages: {
         water: {
             label: '💧 물',
             icon: '💧',
-            missions: [
-                { id: 'w1', name: '한 번 더!', text: '뽑기 10번 하기', goal: 10, track: 'gachaPull', reward: 2 },
-                { id: 'w2', name: '두 번째 층', text: '스토리 2층 클리어', goal: 1, track: 'story2', reward: 1 },
-                { id: 'w3', name: '에픽의 주인', text: '에픽 캐릭터 가지고 있기', goal: 1, condition: 'ownEpic', reward: 1 },
-                { id: 'w4', name: '1차 돌파', text: '게스트 레이드 1차 레이드 클리어', goal: 1, track: 'guestPhase1', reward: 2 }
+            stages: [
+                {
+                    id: 'ev_w1', name: '얕은 여울', reward: 1,
+                    def: {
+                        levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
+                        recommendedPower: 400,
+                        gates: [{ entrance: -800, exit: -1300, room: 0 }],
+                        monsters: [
+                            { type: 'water_drop', x: -950, y: -35, room: 0 },
+                            { type: 'water_drop', x: -950, y: 35, room: 0 },
+                            { type: 'water_drop', x: -1100, y: 0, room: 0 },
+                            { type: 'water_drop', x: -1220, y: -35, room: 0 }
+                        ],
+                        star: { x: -1420, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_w2', name: '거센 물살', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 1800, laneHalfWidth: 70,
+                        recommendedPower: 500,
+                        gates: [{ entrance: -800, exit: -1600, room: 0 }],
+                        monsters: [
+                            { type: 'water_drop', x: -950, y: -40, room: 0 },
+                            { type: 'water_drop', x: -950, y: 0, room: 0 },
+                            { type: 'water_drop', x: -950, y: 40, room: 0 },
+                            { type: 'water_drop', x: -1150, y: -25, room: 0 },
+                            { type: 'water_drop', x: -1150, y: 25, room: 0 },
+                            { type: 'water_cannon', x: -1400, y: -40, room: 0 },
+                            { type: 'water_cannon', x: -1400, y: 40, room: 0 }
+                        ],
+                        star: { x: -1720, y: 0 }
+                    }
+                },
+                {
+                    // Two rooms: a melee wall, then a nest of 물대포 that has to be
+                    // closed on while their shots are in the air.
+                    id: 'ev_w3', name: '물대포 진지', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
+                        recommendedPower: 600,
+                        gates: [
+                            { entrance: -700, exit: -1150, room: 0 },
+                            { entrance: -1150, exit: -2150, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'water_drop', x: -850, y: -35, room: 0 },
+                            { type: 'water_drop', x: -850, y: 35, room: 0 },
+                            { type: 'water_drop', x: -1000, y: -35, room: 0 },
+                            { type: 'water_drop', x: -1000, y: 35, room: 0 },
+                            { type: 'water_cannon', x: -1500, y: -50, room: 1 },
+                            { type: 'water_cannon', x: -1500, y: 0, room: 1 },
+                            { type: 'water_cannon', x: -1500, y: 50, room: 1 },
+                            { type: 'water_cannon', x: -1750, y: -30, room: 1 },
+                            { type: 'water_cannon', x: -1750, y: 30, room: 1 },
+                            { type: 'water_cannon', x: -1950, y: 0, room: 1 }
+                        ],
+                        star: { x: -2250, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_w4', name: '깊은 물', reward: 3,
+                    def: {
+                        levelType: 'bridge', levelLength: 2600, laneHalfWidth: 70,
+                        recommendedPower: 700,
+                        gates: [
+                            { entrance: -700, exit: -1350, room: 0 },
+                            { entrance: -1350, exit: -2400, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'water_drop', x: -850, y: -45, room: 0 },
+                            { type: 'water_drop', x: -850, y: 0, room: 0 },
+                            { type: 'water_drop', x: -850, y: 45, room: 0 },
+                            { type: 'water_drop', x: -1000, y: -25, room: 0 },
+                            { type: 'water_drop', x: -1000, y: 25, room: 0 },
+                            { type: 'water_cannon', x: -1200, y: -40, room: 0 },
+                            { type: 'water_cannon', x: -1200, y: 40, room: 0 },
+                            { type: 'water_drop', x: -1600, y: -45, room: 1 },
+                            { type: 'water_drop', x: -1600, y: 0, room: 1 },
+                            { type: 'water_drop', x: -1600, y: 45, room: 1 },
+                            { type: 'water_cannon', x: -1850, y: -50, room: 1 },
+                            { type: 'water_cannon', x: -1850, y: 0, room: 1 },
+                            { type: 'water_cannon', x: -1850, y: 50, room: 1 },
+                            { type: 'water_cannon', x: -2100, y: -30, room: 1 },
+                            { type: 'water_cannon', x: -2100, y: 30, room: 1 }
+                        ],
+                        star: { x: -2520, y: 0 }
+                    }
+                }
             ]
         },
         fire: {
             label: '🔥 불',
             icon: '🔥',
-            missions: [
-                { id: 'f1', name: '더 뽑아!', text: '뽑기 15번 하기', goal: 15, track: 'gachaPull', reward: 3 },
-                { id: 'f2', name: '첫 발걸음', text: '스토리 1층 가기', goal: 1, track: 'storyEnter1', reward: 1 },
-                { id: 'f3', name: '검투사 사냥', text: '시하라얼 한 번 이상 잡기', goal: 1, track: 'boss2', reward: 2 },
-                { id: 'f4', name: '2차 돌파', text: '게스트 레이드 2차 클리어', goal: 1, track: 'guestWin', reward: 3 }
+            stages: [
+                {
+                    id: 'ev_f1', name: '불씨', reward: 1,
+                    def: {
+                        levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
+                        recommendedPower: 450,
+                        gates: [{ entrance: -800, exit: -1300, room: 0 }],
+                        monsters: [
+                            { type: 'flame_slice', x: -950, y: -35, room: 0 },
+                            { type: 'flame_slice', x: -950, y: 35, room: 0 },
+                            { type: 'flame_slice', x: -1100, y: 0, room: 0 },
+                            { type: 'flame_slice', x: -1220, y: -35, room: 0 },
+                            { type: 'flame_slice', x: -1220, y: 35, room: 0 }
+                        ],
+                        star: { x: -1420, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_f2', name: '타오르는 다리', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 1900, laneHalfWidth: 70,
+                        recommendedPower: 550,
+                        gates: [{ entrance: -800, exit: -1700, room: 0 }],
+                        monsters: [
+                            { type: 'flame_slice', x: -950, y: -45, room: 0 },
+                            { type: 'flame_slice', x: -950, y: 0, room: 0 },
+                            { type: 'flame_slice', x: -950, y: 45, room: 0 },
+                            { type: 'flame_slice', x: -1200, y: -30, room: 0 },
+                            { type: 'flame_slice', x: -1200, y: 30, room: 0 },
+                            { type: 'flame_slice', x: -1450, y: -45, room: 0 },
+                            { type: 'flame_slice', x: -1450, y: 45, room: 0 }
+                        ],
+                        star: { x: -1820, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_f3', name: '화염 포탑', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
+                        recommendedPower: 650,
+                        gates: [
+                            { entrance: -700, exit: -1150, room: 0 },
+                            { entrance: -1150, exit: -2150, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'flame_slice', x: -850, y: -35, room: 0 },
+                            { type: 'flame_slice', x: -850, y: 35, room: 0 },
+                            { type: 'flame_slice', x: -1000, y: -35, room: 0 },
+                            { type: 'flame_slice', x: -1000, y: 35, room: 0 },
+                            { type: 'flame_turret', x: -1500, y: -50, room: 1 },
+                            { type: 'flame_turret', x: -1700, y: 50, room: 1 },
+                            { type: 'flame_turret', x: -1900, y: 0, room: 1 }
+                        ],
+                        star: { x: -2250, y: 0 }
+                    }
+                },
+                {
+                    // Runs UPWARD like story floor 3, so the last stage of the
+                    // event doesn't read as one more copy of the same bridge.
+                    id: 'ev_f4', name: '불의 심장', reward: 3,
+                    def: {
+                        levelType: 'bridge', axis: 'y', levelLength: 2600, laneHalfWidth: 70,
+                        recommendedPower: 750,
+                        gates: [
+                            { entrance: -700, exit: -1400, room: 0 },
+                            { entrance: -1400, exit: -2400, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'flame_slice', x: -45, y: -850, room: 0 },
+                            { type: 'flame_slice', x: 0, y: -850, room: 0 },
+                            { type: 'flame_slice', x: 45, y: -850, room: 0 },
+                            { type: 'flame_slice', x: -30, y: -1000, room: 0 },
+                            { type: 'flame_slice', x: 30, y: -1000, room: 0 },
+                            { type: 'flame_slice', x: -50, y: -1150, room: 0 },
+                            { type: 'flame_slice', x: 0, y: -1150, room: 0 },
+                            { type: 'flame_slice', x: 50, y: -1150, room: 0 },
+                            { type: 'flame_turret', x: -50, y: -1700, room: 1 },
+                            { type: 'flame_turret', x: 50, y: -1800, room: 1 },
+                            { type: 'flame_slice', x: 0, y: -1900, room: 1 },
+                            { type: 'flame_slice', x: -40, y: -2000, room: 1 },
+                            { type: 'flame_turret', x: 40, y: -2050, room: 1 },
+                            { type: 'flame_turret', x: 0, y: -2200, room: 1 }
+                        ],
+                        star: { x: 0, y: -2520 }
+                    }
+                }
             ]
         }
     },
-    bothClearedReward: 5 // 전체 클리어 보너스 티켓
+    bothClearedReward: 4 // 전체 클리어 보너스 티켓 (8 + 8 + 4 = 20장)
 };
 
 // Kept as a list so the 이벤트 칸 can show several at once later.
 const EVENTS = [EVENT];
+
+// Every event stage, flattened, and the stage-id -> level-def map the story
+// engine looks levels up in.
+function allEventStages() {
+    return Object.values(EVENT.stages).reduce((acc, side) => acc.concat(side.stages), []);
+}
+const EVENT_STAGE_DEFS = allEventStages().reduce((acc, s) => { acc[s.id] = s.def; return acc; }, {});
+
+// The one place that turns whatever a story room was entered with -- a floor
+// number or an event stage id -- into its level layout.
+function floorDefFor(floor) {
+    return STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor] || null;
+}
+function isEventStage(floor) {
+    return Object.prototype.hasOwnProperty.call(EVENT_STAGE_DEFS, floor);
+}
 
 const GUEST_BOSS_DEFS = {
     guest1: {
@@ -740,6 +924,65 @@ const MONSTERS = {
         attackDamage: 2,
         attackCooldown: 3000,
         telegraphMs: 500
+    },
+    // ---- 이벤트(물과 불의 싸움) 전용 ----
+    // 물 side: a sturdy front line backed by archers. Slower and safer to fight
+    // than the 불 side, which trades health for speed and damage.
+    water_drop: {
+        name: '물방울 병사',
+        color: '#3498db',
+        health: 60,
+        speed: 3,
+        aggroRange: 500,
+        preferredDistance: 80,
+        attackRange: 110,
+        attackDamage: 5,
+        attackCooldown: 2600,
+        telegraphMs: 400
+    },
+    water_cannon: {
+        name: '물대포',
+        color: '#1f6fb2',
+        health: 30,
+        speed: 2,
+        aggroRange: 520,
+        preferredDistance: 230,
+        projectileSpeed: 400,
+        attackRange: 300,
+        attackDamage: 3,
+        attackCooldown: 2800,
+        telegraphMs: 500
+    },
+    // 불 side: rushes you down, hits harder, dies faster.
+    flame_slice: {
+        name: '불꽃 조각',
+        color: '#e74c3c',
+        health: 40,
+        speed: 4,
+        aggroRange: 560,
+        preferredDistance: 70,
+        attackRange: 110,
+        attackDamage: 7,
+        attackCooldown: 2400,
+        telegraphMs: 350
+    },
+    flame_turret: {
+        name: '화염 포탑',
+        color: '#c0392b',
+        health: 90,
+        speed: 0,
+        aggroRange: 620,
+        preferredDistance: 0,
+        attackRange: 620,
+        attackCooldown: 3000,
+        telegraphMs: 400,
+        laser: true,
+        laserDurationMs: 500,
+        laserDamage: 2,
+        laserTickMs: 100,
+        laserRange: 620,
+        laserWidth: 26,
+        laserTrackSpeed: 80
     }
 };
 
@@ -885,7 +1128,7 @@ const GACHA_TABLE = {
 const SOUL_STONES_PER_CHARACTER = 30;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, EVENT_STAGE_DEFS, allEventStages, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, EVENT_STAGE_DEFS, allEventStages, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

@@ -183,7 +183,12 @@ html, body {
     border: 2px solid #34495e;
 }
 
+/* A cleared stage stays fully readable -- it can still be replayed -- so it
+   gets a green edge rather than the dimming a spent mission used to get. */
 .ev-mission.claimed { opacity: 0.55; }
+.ev-stage.claimed { opacity: 1; border-color: #27ae60; }
+.ev-stage.locked { opacity: 0.5; }
+.ev-stage-done { color: #2ecc71; font-weight: bold; }
 
 .ev-mission-badge {
     width: 62px;

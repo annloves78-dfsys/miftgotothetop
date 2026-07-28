@@ -519,8 +519,6 @@ socket.on('guestResult', ({ result }) => {
     guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
-    if (result === 'phase1' || result === 'win') recordEventProgress('guestPhase1');
-    if (result === 'win') recordEventProgress('guestWin');
     const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
     resultTitle.textContent = titles[result] || '나감';
     const descs = {
