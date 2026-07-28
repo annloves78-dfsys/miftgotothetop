@@ -164,7 +164,19 @@ html, body {
 .ev-total-main { flex: 1; text-align: left; }
 .ev-total-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
 
-/* Mission cards, side by side; each one reads top to bottom. */
+/* The shop centers its content as a single flex item, which squeezes the stage
+   grid into a column and spills it out of the panel. The event list wants the
+   opposite: fill the panel from the top-left and scroll if it runs long. */
+#event-content {
+    display: block;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    text-align: left;
+}
+
+/* Stage cards, side by side; each one reads top to bottom. */
 .ev-mission-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
