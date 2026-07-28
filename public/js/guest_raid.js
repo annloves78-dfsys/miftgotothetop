@@ -508,6 +508,10 @@ socket.on('guestSkillMark', (d) => {
 socket.on('guestUltimateMark', (d) => {
     guestImpacts.push({ ...d, until: performance.now() + 700 });
 });
+socket.on('guestButterflyMode', ({ id, on }) => {
+    if (guestLocal && id === socket.id) guestLocal.butterflyOn = on;
+});
+
 socket.on('guestPlayerTeleported', ({ id, x, y }) => {
     if (guestLocal && id === socket.id) { guestLocal.x = x; guestLocal.y = y; }
 });
@@ -637,7 +641,7 @@ function tryGuestUseSkill() {
     guestLocal.lastSkillClientTime = now;
     guestLocal.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
-    if (stats.skillType === 'speed_boost') guestLocal.speedBoostUntil = now + stats.skillSpeedDurationMs;
+    if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') guestLocal.speedBoostUntil = now + stats.skillSpeedDurationMs;
     if (stats.skillType === 'earthquake') guestQuakeUntil = now + QUAKE_DURATION_MS;
     socket.emit('guestPlayerSkill');
 }
@@ -733,7 +737,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;

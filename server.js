@@ -147,6 +147,8 @@ function damageReductionMultiplier(character, p, now, sourceElementMark) {
     if (character.passiveResistElement && sourceElementMark && sourceElementMark.element === character.passiveResistElement) {
         return character.passiveResistMultiplier;
     }
+    // Always-on passive (블랙 슈거맛): no window to time, it just applies.
+    if (character.passiveDamageMultiplier) return character.passiveDamageMultiplier;
     return 1;
 }
 
@@ -161,7 +163,53 @@ function effectiveAttackDamage(character, p, now) {
         && character.ultimateAttackDamage != null) {
         return character.ultimateAttackDamage;
     }
+    // 나비모드 has no end time -- it is on until it is switched off.
+    if (butterflyActive(character, p)) return character.ultimateAttackDamage;
     return character.attackDamage;
+}
+
+// 나비모드 (sugarfly): a toggle rather than a timer, so it is checked by a
+// flag instead of an "until" stamp.
+function butterflyActive(character, p) {
+    return character.ultimateType === 'butterfly_mode' && !!p.butterflyOn;
+}
+
+// Runs the self-damage clock for anyone currently in 나비모드. `hurt` applies
+// one tick of damage the way that room kind does it.
+function tickButterflyMode(room, now, hurt) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive || !p.butterflyOn) continue;
+        const character = CHARACTERS[p.charType];
+        if (!character || character.ultimateType !== 'butterfly_mode') continue;
+        if (now - (p.butterflyLastTickAt || 0) < character.ultimateSelfDamageIntervalMs) continue;
+        p.butterflyLastTickAt = now;
+        hurt(id, p, character.ultimateSelfDamage);
+    }
+}
+
+// Pressing the ultimate again turns 나비모드 off; the 30s cooldown only starts
+// from that moment, which is why lastUltimateTime is stamped here and not on
+// activation. Returns true if this press was a switch-off.
+function toggleButterflyMode(character, p, now) {
+    if (character.ultimateType !== 'butterfly_mode') return false;
+    if (p.butterflyOn) {
+        p.butterflyOn = false;
+        p.lastUltimateTime = now; // cooldown counts from release
+        return true;
+    }
+    p.butterflyOn = true;
+    p.butterflyLastTickAt = now;
+    p.lastUltimateTime = Infinity; // can't be recast while it is running
+    return false;
+}
+
+// 슈가 플라이맛's passive: every Nth landed hit heals the cookie itself.
+// Returns how much to heal (0 most swings).
+function passiveHitHeal(character, p) {
+    if (!character.attackHealEveryHits) return 0;
+    p.hitStreak = (p.hitStreak || 0) + 1;
+    if (p.hitStreak % character.attackHealEveryHits !== 0) return 0;
+    return character.attackHealSelf || 0;
 }
 
 // Is the awakening_rapid ultimate (orangelemon) currently active for this player?
@@ -352,6 +400,9 @@ function tickRoom(roomId) {
     if (!room || room.state !== 'fighting') return;
     const bossDef = BOSS_DEFS[room.bossId];
     const now = Date.now();
+
+    tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToPlayer(roomId, id, dmg));
+    if (!rooms[roomId]) return;
 
     // Team-wide buffs (e.g. the healer's ultimate) tick independently of the
     // boss's own attack state machine below.
@@ -1045,6 +1096,10 @@ function tickStoryRoom(roomId) {
     const room = rooms[roomId];
     if (!room || room.state !== 'fighting') return;
     const now = Date.now();
+
+    // 나비모드 burns its owner while it is on; it can kill them.
+    tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToStoryPlayer(roomId, id, dmg));
+    if (!rooms[roomId]) return;
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
@@ -1929,6 +1984,9 @@ function tickGuestRoom(roomId) {
     const def = guestDefFor(room);
     const now = Date.now();
 
+    tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToGuestPlayer(roomId, id, dmg));
+    if (!rooms[roomId]) return;
+
     // Team buffs (the healer's ultimate) tick independently of the boss.
     if (room.activeBuffs.length) {
         room.activeBuffs = room.activeBuffs.filter(b => now < b.endAt);
@@ -2384,6 +2442,13 @@ io.on('connection', (socket) => {
             }
         }
 
+        if (anyHit) {
+            const selfHeal = passiveHitHeal(character, p);
+            if (selfHeal) {
+                p.hp = Math.min(p.maxHp, p.hp + selfHeal);
+                io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            }
+        }
         if (anyHit && character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
             const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
@@ -2500,6 +2565,61 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('monsterDefeated', { id: victimId });
             }
         }
+        // 블랙 슈거맛 적 끌어들이기: drag whatever can walk over to us; anything
+        // rooted (a turret) can't be dragged, so it eats skillDamage instead.
+        else if (character.skillType === 'pull_in') {
+            io.to(roomId).emit('storyPullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + MONSTER_RADIUS) continue;
+                const def = MONSTERS[m.type];
+                if (def && def.speed > 0) {
+                    const ang = Math.atan2(m.y - p.y, m.x - p.x);
+                    const at = MONSTER_RADIUS + PLAYER_RADIUS + 6;
+                    const spot = clampToLane(floorDefFor(room.floor),
+                        p.x + Math.cos(ang) * at, p.y + Math.sin(ang) * at);
+                    m.x = spot.x; m.y = spot.y;
+                } else {
+                    m.hp = Math.max(0, m.hp - character.skillDamage);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+            }
+        }
+        // 용과맛 크게베기: a broad forward arc; landing it heals the team once.
+        else if (character.skillType === 'wide_slash') {
+            let hitAny = false;
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                hitAny = true;
+                m.hp = Math.max(0, m.hp - character.skillDamage);
+                if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+            }
+            if (hitAny) healStoryPlayer(room, roomId, character.skillHealOnHit);
+        }
+        // 슈가 플라이맛 돌진: rush forward, hit the first thing in the lane,
+        // and end up standing next to it.
+        else if (character.skillType === 'charge_dash') {
+            let best = null, bestId = null, bestDist = Infinity;
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                const d = Math.hypot(m.x - p.x, m.y - p.y);
+                if (d < bestDist) { bestDist = d; best = m; bestId = mid; }
+            }
+            const reach = best ? Math.max(0, bestDist - (MONSTER_RADIUS + PLAYER_RADIUS)) : character.skillRange;
+            const land = clampToLane(floorDefFor(room.floor),
+                p.x + Math.cos(p.facing) * reach, p.y + Math.sin(p.facing) * reach);
+            p.x = land.x; p.y = land.y;
+            io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            if (best) {
+                best.hp = Math.max(0, best.hp - character.skillDamage);
+                if (best.hp <= 0) { best.alive = false; io.to(roomId).emit('monsterDefeated', { id: bestId }); }
+                else io.to(roomId).emit('monsterDamaged', { id: bestId, hp: best.hp });
+            }
+        }
         // 마그마맛 때파기 / 물방울맛 물방울 터트리기: both pick a spot and
         // mark whatever is standing near it. 때파기 also puts the cookie there.
         else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
@@ -2530,8 +2650,11 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.ultimateType) return;
         const now = Date.now();
-        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
-        p.lastUltimateTime = now;
+        // 나비모드 is a toggle: while it is running the press means "switch
+        // off", so the cooldown gate must not swallow it.
+        if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
+            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
 
@@ -2565,6 +2688,20 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        } else if (character.ultimateType === 'guard_surge') {
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('storyPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
+            healStoryPlayer(room, roomId, character.ultimateHealAmount);
+        } else if (character.ultimateType === 'team_guard') {
+            for (const [id, pl] of Object.entries(room.players)) {
+                if (!pl.alive) continue;
+                pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                io.to(roomId).emit('storyPlayerHealed', { id, hp: pl.hp });
+            }
+            shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'butterfly_mode') {
+            const off = toggleButterflyMode(character, p, now);
+            io.to(roomId).emit('storyButterflyMode', { id: socket.id, on: !off });
         } else if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
             // 마그마 쏟기 / 폭포: both drop a marked circle on a chosen spot;
             // only 마그마 쏟기 also deals damage.
@@ -2716,6 +2853,11 @@ io.on('connection', (socket) => {
                 // Some cookies heal the team whenever the attack actually
                 // connects (only a chance to proc, if attackHealChance is
                 // set). The ultimate can temporarily raise the heal amount.
+                const selfHeal = passiveHitHeal(character, p);
+                if (selfHeal) {
+                    p.hp = Math.min(p.maxHp, p.hp + selfHeal);
+                    io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+                }
                 if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
                     const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
                     healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
@@ -2746,7 +2888,11 @@ io.on('connection', (socket) => {
 
                 if (markChanged) {
                     io.to(roomId).emit('bossMarked', room.bossElementMark
-                        ? { element: room.bossElementMark.element, charges: room.bossElementMark.charges }
+                        ? {
+                            element: room.bossElementMark.element,
+                            charges: room.bossElementMark.charges,
+                            until: room.bossElementMark.until
+                        }
                         : { element: null, charges: 0 });
                 }
             }
@@ -2767,7 +2913,37 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+        if (character.skillType === 'pull_in') {
+            // The raid boss is bolted to the middle of the arena, so there is
+            // nothing to drag -- it takes the "can't be pulled" damage instead.
+            io.to(roomId).emit('pullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
+            if (Math.hypot(p.x, p.y) - BOSS_RADIUS <= character.skillRange) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
+        } else if (character.skillType === 'wide_slash') {
+            if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                healTeam(room, roomId, character.skillHealOnHit);
+            }
+        } else if (character.skillType === 'charge_dash') {
+            const hit = meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS);
+            const reach = hit
+                ? Math.max(0, Math.hypot(p.x, p.y) - (BOSS_RADIUS + PLAYER_RADIUS))
+                : character.skillRange;
+            const land = clampToArena(p.x + Math.cos(p.facing) * reach,
+                p.y + Math.sin(p.facing) * reach, ARENA_RADIUS - PLAYER_RADIUS);
+            p.x = land.x; p.y = land.y;
+            io.to(roomId).emit('playerTeleported', { id: socket.id, x: p.x, y: p.y });
+            if (hit) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
+        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
             const t = targetPoint(payload);
             if (!t) return;
             const spot = clampToArena(t.x, t.y, ARENA_RADIUS - PLAYER_RADIUS);
@@ -2843,8 +3019,11 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.ultimateType) return;
         const now = Date.now();
-        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
-        p.lastUltimateTime = now;
+        // 나비모드 is a toggle: while it is running the press means "switch
+        // off", so the cooldown gate must not swallow it.
+        if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
+            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
 
@@ -2856,6 +3035,21 @@ io.on('connection', (socket) => {
                 endAt: now + character.ultimateDurationMs,
                 lastTickAt: now
             });
+        } else if (character.ultimateType === 'guard_surge') {
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('playerShielded', { id: socket.id, shieldHp: p.shieldHp });
+            p.hp = Math.min(p.maxHp, p.hp + character.ultimateHealAmount);
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+        } else if (character.ultimateType === 'team_guard') {
+            for (const [id, pl] of Object.entries(room.players)) {
+                if (!pl.alive) continue;
+                pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                io.to(roomId).emit('playerHealed', { id, hp: pl.hp });
+            }
+            shieldTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'butterfly_mode') {
+            const off = toggleButterflyMode(character, p, now);
+            io.to(roomId).emit('butterflyMode', { id: socket.id, on: !off });
         } else if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
             const t0 = targetPoint(payload);
             if (!t0) return;
@@ -3150,6 +3344,12 @@ io.on('connection', (socket) => {
 
         damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
         if (!rooms[roomId]) return;
+        const selfHeal = passiveHitHeal(character, p);
+        if (selfHeal) {
+            p.hp = Math.min(p.maxHp, p.hp + selfHeal);
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+        }
         if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
             const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
@@ -3206,6 +3406,40 @@ io.on('connection', (socket) => {
                     damageGuestMonster(roomId, room, mid, character.skillDamage);
                 }
             }
+        } else if (character.skillType === 'pull_in') {
+            io.to(roomId).emit('guestPullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + MONSTER_RADIUS) continue;
+                const def = MONSTERS[m.type];
+                if (def && def.speed > 0) {
+                    const ang = Math.atan2(m.y - p.y, m.x - p.x);
+                    const at = MONSTER_RADIUS + PLAYER_RADIUS + 6;
+                    m.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, p.x + Math.cos(ang) * at));
+                    m.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, p.y + Math.sin(ang) * at));
+                } else {
+                    damageGuestMonster(roomId, room, mid, character.skillDamage);
+                    if (!rooms[roomId]) return;
+                }
+            }
+            // The guest boss holds the middle and never moves, so it takes the
+            // damage rather than being dragged.
+            if (Math.hypot(p.x - room.bossX, p.y - room.bossY) - BOSS_RADIUS <= character.skillRange) {
+                damageGuestBoss(roomId, room, character.skillDamage, socket.id);
+            }
+        } else if (character.skillType === 'wide_slash') {
+            const hit = guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth);
+            if (hit.length) {
+                damageGuestTargets(roomId, room, hit, character.skillDamage, socket.id);
+                if (rooms[roomId]) healGuestTeam(room, roomId, character.skillHealOnHit);
+            }
+        } else if (character.skillType === 'charge_dash') {
+            const hit = guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth);
+            const reach = hit.length ? character.skillRange * 0.6 : character.skillRange;
+            p.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, p.x + Math.cos(p.facing) * reach));
+            p.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, p.y + Math.sin(p.facing) * reach));
+            io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            if (hit.length) damageGuestTargets(roomId, room, hit.slice(0, 1), character.skillDamage, socket.id);
         } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
             const t = targetPoint(payload);
             if (!t) return;
@@ -3238,10 +3472,35 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.ultimateType) return;
         const now = Date.now();
-        if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
-        p.lastUltimateTime = now;
+        // 나비모드: while it is on, the press means "switch off".
+        if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
+            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+        if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
         socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
 
+        if (character.ultimateType === 'guard_surge') {
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('guestPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
+            p.hp = Math.min(p.maxHp, p.hp + character.ultimateHealAmount);
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            return;
+        }
+        if (character.ultimateType === 'team_guard') {
+            for (const [id, pl] of Object.entries(room.players)) {
+                if (!pl.alive) continue;
+                pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatio));
+                pl.partyHp[pl.active] = pl.hp;
+                io.to(roomId).emit('guestPlayerHealed', { id, hp: pl.hp, partyHp: pl.partyHp });
+            }
+            shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            return;
+        }
+        if (character.ultimateType === 'butterfly_mode') {
+            const off = toggleButterflyMode(character, p, now);
+            io.to(roomId).emit('guestButterflyMode', { id: socket.id, on: !off });
+            return;
+        }
         if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
             const t0 = targetPoint(payload);
             if (!t0) return;

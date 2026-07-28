@@ -398,6 +398,15 @@ function passiveText(stats) {
     if (stats.passiveResistElement) {
         parts.push(`${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`);
     }
+    if (stats.passiveDamageMultiplier) {
+        parts.push(`받는 피해가 항상 ${Math.round(stats.passiveDamageMultiplier * 100)}%로 줄어듭니다.`);
+    }
+    if (stats.attackHealEveryHits) {
+        parts.push(`기본 공격을 ${stats.attackHealEveryHits}번 적중시킬 때마다 체력을 ${stats.attackHealSelf}만큼 회복합니다.`);
+    }
+    if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
+        parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
+    }
     return parts.length ? parts.join(' ') : '없음';
 }
 
@@ -417,8 +426,12 @@ function describeAbility(stats, kind) {
                 + ` 1타 후 ${sec(stats.comboFollowupCooldown)}초 만에 2타를 이어서 쓸 수 있고, 2타는 전방으로 길게 (${b.range}px) 찔러 ${b.damage}의 피해를 줍니다.`
                 + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
+        if (stats.attackType === 'throw_projectile') {
+            return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
+                + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
-        if (stats.attackHealOnUse) {
+        if (stats.attackHealOnUse && stats.attackHealChance !== undefined) {
             text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
         }
         if (stats.attackKnockback) {
@@ -449,6 +462,16 @@ function describeAbility(stats, kind) {
                 return `방패를 들어 막습니다. ${sec(stats.skillDurationMs)}초 동안 받는 피해가 ${Math.round(stats.skillDamageMultiplier * 100)}%로 줄어들며, 공격해도 풀리지 않습니다.${cd}`;
             case 'earthquake':
                 return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.skillThresholdCount}명 이하면 모든 적에게 ${stats.skillDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
+            case 'mark_burst':
+                return `떨어뜨릴 위치를 직접 지정해 물방울을 터뜨립니다. 반경 ${stats.skillRadius}px 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다. 피해는 없습니다.${cd}`;
+            case 'burrow_mark':
+                return `땅을 파고 직접 지정한 위치로 이동합니다. 나온 자리 반경 ${stats.skillRadius}px 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다. 피해는 없습니다.${cd}`;
+            case 'pull_in':
+                return `반경 ${stats.skillRange}px 안의 적을 끌어당깁니다. 움직일 수 있는 적은 자신 옆으로 끌려오고, 제자리에 고정된 적은 끌려오지 않는 대신 ${stats.skillDamage}의 피해를 입습니다.${cd}`;
+            case 'wide_slash':
+                return `전방을 크게 벤니다. 가로 ${stats.skillWidth}px, 전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 주고, 한 명이라도 맞히면 팀 전체를 ${stats.skillHealOnHit}만큼 회복시킵니다.${cd}`;
+            case 'charge_dash':
+                return `전방으로 빠르게 돌진해 최대 ${stats.skillRange}px까지 달려가 부딪칩니다. 맞은 적에게 ${stats.skillDamage}의 피해를 주고, 그 뒤 ${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라집니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -476,6 +499,16 @@ function describeAbility(stats, kind) {
                 return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복합니다. ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다.${cd}`;
             case 'lightning_strike':
                 return `원하는 지점에 번개를 내려 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다. 맞은 적은 ${sec(stats.ultimateStunMs)}초 동안 기절하고, ${sec(stats.ultimateDebuffDurationMs)}초 동안 주는 피해가 ${stats.ultimateDamageDebuffMultiplier}배로 줄어듭니다.${cd}`;
+            case 'mark_flood':
+                return `직접 지정한 위치에 폭포를 떨어뜨립니다. 반경 ${stats.ultimateRadius}px 안의 적은 ${sec(stats.ultimateMarkDurationMs)}초 동안 횟수 제한 없이 ${stats.element} 속성 표식을 받고, 그 동안 같은 속성의 공격은 피해가 ${stats.ultimateMarkMultiplier}배가 됩니다.${cd}`;
+            case 'magma_pour':
+                return `직접 지정한 위치에 마그마를 쏟습니다. 반경 ${stats.ultimateRadius}px 안의 적에게 ${stats.ultimateDamage}의 피해를 주고, ${sec(stats.ultimateMarkDurationMs)}초 동안 횟수 제한 없이 ${stats.element} 속성 표식을 남깁니다.${cd}`;
+            case 'guard_surge':
+                return `자신에게 ${stats.ultimateShieldAmount}짜리 보호막을 씨우고 체력을 ${stats.ultimateHealAmount}만큼 회복합니다.${cd}`;
+            case 'team_guard':
+                return `팀원 모두의 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복시키고, ${stats.ultimateShieldAmount}짜리 보호막을 씨워줍니다.${cd}`;
+            case 'butterfly_mode':
+                return `나비모드가 됩니다. 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다. 지속 시간은 없지만 ${sec(stats.ultimateSelfDamageIntervalMs)}초마다 자신의 체력을 ${stats.ultimateSelfDamage}씩 깎습니다. 궁극기 버튼을 한 번 더 누르면 해제되며, 해제한 순간부터 ${sec(stats.ultimateCooldownMs)}초가 카운트됩니다.`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -483,7 +516,20 @@ function describeAbility(stats, kind) {
     return '';
 }
 
-const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑' };
+// 속성표식 라벨. 청사과맛처럼 횟수가 있는 표식은 "x3"으로, 폭포나
+// 마그마 쏟기처럼 시간짜리 표식은 남은 초로 보여준다.
+function elementMarkLabel(mark) {
+    if (!mark || !mark.element) return '';
+    const icon = ELEMENT_ICONS[mark.element] || '✨';
+    if (mark.until) {
+        const left = (mark.until - Date.now()) / 1000;
+        return left > 0 ? `${icon} ${left.toFixed(1)}초` : ''; // lapsed: stop drawing it
+    }
+    if (!mark.charges) return '';
+    return `${icon} x${mark.charges}`;
+}
+
+const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑', '물': '💧', '빛': '✨' };
 
 // Split-color icon background so similarly-colored cookies stay tellable
 // apart at a glance -- a hard 50/50 split, not a blend.
@@ -1487,9 +1533,11 @@ function rollLegendaryOnce(banner) {
         if (r < w) { outcome = key; break; }
         r -= w;
     }
-    if (outcome === 'featured') return { kind: 'char', grade: '레전더리', charType: banner.charType };
+    if (outcome === 'featured') return { kind: 'char', grade: '레전더리', charType: banner.charType, featured: true };
+    // 영혼석 is the ordinary one: any cookie, one stone -- same as 일반 뽑기.
     if (outcome === SHARED.GACHA_SOUL_STONE_KEY) {
-        return { kind: 'soul', charType: banner.charType, amount: SHARED.LEGENDARY_BANNER_SOUL_STONES };
+        const ids = Object.keys(SHARED.CHARACTERS);
+        return { kind: 'soul', charType: ids[Math.floor(Math.random() * ids.length)] };
     }
     const pool = charactersOfGrade(outcome).filter(id => id !== banner.charType);
     if (pool.length === 0) return { kind: 'emptyGrade', grade: outcome };
@@ -1802,6 +1850,11 @@ socket.on('storySkillMark', ({ x, y, radius }) => {
 socket.on('storyUltimateMark', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 700 });
 });
+// 나비모드 is a toggle, so the server tells us which way it went.
+socket.on('storyButterflyMode', ({ id, on }) => {
+    if (storyPlayer && id === socket.id) storyPlayer.butterflyOn = on;
+});
+
 socket.on('storyPlayerTeleported', ({ id, x, y }) => {
     if (!storyPlayer || id !== socket.id) return;
     storyPlayer.x = x;
@@ -1949,7 +2002,7 @@ function tryStoryUseSkill() {
     storyPlayer.lastSkillClientTime = now;
     storyPlayer.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
-    if (stats.skillType === 'speed_boost') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
+    if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
     socket.emit('storyPlayerSkill');
 }
 
@@ -2077,7 +2130,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -2318,7 +2371,7 @@ function storyRender(now) {
             storyCtx.fillStyle = '#fff';
             storyCtx.shadowColor = 'rgba(0,0,0,0.8)';
             storyCtx.shadowBlur = 3;
-            storyCtx.fillText(`${ELEMENT_ICONS[m.elementMark.element] || '✨'} x${m.elementMark.charges}`, m.x, m.y - SHARED.MONSTER_RADIUS - 14 - barH);
+            storyCtx.fillText(elementMarkLabel(m.elementMark), m.x, m.y - SHARED.MONSTER_RADIUS - 14 - barH);
             storyCtx.restore();
         }
     });
@@ -2688,6 +2741,11 @@ socket.on('skillMark', ({ x, y, radius }) => {
 socket.on('ultimateMark', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 700 });
 });
+socket.on('butterflyMode', ({ id, on }) => {
+    const p = players[id];
+    if (p) p.butterflyOn = on;
+});
+
 socket.on('playerTeleported', ({ id, x, y }) => {
     const p = players[id];
     if (!p) return;
@@ -2713,8 +2771,8 @@ socket.on('reviveBlast', ({ id }) => {
     impactEffects.push({ x: p.x, y: p.y, radius: 220, until: performance.now() + 500, bolt: true });
 });
 
-socket.on('bossMarked', ({ element, charges }) => {
-    bossMark = element ? { element, charges } : null;
+socket.on('bossMarked', ({ element, charges, until }) => {
+    bossMark = element ? { element, charges, until } : null;
 });
 
 socket.on('playerHealed', ({ id, hp }) => {
@@ -3084,7 +3142,7 @@ function render(now) {
         ctx.fillStyle = '#fff';
         ctx.shadowColor = 'rgba(0,0,0,0.8)';
         ctx.shadowBlur = 4;
-        ctx.fillText(`${ELEMENT_ICONS[bossMark.element] || '✨'} x${bossMark.charges}`, 0, 0);
+        ctx.fillText(elementMarkLabel(bossMark), 0, 0);
         ctx.restore();
     }
     Object.values(players).forEach(p => p.draw(ctx, now));

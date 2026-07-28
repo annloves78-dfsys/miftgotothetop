@@ -50,9 +50,14 @@ function attackSideShift(stats, side) {
 // main.js), so a new speed buff only has to be added in one place.
 // speed_boost (a skill) REPLACES the base speed with an absolute value;
 // undying_soul (an ultimate) ADDS to it; awakening multiplies it.
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil) {
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn) {
+    // 나비모드 runs until it is switched off, so it wins over any timer.
+    if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
+        return stats.speed + stats.ultimateSpeedBonus;
+    }
     if (now < (speedBoostUntil || 0)) {
         if (stats.skillType === 'speed_boost') return stats.skillSpeedValue;
+        if (stats.skillType === 'charge_dash') return stats.speed + stats.skillSpeedBonus;
         if (stats.ultimateType === 'undying_soul') return stats.speed + stats.ultimateSpeedBonus;
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
@@ -91,6 +96,7 @@ class Player {
         this.spearSide = 0; // dual_spear: 0 = right hand fires next, 1 = left
         this.attackEffectSide = 0; // the side the running attack animation is drawing
         this.speedBoostUntil = 0; // performance.now() timestamp; set by any speed-granting skill
+        this.butterflyOn = false; // 나비모드: a toggle, not a timer
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
     }
@@ -129,7 +135,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -180,7 +186,7 @@ class Player {
         const duration = SKILL_FULL_DURATION_EFFECTS.includes(this.stats.skillType)
             ? this.stats.skillDurationMs : 350;
         this.skillEffectUntil = performance.now() + duration;
-        if (this.stats.skillType === 'speed_boost') {
+        if (this.stats.skillType === 'speed_boost' || this.stats.skillType === 'charge_dash') {
             this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
         }
     }

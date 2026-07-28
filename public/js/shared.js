@@ -373,6 +373,106 @@ const CHARACTERS = {
         ultimateMarkMultiplier: 1.3,
         ultimateCooldownMs: 30000
     },
+    // 핑크 계열이 여럿이라 각자 다른 분홍을 쓴다: 자두맛은 연분홍, 마그마맛은
+    // 진분홍, 아래 셋은 서로 다른 짝 색으로 구분된다.
+    blacksugar: {
+        name: '블랙 슈거맛 쿠키',
+        shortName: '블랙슈거',
+        color: '#141218',
+        colorLeft: '#ff4f9a', // pink
+        colorRight: '#141218', // black
+        grade: '비스트',
+        element: '어둠',
+        role: '탱커',
+        health: 200,
+        speed: 2,
+        attackType: 'melee_kick', // 초록 막대: wide, short swing
+        attackRange: 110,
+        attackWidth: 44,
+        attackDamage: 5,
+        attackCooldown: 500,
+        // Always on, unlike guard_stance -- there is no window to time.
+        passiveDamageMultiplier: 0.8,
+        // 적 끌어들이기: anything that can walk gets dragged to the cookie;
+        // anything rooted in place (turrets, a fixed boss) takes skillDamage
+        // instead, since there is no dragging it anywhere.
+        skillType: 'pull_in',
+        skillRange: 260,
+        skillDamage: 20,
+        skillCooldown: 10000,
+        ultimateType: 'guard_surge', // 보호막 + 즉시 회복, 자기 자신에게
+        ultimateShieldAmount: 70,
+        ultimateHealAmount: 20,
+        ultimateCooldownMs: 30000
+    },
+    dragonfruit: {
+        name: '용과맛 쿠키',
+        shortName: '용과',
+        color: '#e0498a',
+        colorLeft: '#ff7ab6', // pink
+        colorRight: '#2ecc71', // green
+        grade: '에이션트',
+        element: '불',
+        role: '힐러',
+        health: 100,
+        speed: 2,
+        attackType: 'melee_kick', // 용과풀
+        attackRange: 130,
+        attackWidth: 34,
+        attackDamage: 2,
+        attackCooldown: 500,
+        // 화염 데미지 2, spread over two ticks like every other burn here.
+        attackBurnDamage: 1,
+        attackBurnTicks: 2,
+        attackBurnIntervalMs: 1000,
+        attackHealOnUse: 1, // 패시브: every landed hit heals the team 1
+        skillType: 'wide_slash', // 크게베기: a broad forward arc that heals on contact
+        skillRange: 190,
+        skillWidth: 120,
+        skillDamage: 5,
+        skillHealOnHit: 15,
+        skillCooldown: 10000,
+        ultimateType: 'team_guard', // 보호: % heal + a flat shield for everyone
+        ultimateHealRatio: 0.25,
+        ultimateShieldAmount: 40,
+        ultimateCooldownMs: 30000
+    },
+    sugarfly: {
+        name: '슈가 플라이맛 쿠키',
+        shortName: '슈가플라이',
+        color: '#ff69b4',
+        colorLeft: '#ffa6cf', // pink
+        colorRight: '#3498db', // blue
+        grade: '에픽',
+        element: '바람',
+        role: '대미지 딜러',
+        health: 100,
+        speed: 2,
+        attackType: 'melee_kick', // 설탕팔 밀치기
+        attackRange: 100,
+        attackWidth: 40,
+        attackDamage: 5,
+        attackCooldown: 500,
+        // 패시브: every fifth landed hit heals the cookie itself.
+        attackHealEveryHits: 5,
+        attackHealSelf: 2,
+        skillType: 'charge_dash', // 돌진: close the gap fast, hit hard, run hot after
+        skillRange: 300,
+        skillWidth: 46,
+        skillDamage: 13,
+        skillSpeedBonus: 1,
+        skillSpeedDurationMs: 3000,
+        skillCooldown: 10000,
+        // 나비모드: a TOGGLE, not a timer. It runs until switched off, eating
+        // ultimateSelfDamage every ultimateSelfDamageIntervalMs, and the 30s
+        // cooldown only starts counting once it is switched off.
+        ultimateType: 'butterfly_mode',
+        ultimateSpeedBonus: 1.3,
+        ultimateAttackDamage: 8,
+        ultimateSelfDamage: 1,
+        ultimateSelfDamageIntervalMs: 2000,
+        ultimateCooldownMs: 30000
+    },
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
@@ -1367,16 +1467,14 @@ const GACHA_TABLE = {
     '게스트': 0.05
 };
 // Soul stones are tracked per cookie -- this many of one cookie's stones unlocks it.
-const SOUL_STONES_PER_CHARACTER = 30;
+const SOUL_STONES_PER_CHARACTER = 100;
 
-// 레전더리 뽑기. One banner per season-limited legendary. Each banner is bought
-// with ITS OWN ticket (earned from that element's 레전더리 이벤트 stages), and
-// rolls the normal table with two changes: the banner's cookie sits at
-// LEGENDARY_BANNER_RATE, and the 영혼석 slot always pays that cookie's stones
-// instead of a random cookie's. Collecting SOUL_STONES_PER_CHARACTER of them is
-// the guaranteed route, so a run of bad luck still gets you there.
+// 레전더리 뽑기. One banner per featured legendary, bought with ITS OWN ticket
+// (earned from that element's 레전더리 이벤트 stages). It is the normal banner
+// with exactly ONE change: the featured cookie sits at LEGENDARY_BANNER_RATE.
+// 영혼석 behaves exactly as it does on the normal banner -- any cookie's stone,
+// one at a time -- and keeps its normal rate.
 const LEGENDARY_BANNER_RATE = 1.5; // %
-const LEGENDARY_BANNER_SOUL_STONES = 3; // stones per 영혼석 hit on this banner
 // Where the featured cookie's share is taken from. 영혼석 deliberately keeps its
 // full normal-banner rate, so the room is made in the commonest cookie grade
 // instead -- that keeps the table at exactly 100 without touching what matters.
@@ -1399,7 +1497,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
