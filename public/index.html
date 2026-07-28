@@ -263,7 +263,7 @@
     <div id="story-mode-screen" class="screen hidden">
         <h2>스토리 모드</h2>
         <div class="story-mode-actions">
-            <button id="story-multi-btn" class="play-btn" disabled>🔒 멀티플레이</button>
+            <button id="story-multi-btn" class="play-btn">멀티플레이</button>
             <button id="story-solo-btn" class="play-btn">솔로플레이</button>
         </div>
         <button id="back-from-story-mode-btn" class="secondary-btn">뒤로</button>
@@ -283,6 +283,10 @@
                     <div id="tower-char-icon" class="char-icon-circle small"></div>
                     <div id="tower-char-name" class="char-name"></div>
                 </div>
+                <div id="tower-partner-preview" class="char-preview hidden">
+                    <div id="tower-partner-icon" class="char-icon-circle small"></div>
+                    <div id="tower-partner-name" class="char-name"></div>
+                </div>
                 <div id="tower-rewards" class="reward-preview"></div>
                 <button id="tower-play-btn" class="play-btn">플레이</button>
             </div>
@@ -294,6 +298,10 @@
     <div id="story-fight-screen" class="screen hidden">
         <button id="story-leave-btn" class="back-corner-btn">← 나가기</button>
         <div id="story-monsters-left" class="story-monsters-left">남은 적: 5</div>
+        <div id="story-partner-hp-container" class="hp-container bottom-right hidden">
+            <div class="hp-label">파트너</div>
+            <div class="hp-bar-bg"><div id="story-partner-hp-bar" class="hp-bar-fill partner"></div><span id="story-partner-shield-badge" class="shield-badge hidden">🛡</span></div>
+        </div>
         <div id="story-my-hp-container" class="hp-container bottom-left">
             <div class="hp-label">나</div>
             <div class="cooldown-row"><span class="cooldown-label">스킬</span><span id="story-my-skill-cd">사용가능</span></div>

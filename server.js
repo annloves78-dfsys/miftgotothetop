@@ -742,11 +742,10 @@ function tickRoom(roomId) {
 }
 
 // ---- Story mode (tower floors) ----
-// A parallel, much simpler system from the boss-raid rooms above: solo-only,
-// no matchmaking/ready-check, a line of weak monsters instead of one boss
-// with patterns. Shares the `rooms` dict and reuses leaveRaid/disconnect
-// as-is (a story room always has exactly 1 player, so those generic handlers
-// already clean it up correctly without any story-specific code).
+// A parallel, simpler system from the boss-raid rooms above: a line of weak
+// monsters instead of one boss with patterns. Shares the `rooms` dict and
+// reuses leaveRaid/disconnect. 솔로는 들어가자마자 시작하고, 멀티는 레이드와
+// 똑같이 짝을 찾아 둘 다 준비를 눌러야 시작한다 (findOpenStoryRoom).
 
 // Same idea as meleeLineHit, but against an arbitrary target position instead
 // of always the world origin (monsters roam, unlike the boss).
@@ -760,12 +759,26 @@ function meleeLineHitPoint(px, py, facingAngle, range, width, targetX, targetY, 
     return perp <= (width / 2 + targetRadius);
 }
 
-function createStoryRoom(floor) {
+// 둘이 같이 들어갈 방을 찾는다. 층이 같고, 아직 안 시작했고, 자리가 남은
+// 멀티 방만 고른다. 솔로 방은 절대 매칭되지 않는다 (레이드와 같은 규칙).
+function findOpenStoryRoom(floor) {
+    for (const [roomId, room] of Object.entries(rooms)) {
+        if (room.kind === 'story' && room.floor === floor && room.state === 'waiting'
+            && !room.solo && Object.keys(room.players).length < 2) {
+            return roomId;
+        }
+    }
+    return null;
+}
+
+function createStoryRoom(floor, solo) {
     const roomId = `story${floor}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     rooms[roomId] = {
         kind: 'story',
         floor,
-        state: 'fighting',
+        solo: solo !== false,
+        // 솔로는 예전 그대로 바로 시작한다. 멀티는 둘이 모여 준비를 눌러야 한다.
+        state: solo !== false ? 'fighting' : 'waiting',
         players: {},
         monsters: {},
         projectiles: {}, // id -> arrow in flight; see spawnMonsterProjectile
@@ -1094,6 +1107,47 @@ function shieldStoryTeam(room, roomId, amount) {
     }
 }
 
+// 스토리 방에서 남에게 보여도 되는 사람 정보만.
+function publicStoryPlayers(room) {
+    const out = {};
+    for (const [id, p] of Object.entries(room.players)) {
+        out[id] = {
+            x: p.x, y: p.y, facing: p.facing, charType: p.charType,
+            hp: p.hp, maxHp: p.maxHp, alive: p.alive,
+            shieldHp: p.shieldHp || 0, ready: !!p.ready
+        };
+    }
+    return out;
+}
+
+// 솔로는 들어오자마자, 멀티는 둘 다 준비를 누른 뒤에 여기로 온다.
+function startStoryFight(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.kind !== 'story' || room.loopHandle) return;
+    const floorDef = floorDefFor(room.floor);
+    if (!floorDef) return;
+    room.state = 'fighting';
+    for (const [id, p] of Object.entries(room.players)) {
+        io.to(id).emit('storyFloorStarted', {
+            floor: room.floor,
+            floorDef: {
+                // axis matters to every clamp/camera/draw on the client, so it
+                // has to travel with the rest of the layout.
+                axis: floorDef.axis,
+                levelLength: floorDef.levelLength,
+                laneHalfWidth: floorDef.laneHalfWidth,
+                gates: floorDef.gates,
+                star: floorDef.star
+            },
+            player: p,
+            players: publicStoryPlayers(room),
+            monsters: publicMonsters(room),
+            projectiles: publicProjectiles(room)
+        });
+    }
+    room.loopHandle = setInterval(() => tickStoryRoom(roomId), 50);
+}
+
 function endStoryRoom(roomId, result) {
     const room = rooms[roomId];
     if (!room) return;
@@ -1127,7 +1181,9 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
         applyReviveBlastToMonsters(roomId, room, character, playerId);
         return;
     }
-    if (!p.alive) endStoryRoom(roomId, 'lose');
+    if (!p.alive && Object.values(room.players).every(pl => !pl.alive)) {
+        endStoryRoom(roomId, 'lose');
+    }
 }
 
 // A raised energy shield is solid to attacks, not just to walking. Without this
@@ -1491,7 +1547,13 @@ function tickStoryRoom(roomId) {
     }, 'storyDropGone');
     if (!rooms[roomId]) return; // a drop just hit the star
 
-    io.to(roomId).emit('storyTick', { monsters: publicMonsters(room), projectiles: publicProjectiles(room) });
+    io.to(roomId).emit('storyTick', {
+        monsters: publicMonsters(room),
+        projectiles: publicProjectiles(room),
+        // 파트너를 그리려면 위치가 필요하다. 솔로 방이면 자기 자신 하나뿐이라
+        // 클라이언트가 그냥 무시한다.
+        players: publicStoryPlayers(room)
+    });
 }
 
 // ==================== Guest raid ====================
@@ -2683,45 +2745,79 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinStoryFloor', ({ floor, charType, equip }) => {
+    socket.on('joinStoryFloor', ({ floor, charType, equip, solo }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
         const character = CHARACTERS[charType] || CHARACTERS.kicker;
         const bonus = bonusFrom(equip, charType);
 
-        const roomId = createStoryRoom(floor);
+        // 멀티면 먼저 기다리는 방을 찾고, 없으면 새로 판다.
+        let roomId = solo === false ? findOpenStoryRoom(floor) : null;
+        if (!roomId) {
+            roomId = createStoryRoom(floor, solo);
+            spawnStoryMonsters(rooms[roomId], floorDef);
+        }
         const room = rooms[roomId];
-        spawnStoryMonsters(room, floorDef);
 
+        // 둘이 겹쳐서 시작하지 않게 두 번째 사람은 옆으로 조금 비켜 세운다.
+        const slot = Object.keys(room.players).length;
+        const spot = slot === 0 ? { x: 0, y: 0 } : fromAlongAcross(floorDef, 0, 30);
         room.players[socket.id] = {
-            x: 0, y: 0,
+            x: spot.x, y: spot.y,
             bonus,
             hp: character.health + bonus.health, maxHp: character.health + bonus.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: Math.PI, // faces left, toward the bridge
-            alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0
+            alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+            ready: false
         };
 
         socket.join(roomId);
         socket.data.roomId = roomId;
 
-        io.to(roomId).emit('storyFloorStarted', {
-            floor,
-            floorDef: {
-                // axis matters to every clamp/camera/draw on the client, so it
-                // has to travel with the rest of the layout.
-                axis: floorDef.axis,
-                levelLength: floorDef.levelLength,
-                laneHalfWidth: floorDef.laneHalfWidth,
-                gates: floorDef.gates,
-                star: floorDef.star
-            },
-            player: room.players[socket.id],
-            monsters: publicMonsters(room),
-            projectiles: publicProjectiles(room)
+        if (room.solo) { startStoryFight(roomId); return; }
+        io.to(roomId).emit('storyRoomUpdate', {
+            roomId, floor,
+            count: Object.keys(room.players).length,
+            players: publicStoryPlayers(room)
         });
+    });
 
-        room.loopHandle = setInterval(() => tickStoryRoom(roomId), 50);
+    // 멀티 스토리: 둘 다 준비를 눌러야 시작한다 (레이드와 같은 규칙).
+    socket.on('storyPlayerReady', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'waiting') return;
+        const p = room.players[socket.id];
+        if (!p) return;
+        p.ready = true;
+        io.to(roomId).emit('storyRoomUpdate', {
+            roomId, floor: room.floor,
+            count: Object.keys(room.players).length,
+            players: publicStoryPlayers(room)
+        });
+        const list = Object.values(room.players);
+        if (list.length >= 2 && list.every(pl => pl.ready)) startStoryFight(roomId);
+    });
+
+    // 시작 전에 나가기. 시작한 뒤에 나가는 건 기존 leaveStory/disconnect가 본다.
+    socket.on('leaveStoryRoom', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'waiting') return;
+        delete room.players[socket.id];
+        socket.leave(roomId);
+        socket.data.roomId = null;
+        if (!Object.keys(room.players).length) {
+            if (room.loopHandle) clearInterval(room.loopHandle);
+            delete rooms[roomId];
+            return;
+        }
+        io.to(roomId).emit('storyRoomUpdate', {
+            roomId, floor: room.floor,
+            count: Object.keys(room.players).length,
+            players: publicStoryPlayers(room)
+        });
     });
 
     socket.on('storyPlayerMove', ({ x, y, facing }) => {
@@ -3554,6 +3650,13 @@ io.on('connection', (socket) => {
         if (room.state === 'waiting') {
             Object.values(room.players).forEach(pl => { pl.ready = false; });
         }
+        if (room.kind === 'story') {
+            io.to(roomId).emit('storyRoomUpdate', {
+                roomId, floor: room.floor, count: Object.keys(room.players).length,
+                players: publicStoryPlayers(room)
+            });
+            return;
+        }
         io.to(roomId).emit('raidRoomUpdate', {
             roomId, bossId: room.bossId, count: Object.keys(room.players).length,
             players: publicPlayers(room)
@@ -3993,6 +4096,15 @@ io.on('connection', (socket) => {
             if (Object.keys(room.players).every(id => room.discardChoices[id] !== undefined)) {
                 startGuestPhase2(roomId);
             }
+            return;
+        }
+        // 스토리 방은 스토리 쪽 알림을 받아야 한다 (같이 기다리던 사람이
+        // 나가면 다시 혼자 기다리는 상태로 돌아간다).
+        if (room.kind === 'story') {
+            io.to(roomId).emit('storyRoomUpdate', {
+                roomId, floor: room.floor, count: Object.keys(room.players).length,
+                players: publicStoryPlayers(room)
+            });
             return;
         }
         io.to(roomId).emit('raidRoomUpdate', {

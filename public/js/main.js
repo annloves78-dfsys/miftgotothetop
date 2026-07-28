@@ -2136,6 +2136,10 @@ storyModeCard.addEventListener('click', () => showScreen('storyMode'));
 // ---- Story mode: multi (locked) / solo entry ----
 const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');
 const storySoloBtn = document.getElementById('story-solo-btn');
+const storyMultiBtn = document.getElementById('story-multi-btn');
+const towerPartnerPreview = document.getElementById('tower-partner-preview');
+const towerPartnerIcon = document.getElementById('tower-partner-icon');
+const towerPartnerName = document.getElementById('tower-partner-name');
 const towerFloorListEl = document.getElementById('tower-floor-list');
 const towerCharPreview = document.getElementById('tower-char-preview');
 const towerCharIcon = document.getElementById('tower-char-icon');
@@ -2146,9 +2150,25 @@ const backFromTowerBtn = document.getElementById('back-from-tower-btn');
 towerCharPreview.addEventListener('click', () => openCharacterSelect('storyTower'));
 
 backFromStoryModeBtn.addEventListener('click', () => showScreen('modeSelect'));
-// story-multi-btn stays permanently disabled -- multiplayer story mode isn't built yet.
+// 타워를 솔로로 들어왔는지 멀티로 들어왔는지. 멀티면 플레이 버튼이 레이드처럼
+// "짝 찾기 -> 둘 다 준비 -> 시작" 순서로 움직인다.
+let storyIsMulti = false;
+let storyPhase = 'idle'; // 'idle' | 'searching' | 'matched'
+let storyMyReady = false;
+let storySearchStartAt = 0;
+let storySearchHandle = null;
+
 storySoloBtn.addEventListener('click', () => {
+    storyIsMulti = false;
     selectedStoryFloor = 1;
+    resetTowerActions();
+    renderTower();
+    showScreen('storyTower');
+});
+storyMultiBtn.addEventListener('click', () => {
+    storyIsMulti = true;
+    selectedStoryFloor = 1;
+    resetTowerActions();
     renderTower();
     showScreen('storyTower');
 });
@@ -2184,6 +2204,7 @@ function renderTower() {
         card.textContent = unlocked ? `${f}층` : `🔒 ${f}층`;
         if (unlocked) {
             card.addEventListener('click', () => {
+                if (f !== selectedStoryFloor) leaveStoryRoomIfWaiting();
                 selectedStoryFloor = f;
                 renderTower();
             });
@@ -2197,14 +2218,92 @@ function renderTower() {
     towerCharName.textContent = stats.name;
     towerRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(SHARED.storyRewardKey(selectedStoryFloor)));
     towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor) || !floorDef;
+    // 짝을 기다리는 중에는 위 판정과 상관없이 버튼 상태를 건드리지 않는다.
+    if (storyPhase === 'searching' || storyMyReady) towerPlayBtn.disabled = true;
+    else if (storyPhase === 'idle') towerPlayBtn.textContent = storyIsMulti ? '멀티플레이' : '플레이';
 }
 
-backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
+backFromTowerBtn.addEventListener('click', () => {
+    leaveStoryRoomIfWaiting();
+    showScreen('storyMode');
+});
+
+function stopStorySearchTimer() {
+    if (storySearchHandle) clearInterval(storySearchHandle);
+    storySearchHandle = null;
+}
+
+function updateStorySearchLabel() {
+    const secs = Math.floor((Date.now() - storySearchStartAt) / 1000);
+    towerPlayBtn.textContent = `대기중 (${secs}초)`;
+}
+
+// 타워 화면을 처음 상태로. 층을 고르는 중에는 늘 이 상태다.
+function resetTowerActions() {
+    storyPhase = 'idle';
+    storyMyReady = false;
+    stopStorySearchTimer();
+    towerPlayBtn.textContent = storyIsMulti ? '멀티플레이' : '플레이';
+    towerPartnerPreview.classList.add('hidden');
+}
+
+// 짝을 기다리는 중에 층을 바꾸거나 화면을 뜨면 방에서 빠져나온다.
+function leaveStoryRoomIfWaiting() {
+    if (storyPhase !== 'idle') socket.emit('leaveStoryRoom');
+    resetTowerActions();
+}
 
 towerPlayBtn.addEventListener('click', () => {
     if (towerPlayBtn.disabled) return;
     if (!SHARED.STORY_FLOOR_DEFS[selectedStoryFloor]) return; // no content for this floor yet
-    socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker') });
+    const charType = gameData.selectedCharacter || 'kicker';
+    if (!storyIsMulti) {
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: true });
+        return;
+    }
+    if (storyPhase === 'idle') {
+        storyPhase = 'searching';
+        towerPlayBtn.disabled = true;
+        storySearchStartAt = Date.now();
+        updateStorySearchLabel();
+        storySearchHandle = setInterval(updateStorySearchLabel, 1000);
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: false });
+    } else if (storyPhase === 'matched' && !storyMyReady) {
+        storyMyReady = true;
+        towerPlayBtn.disabled = true;
+        towerPlayBtn.textContent = '플레이 (대기중)';
+        socket.emit('storyPlayerReady');
+    }
+});
+
+// 짝이 붙거나 떨어질 때마다 버튼과 파트너 칸을 고쳐 그린다.
+socket.on('storyRoomUpdate', (data) => {
+    if (screens.storyTower.classList.contains('hidden')) return;
+    if (data.count >= 2) {
+        storyPhase = 'matched';
+        stopStorySearchTimer();
+        const partner = Object.entries(data.players).find(([id]) => id !== socket.id);
+        if (partner) {
+            const pStats = SHARED.CHARACTERS[partner[1].charType] || SHARED.CHARACTERS.kicker;
+            towerPartnerIcon.style.background = charIconBackground(pStats);
+            towerPartnerName.textContent = pStats.name;
+            towerPartnerPreview.classList.remove('hidden');
+        }
+        if (!storyMyReady) {
+            towerPlayBtn.textContent = '플레이';
+            towerPlayBtn.disabled = false;
+        }
+    } else if (storyPhase !== 'idle') {
+        // 같이 기다리던 사람이 나갔다 -- 다시 혼자 기다린다.
+        storyPhase = 'searching';
+        storyMyReady = false;
+        towerPartnerPreview.classList.add('hidden');
+        towerPlayBtn.disabled = true;
+        storySearchStartAt = Date.now();
+        updateStorySearchLabel();
+        stopStorySearchTimer();
+        storySearchHandle = setInterval(updateStorySearchLabel, 1000);
+    }
 });
 
 // ---- Story fight: floor bridge combat ----
@@ -2215,7 +2314,23 @@ const storyMyShieldBadge = document.getElementById('story-my-shield-badge');
 const storyMySkillCdEl = document.getElementById('story-my-skill-cd');
 const storyMyUltimateCdEl = document.getElementById('story-my-ultimate-cd');
 const storyMonstersLeftEl = document.getElementById('story-monsters-left');
+const storyPartnerHpContainer = document.getElementById('story-partner-hp-container');
+const storyPartnerHpBar = document.getElementById('story-partner-hp-bar');
+const storyPartnerShieldBadge = document.getElementById('story-partner-shield-badge');
 const storyLeaveBtn = document.getElementById('story-leave-btn');
+
+// 파트너가 있을 때만 오른쪽 아래에 체력 바를 띄운다.
+function renderStoryPartnerHp() {
+    const partner = Object.values(storyPartners)[0];
+    if (!partner) {
+        storyPartnerHpContainer.classList.add('hidden');
+        return;
+    }
+    storyPartnerHpContainer.classList.remove('hidden');
+    const pct = Math.max(0, Math.min(1, partner.hp / (partner.maxHp || 1)));
+    storyPartnerHpBar.style.width = (pct * 100) + '%';
+    storyPartnerShieldBadge.classList.toggle('hidden', !(partner.shieldHp > 0));
+}
 
 function resizeStoryCanvas() {
     storyCanvas.width = window.innerWidth;
@@ -2227,6 +2342,9 @@ resizeStoryCanvas();
 let storyFloorDef = null;
 let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime,...}
 let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
+// 같이 들어온 사람. 내 것은 여기 안 들어온다 (내 쿠키는 storyPlayer가 주인).
+// 서버 틱(50ms)마다 통째로 갈아 끼우고, 그 사이는 그냥 마지막 자리에 그린다.
+let storyPartners = {};
 let storyMouseX = null;
 let storyMouseY = null;
 let storyLoopHandle = null;
@@ -2247,6 +2365,13 @@ let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultim
 
 socket.on('storyFloorStarted', (data) => {
     activeStoryFloor = data.floor; // a floor number, or an event stage id
+    storyPartners = {};
+    if (data.players) {
+        Object.entries(data.players).forEach(([id, pl]) => {
+            if (id !== socket.id) storyPartners[id] = pl;
+        });
+    }
+    renderStoryPartnerHp();
     storyFloorDef = data.floorDef;
     storyMonsters = data.monsters;
     const p = data.player;
@@ -2278,7 +2403,13 @@ socket.on('storyFloorStarted', (data) => {
     startStoryLoop();
 });
 
-socket.on('storyTick', ({ monsters, projectiles }) => {
+socket.on('storyTick', ({ monsters, projectiles, players }) => {
+    if (players) {
+        const next = {};
+        Object.entries(players).forEach(([id, pl]) => { if (id !== socket.id) next[id] = pl; });
+        storyPartners = next;
+        renderStoryPartnerHp();
+    }
     storyMonsters = monsters;
     const at = performance.now();
     const next = {};
@@ -2404,6 +2535,9 @@ socket.on('storyReviveBlast', () => {
 
 socket.on('storyFloorResult', ({ result, floor }) => {
     stopStoryLoop();
+    // 한 판이 끝났으면 타워 버튼도 처음 상태로 (다시 짝을 찾을 수 있게).
+    storyPartners = {};
+    resetTowerActions();
     resultRewardsEl.innerHTML = '';
     const stage = eventStageById(floor);
     if (!stage) selectedStoryFloor = floor;
@@ -2448,6 +2582,8 @@ socket.on('storyFloorResult', ({ result, floor }) => {
 storyLeaveBtn.addEventListener('click', () => {
     stopStoryLoop();
     socket.emit('leaveRaid');
+    storyPartners = {};
+    resetTowerActions();
     if (eventStageById(activeStoryFloor)) {
         renderEventScreen();
         showScreen('event');
@@ -2963,6 +3099,35 @@ function storyRender(now) {
         storyCtx.strokeStyle = `rgba(231, 76, 60, ${life})`;
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
+    });
+
+    // 파트너는 내 쿠키보다 먼저 그린다 -- 겹쳤을 때 내가 위에 오는 편이
+    // 자기 쿠키를 놓치지 않는다.
+    Object.values(storyPartners).forEach(pl => {
+        const pStats = SHARED.CHARACTERS[pl.charType] || SHARED.CHARACTERS.kicker;
+        const R = SHARED.PLAYER_RADIUS;
+        storyCtx.save();
+        storyCtx.translate(pl.x, pl.y);
+        storyCtx.globalAlpha = pl.alive ? 1 : 0.4;
+        drawCookieBody(storyCtx, R, pStats, pl.alive);
+        storyCtx.beginPath();
+        storyCtx.arc(0, 0, R, 0, Math.PI * 2);
+        storyCtx.lineWidth = 2;
+        storyCtx.strokeStyle = '#3498db'; // 파란 테두리 = 파트너
+        storyCtx.stroke();
+        if (pl.shieldHp > 0) {
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R + 6, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(52, 152, 219, 0.9)';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+        }
+        storyCtx.globalAlpha = 1;
+        storyCtx.fillStyle = '#ecf0f1';
+        storyCtx.font = 'bold 12px sans-serif';
+        storyCtx.textAlign = 'center';
+        storyCtx.fillText(pStats.shortName || pStats.name, 0, -R - 8);
+        storyCtx.restore();
     });
 
     if (storyPlayer) {
