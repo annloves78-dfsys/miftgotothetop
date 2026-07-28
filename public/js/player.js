@@ -50,15 +50,21 @@ function attackSideShift(stats, side) {
 // main.js), so a new speed buff only has to be added in one place.
 // speed_boost (a skill) REPLACES the base speed with an absolute value;
 // undying_soul (an ultimate) ADDS to it; awakening multiplies it.
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn) {
+// 장비의 이동 속도 보너스. 어떤 버프가 속도를 통째로 갈아치워도 장비는
+// 그 위에 그대로 더해진다.
+function withEquipSpeed(base, equipSpeed) {
+    return Math.max(0.5, base + (equipSpeed || 0));
+}
+
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed) {
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
-        return stats.speed + stats.ultimateSpeedBonus;
+        return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
     }
     if (now < (speedBoostUntil || 0)) {
-        if (stats.skillType === 'speed_boost') return stats.skillSpeedValue;
-        if (stats.skillType === 'charge_dash') return stats.speed + stats.skillSpeedBonus;
-        if (stats.ultimateType === 'undying_soul') return stats.speed + stats.ultimateSpeedBonus;
+        if (stats.skillType === 'speed_boost') return withEquipSpeed(stats.skillSpeedValue, equipSpeed);
+        if (stats.skillType === 'charge_dash') return withEquipSpeed(stats.speed + stats.skillSpeedBonus, equipSpeed);
+        if (stats.ultimateType === 'undying_soul') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
         return stats.speed * stats.ultimateSpeedMultiplier;
@@ -97,6 +103,7 @@ class Player {
         this.attackEffectSide = 0; // the side the running attack animation is drawing
         this.speedBoostUntil = 0; // performance.now() timestamp; set by any speed-granting skill
         this.butterflyOn = false; // 나비모드: a toggle, not a timer
+        this.equipSpeed = 0; // 장비의 이동 속도 보너스 (내 쿠키에만 의미가 있다)
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
     }
@@ -124,20 +131,21 @@ class Player {
     }
 
     canUseSkill(now) {
-        return this.alive && !!this.stats.skillType && now - this.lastSkillClientTime >= this.stats.skillCooldown;
+        return this.alive && !!this.stats.skillType && now - this.lastSkillClientTime >= this.stats.skillCooldown * (this.equipCooldown || 1);
     }
 
     canUseUltimate(now) {
         // 나비모드: while it is on, the button switches it off instead.
         if (this.alive && this.stats.ultimateType === 'butterfly_mode' && this.butterflyOn) return true;
-        return this.alive && !!this.stats.ultimateType && now - this.lastUltimateClientTime >= this.stats.ultimateCooldownMs;
+        return this.alive && !!this.stats.ultimateType
+            && now - this.lastUltimateClientTime >= this.stats.ultimateCooldownMs * (this.equipCooldown || 1);
     }
 
     // Local-only movement prediction; server remains the source of truth for
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;

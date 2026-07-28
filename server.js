@@ -6,7 +6,8 @@ const path = require('path');
 
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
-    GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor } = require('./public/js/shared.js');
+    GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
+    equipBonusFor } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -130,6 +131,25 @@ function endRoom(roomId, result) {
     delete rooms[roomId];
 }
 
+// ---- 장비 ----
+// 클라이언트는 장착한 장비 **id**만 보낸다. 수치는 여기서 shared.js의 표를
+// 보고 직접 계산하므로, 클라이언트가 능력치를 지어내서 보내도 소용이 없다.
+// 없는 id나 슬롯이 안 맞는 id는 equipBonusFor가 그냥 무시한다.
+const NO_EQUIP_BONUS = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldown: 1 };
+function bonusFrom(equip, charType) {
+    if (!equip || typeof equip !== 'object') return { ...NO_EQUIP_BONUS };
+    return equipBonusFor(equip, charType);
+}
+function bonusOf(p) { return (p && p.bonus) || NO_EQUIP_BONUS; }
+
+// 장비의 재사용 대기시간 감소는 스킬과 궁극기에만 붙는다 (기본공격은 그대로).
+function skillCooldownFor(character, p) {
+    return character.skillCooldown * bonusOf(p).cooldown;
+}
+function ultimateCooldownFor(character, p) {
+    return character.ultimateCooldownMs * bonusOf(p).cooldown;
+}
+
 // Shield-cookie defensive buffs (guard_stance skill, awakening ultimate) both
 // cut incoming damage the same amount; if both happen to be active at once
 // this intentionally doesn't stack, it just stays at the one multiplier.
@@ -141,33 +161,33 @@ function damageReductionMultiplier(character, p, now, sourceElementMark) {
     // that guard_stance ends early when its owner attacks.
     if ((character.skillType === 'guard_stance' || character.skillType === 'shield_block')
         && p.guardStanceUntil && now < p.guardStanceUntil) {
-        return character.skillDamageMultiplier;
+        return character.skillDamageMultiplier * bonusOf(p).damageTaken;
     }
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil) {
-        return character.ultimateDamageMultiplier;
+        return character.ultimateDamageMultiplier * bonusOf(p).damageTaken;
     }
     if (character.passiveResistElement && sourceElementMark && sourceElementMark.element === character.passiveResistElement) {
-        return character.passiveResistMultiplier;
+        return character.passiveResistMultiplier * bonusOf(p).damageTaken;
     }
     // Always-on passive (블랙 슈거맛): no window to time, it just applies.
-    if (character.passiveDamageMultiplier) return character.passiveDamageMultiplier;
-    return 1;
+    if (character.passiveDamageMultiplier) return character.passiveDamageMultiplier * bonusOf(p).damageTaken;
+    return bonusOf(p).damageTaken;
 }
 
 // awakening temporarily replaces the basic attack's damage; every other
 // character just uses their flat attackDamage.
 function effectiveAttackDamage(character, p, now) {
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil && character.ultimateAttackDamage != null) {
-        return character.ultimateAttackDamage;
+        return character.ultimateAttackDamage + bonusOf(p).attack;
     }
     // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
     if (character.ultimateType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
         && character.ultimateAttackDamage != null) {
-        return character.ultimateAttackDamage;
+        return character.ultimateAttackDamage + bonusOf(p).attack;
     }
     // 나비모드 has no end time -- it is on until it is switched off.
-    if (butterflyActive(character, p)) return character.ultimateAttackDamage;
-    return character.attackDamage;
+    if (butterflyActive(character, p)) return character.ultimateAttackDamage + bonusOf(p).attack;
+    return character.attackDamage + bonusOf(p).attack;
 }
 
 // 나비모드 (sugarfly): a toggle rather than a timer, so it is checked by a
@@ -1462,14 +1482,18 @@ function activateGuestSlot(p, index) {
     p.charType = p.party[index];
     p.hp = p.partyHp[index];
     p.maxHp = p.partyMaxHp[index];
+    p.bonus = (p.partyBonus && p.partyBonus[index]) || NO_EQUIP_BONUS;
     const slot = p.partySlotTimers[index];
     GUEST_SLOT_TIMERS.forEach(f => { p[f] = slot[f] || 0; });
 }
 
-function makeGuestPlayer(party, slotIndex) {
-    const maxHp = party.map(id => CHARACTERS[id].health);
+function makeGuestPlayer(party, slotIndex, equipParty) {
+    // 게스트 레이드는 쿠키 4명을 번갈아 쓰므로 장비도 슬롯마다 따로 가진다.
+    const bonuses = party.map((id, i) => bonusFrom(equipParty && equipParty[i], id));
+    const maxHp = party.map((id, i) => CHARACTERS[id].health + bonuses[i].health);
     const p = {
         party,
+        partyBonus: bonuses,
         partyHp: maxHp.slice(),
         partyMaxHp: maxHp.slice(),
         partyAlive: party.map(() => true),
@@ -1539,6 +1563,21 @@ function shieldGuestTeam(room, roomId, amount) {
     }
 }
 
+// 번개지옥맛의 부활 충격파, 게스트 레이드판. 보스와 소환된 적이 함께 있으므로
+// 적의 수를 둘 다 세서 단독/다수 비율을 고른다.
+function applyReviveBlastToGuest(roomId, room, character, playerId) {
+    const adds = Object.entries(room.monsters).filter(([, m]) => m.alive);
+    const bossUp = !room.phaseTransitioned && room.bossHp > 0;
+    const ratio = reviveBlastRatio(character, adds.length + (bossUp ? 1 : 0));
+    if (!ratio) return;
+    io.to(roomId).emit('guestReviveBlast', { id: playerId, ratio, count: adds.length + (bossUp ? 1 : 0) });
+    for (const [mid, m] of adds) {
+        damageGuestMonster(roomId, room, mid, Math.max(1, Math.round(m.hp * ratio)));
+        if (!rooms[roomId]) return;
+    }
+    if (bossUp) damageGuestBoss(roomId, room, Math.max(1, Math.round(room.bossHp * ratio)), playerId);
+}
+
 function applyDamageToGuestPlayer(roomId, playerId, dmg) {
     const room = rooms[roomId];
     if (!room || room.state !== 'fighting') return;
@@ -1581,7 +1620,11 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
         id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0,
         partyHp: p.partyHp, partyAlive: p.partyAlive, active: p.active, charType: p.charType
     });
-    if (revived) io.to(roomId).emit('guestPlayerRevived', { id: playerId, hp: p.hp });
+    if (revived) {
+        io.to(roomId).emit('guestPlayerRevived', { id: playerId, hp: p.hp });
+        applyReviveBlastToGuest(roomId, room, character, playerId);
+        if (!rooms[roomId]) return; // the blast finished the boss off
+    }
     if (swappedTo !== null) io.to(roomId).emit('guestForcedSwap', { id: playerId, active: swappedTo, charType: p.charType });
 
     if (Object.values(room.players).every(pl => !pl.alive)) endGuestRoom(roomId, 'lose');
@@ -1692,6 +1735,7 @@ function startGuestPhase2(roomId) {
             p.partyAlive[i] = !p.partyDiscarded[i];
             p.partyHp[i] = p.partyDiscarded[i] ? 0 : p.partyMaxHp[i];
             p.partySlotTimers[i] = {};
+            p.partyRevivesUsed[i] = 0; // 새 싸움 = 부활 횟수도 다시
         }
         const first = p.partyAlive.findIndex(a => a);
         p.alive = first >= 0;
@@ -2489,9 +2533,10 @@ function guestTickPayload(room) {
 }
 
 io.on('connection', (socket) => {
-    socket.on('joinRaid', ({ bossId, charType, solo }) => {
+    socket.on('joinRaid', ({ bossId, charType, solo, equip }) => {
         if (!BOSS_DEFS[bossId]) return;
         const character = CHARACTERS[charType] || CHARACTERS.kicker;
+        const bonus = bonusFrom(equip, charType);
 
         let roomId = solo ? null : findOpenRoom(bossId);
         if (!roomId) roomId = createRoom(bossId, solo);
@@ -2501,7 +2546,8 @@ io.on('connection', (socket) => {
         const pos = spawnPosition(slotIndex);
         room.players[socket.id] = {
             x: pos.x, y: pos.y,
-            hp: character.health, maxHp: character.health,
+            bonus,
+            hp: character.health + bonus.health, maxHp: character.health + bonus.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
             ready: false
@@ -2542,10 +2588,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinStoryFloor', ({ floor, charType }) => {
+    socket.on('joinStoryFloor', ({ floor, charType, equip }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
         const character = CHARACTERS[charType] || CHARACTERS.kicker;
+        const bonus = bonusFrom(equip, charType);
 
         const roomId = createStoryRoom(floor);
         const room = rooms[roomId];
@@ -2553,7 +2600,8 @@ io.on('connection', (socket) => {
 
         room.players[socket.id] = {
             x: 0, y: 0,
-            hp: character.health, maxHp: character.health,
+            bonus,
+            hp: character.health + bonus.health, maxHp: character.health + bonus.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: Math.PI, // faces left, toward the bridge
             alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0
@@ -2688,7 +2736,7 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.skillType) return;
         const now = Date.now();
-        if (now - p.lastSkillTime < character.skillCooldown) return;
+        if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
         p.lastSkillTime = now;
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
@@ -2866,7 +2914,7 @@ io.on('connection', (socket) => {
         // 나비모드 is a toggle: while it is running the press means "switch
         // off", so the cooldown gate must not swallow it.
         if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
-            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+            && now - p.lastUltimateTime < ultimateCooldownFor(character, p)) return;
         if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
@@ -3065,7 +3113,7 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.skillType) return;
         const now = Date.now();
-        if (now - p.lastSkillTime < character.skillCooldown) return;
+        if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
         p.lastSkillTime = now;
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
@@ -3179,7 +3227,7 @@ io.on('connection', (socket) => {
         // 나비모드 is a toggle: while it is running the press means "switch
         // off", so the cooldown gate must not swallow it.
         if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
-            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+            && now - p.lastUltimateTime < ultimateCooldownFor(character, p)) return;
         if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
@@ -3361,7 +3409,7 @@ io.on('connection', (socket) => {
     });
 
     // ---- Guest raid ----
-    socket.on('joinGuestRaid', ({ guestId, party, solo }) => {
+    socket.on('joinGuestRaid', ({ guestId, party, solo, equipParty }) => {
         if (!GUEST_BOSS_DEFS[guestId]) return;
         // Both modes bring a full party of four; only the cookie you are
         // actually controlling is ever drawn, so two players is still two
@@ -3375,7 +3423,8 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (room.state !== 'waiting') return;
 
-        room.players[socket.id] = makeGuestPlayer(chosen, Object.keys(room.players).length);
+        room.players[socket.id] = makeGuestPlayer(chosen, Object.keys(room.players).length,
+            Array.isArray(equipParty) ? equipParty : []);
         socket.join(roomId);
         socket.data.roomId = roomId;
 
@@ -3524,7 +3573,7 @@ io.on('connection', (socket) => {
         const character = CHARACTERS[p.charType];
         if (!character.skillType) return;
         const now = Date.now();
-        if (now - p.lastSkillTime < character.skillCooldown) return;
+        if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
         p.lastSkillTime = now;
         socket.to(roomId).emit('guestPlayerSkillUsed', { id: socket.id });
 
@@ -3633,7 +3682,7 @@ io.on('connection', (socket) => {
         const now = Date.now();
         // 나비모드: while it is on, the press means "switch off".
         if (!(character.ultimateType === 'butterfly_mode' && p.butterflyOn)
-            && now - p.lastUltimateTime < character.ultimateCooldownMs) return;
+            && now - p.lastUltimateTime < ultimateCooldownFor(character, p)) return;
         if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
         socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
 

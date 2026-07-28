@@ -1478,8 +1478,131 @@ const CLEAR_REWARDS = {
     boss2: { materialRare: 10, coins: 1100, potionRare: 10 } // 시하라얼
 };
 
+// 같은 출처에서 장비도 하나 떨어진다. 보상과 마찬가지로 깔 때마다.
+const CLEAR_DROPS = {
+    story1: ['wood_stick', 'cloth_cap'],
+    story2: ['leather_vest', 'runner_boots'],
+    boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
+    boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots']
+};
+function clearDropsFor(key) { return CLEAR_DROPS[key] || null; }
+
 function storyRewardKey(floor) { return 'story' + floor; }
 function clearRewardFor(key) { return CLEAR_REWARDS[key] || null; }
+
+// ==================== 장비 ====================
+// 가방은 계정 공용이고 장착은 쿠키별이다. 한 장비를 다른 쿠키에 끼우면
+// 원래 끼고 있던 쿠키에서는 자동으로 벗겨진다 (한 개를 둘이 나눠 끼지 못함).
+const EQUIP_SLOTS = [
+    { key: 'weapon', name: '무기', icon: '🗡' },
+    { key: 'helmet', name: '투구', icon: '🪖' },
+    { key: 'armor', name: '갑옷', icon: '🥼' },
+    { key: 'leggings', name: '레깅스', icon: '👖' },
+    { key: 'boots', name: '부츠', icon: '👢' }
+];
+const EQUIP_SLOT_KEYS = EQUIP_SLOTS.map(s => s.key);
+
+// 능력치는 장비마다 다르다. 지원하는 항목은 이 다섯 개뿐이고,
+// 적힌 것만 적용된다 (더하기는 0, 곱하기는 1이 기본값).
+//   bonusAttack       기본공격 피해 +N
+//   bonusHealth       최대 체력 +N
+//   bonusSpeed        이동 속도 +N
+//   bonusDamageTaken  받는 피해 배수 (0.95 = 5% 감소)
+//   bonusCooldown     스킬/궁극기 재사용 대기시간 배수 (0.9 = 10% 감소)
+const EQUIP_STAT_KEYS = ['bonusAttack', 'bonusHealth', 'bonusSpeed', 'bonusDamageTaken', 'bonusCooldown'];
+
+// ownerChar가 있는 장비는 그 쿠키가 낌 때만 ownerBonus가 붙는다.
+// 다른 쿠키가 끼면 기본 능력치만 남고 전용 효과는 아예 발동하지 않는다.
+const EQUIPMENT = {
+    // ---- 스토리 1층 ----
+    wood_stick: {
+        name: '낡은 나무 막대', slot: 'weapon', grade: '일반', icon: '🪓',
+        bonusAttack: 1
+    },
+    cloth_cap: {
+        name: '천 모자', slot: 'helmet', grade: '일반', icon: '🧢',
+        bonusHealth: 5
+    },
+    // ---- 스토리 2층 ----
+    leather_vest: {
+        name: '가죽 조끼', slot: 'armor', grade: '일반', icon: '🦺',
+        bonusHealth: 8, bonusDamageTaken: 0.98
+    },
+    runner_boots: {
+        name: '달리기 부츠', slot: 'boots', grade: '희귀', icon: '👟',
+        bonusSpeed: 0.3
+    },
+    // ---- 스톤 골렘 ----
+    golem_blade: {
+        name: '골렘의 돌검', slot: 'weapon', grade: '희귀', icon: '🗡',
+        bonusAttack: 2,
+        ownerChar: 'kicker',
+        ownerBonus: { bonusAttack: 2 },
+        ownerText: '자두맛 쿠키가 착용하면 공격력이 2 더 오릅니다.'
+    },
+    golem_plate: {
+        name: '골렘의 돌갑옷', slot: 'armor', grade: '희귀', icon: '🛡',
+        bonusHealth: 20, bonusDamageTaken: 0.95,
+        ownerChar: 'board',
+        ownerBonus: { bonusDamageTaken: 0.9 },
+        ownerText: '보드맛 쿠키가 착용하면 받는 피해가 10% 더 줄어듭니다.'
+    },
+    golem_greaves: {
+        name: '골렘의 돌다리', slot: 'leggings', grade: '희귀', icon: '🦵',
+        bonusHealth: 12, bonusSpeed: -0.1
+    },
+    // ---- 시하라얼 ----
+    shihara_spear: {
+        name: '시하라얼의 창', slot: 'weapon', grade: '에픽', icon: '🔱',
+        bonusAttack: 3, bonusCooldown: 0.92,
+        ownerChar: 'lightninghell',
+        ownerBonus: { bonusAttack: 2, bonusCooldown: 0.9 },
+        ownerText: '번개지옥맛 쿠키가 착용하면 공격력 +2, 재사용 대기시간이 10% 더 줄어듭니다.'
+    },
+    shadow_helm: {
+        name: '그림자 투구', slot: 'helmet', grade: '에픽', icon: '⛑',
+        bonusHealth: 18, bonusCooldown: 0.95
+    },
+    shadow_boots: {
+        name: '그림자 부츠', slot: 'boots', grade: '에픽', icon: '🥾',
+        bonusSpeed: 0.5, bonusHealth: 6,
+        ownerChar: 'sugarfly',
+        ownerBonus: { bonusSpeed: 0.3 },
+        ownerText: '슈가 플라이맛 쿠키가 착용하면 이동 속도가 0.3 더 빨라집니다.'
+    }
+};
+
+function equipmentFor(id) {
+    return (id && Object.prototype.hasOwnProperty.call(EQUIPMENT, id)) ? EQUIPMENT[id] : null;
+}
+
+// 전용 효과가 지금 이 쿠키에게 발동하는가.
+function ownerBonusActive(item, charType) {
+    return !!(item && item.ownerChar && item.ownerChar === charType && item.ownerBonus);
+}
+
+// 장착한 장비 id 목록({slot: itemId})을 합산해 하나의 보너스로 만든다.
+// 슬롯이 안 맞는 id나 없는 id는 그냥 무시한다 -- 서버가 클라이언트가 보낸
+// 것을 검증하는 자리이기도 하다.
+function equipBonusFor(equipped, charType) {
+    const out = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldown: 1 };
+    if (!equipped) return out;
+    for (const slot of EQUIP_SLOT_KEYS) {
+        const item = equipmentFor(equipped[slot]);
+        if (!item || item.slot !== slot) continue;
+        const parts = ownerBonusActive(item, charType) ? [item, item.ownerBonus] : [item];
+        for (const p of parts) {
+            if (p.bonusAttack) out.attack += p.bonusAttack;
+            if (p.bonusHealth) out.health += p.bonusHealth;
+            if (p.bonusSpeed) out.speed += p.bonusSpeed;
+            if (p.bonusDamageTaken) out.damageTaken *= p.bonusDamageTaken;
+            if (p.bonusCooldown) out.cooldown *= p.bonusCooldown;
+        }
+    }
+    // 속도가 0 이하가 되면 움직일 수 없으므로 바닥을 둔다.
+    out.speed = Math.round(out.speed * 100) / 100;
+    return out;
+}
 
 const SOUL_STONES_PER_CHARACTER = 100;
 
@@ -1511,7 +1634,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

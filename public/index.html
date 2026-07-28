@@ -338,11 +338,11 @@
                 </div>
                 <div class="char-equip-section cd-equip-col">
                     <div id="char-detail-awaken-slot" class="equip-slot hidden"><span class="equip-icon">✨</span><span class="equip-label">각성</span><span class="equip-value">-</span></div>
-                    <div class="equip-slot"><span class="equip-icon">🗡</span><span class="equip-label">무기</span><span class="equip-value">-</span></div>
-                    <div class="equip-slot"><span class="equip-icon">🪖</span><span class="equip-label">투구</span><span class="equip-value">-</span></div>
-                    <div class="equip-slot"><span class="equip-icon">🥼</span><span class="equip-label">갑옷</span><span class="equip-value">-</span></div>
-                    <div class="equip-slot"><span class="equip-icon">👖</span><span class="equip-label">레깅스</span><span class="equip-value">-</span></div>
-                    <div class="equip-slot"><span class="equip-icon">👢</span><span class="equip-label">부츠</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot clickable" data-slot="weapon"><span class="equip-icon">🗡</span><span class="equip-label">무기</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot clickable" data-slot="helmet"><span class="equip-icon">🪖</span><span class="equip-label">투구</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot clickable" data-slot="armor"><span class="equip-icon">🥼</span><span class="equip-label">갑옷</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot clickable" data-slot="leggings"><span class="equip-icon">👖</span><span class="equip-label">레깅스</span><span class="equip-value">-</span></div>
+                    <div class="equip-slot clickable" data-slot="boots"><span class="equip-icon">👢</span><span class="equip-label">부츠</span><span class="equip-value">-</span></div>
                 </div>
             </div>
             <div class="cd-skill-section">
@@ -515,6 +515,18 @@
                 </div>
                 <button id="mc-attack-fight" class="mc-btn mc-attack">⚔</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 장비 고르기: 캐릭터 상세 화면의 슬롯을 누르면 열린다 -->
+    <div id="equip-picker" class="modal-overlay hidden">
+        <div class="equip-picker-panel">
+            <div class="equip-picker-head">
+                <span id="equip-picker-title">무기</span>
+                <button id="equip-picker-close" class="secondary-btn">닫기</button>
+            </div>
+            <div id="equip-picker-list" class="equip-picker-list"></div>
+            <button id="equip-picker-unequip" class="secondary-btn">해제</button>
         </div>
     </div>
 

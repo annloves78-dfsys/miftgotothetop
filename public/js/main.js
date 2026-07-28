@@ -35,6 +35,12 @@ function showScreen(name) {
 }
 
 const lobbyCurrencyBar = document.getElementById('lobby-currency-bar');
+const equipPicker = document.getElementById('equip-picker');
+const equipPickerTitle = document.getElementById('equip-picker-title');
+const equipPickerList = document.getElementById('equip-picker-list');
+const equipPickerClose = document.getElementById('equip-picker-close');
+const equipPickerUnequip = document.getElementById('equip-picker-unequip');
+const charDetailSlotEls = [...document.querySelectorAll('#character-detail-screen .equip-slot[data-slot]')];
 const towerRewardsEl = document.getElementById('tower-rewards');
 const detailBossRewardsEl = document.getElementById('detail-boss-rewards');
 const resultRewardsEl = document.getElementById('result-rewards');
@@ -60,6 +66,7 @@ const charDetailRole = document.getElementById('char-detail-role');
 const charDetailAtk = document.getElementById('char-detail-atk');
 const charDetailHp = document.getElementById('char-detail-hp');
 const charDetailAwakenSlot = document.getElementById('char-detail-awaken-slot');
+const charDetailPower = document.getElementById('char-detail-power');
 
 // Cookie Run Kingdom-style rarity ladder. From 에이션트 up, cookies get an
 // extra "각성" (awakening) equipment slot above their weapon slot.
@@ -317,6 +324,100 @@ const CURRENCY_ICONS = {
 // The pills in the lobby's top-right corner. Tickets are left out -- they have
 // their own counters on the event and 레전더리 뽑기 screens.
 const LOBBY_CURRENCIES = ['coins', 'diamonds', 'material', 'materialRare', 'potion', 'potionRare'];
+
+// ---- 장비 ----
+// 가방은 계정 공용, 장착은 쿠키별. 한 uid는 동시에 한 쿠키에만 붙는다.
+function inventoryItems() {
+    return gameData.inventory || (gameData.inventory = []);
+}
+
+function bagEntry(uid) {
+    return inventoryItems().find(it => it.uid === uid) || null;
+}
+
+function equippedOf(charType) {
+    if (!gameData.equipped) gameData.equipped = {};
+    return gameData.equipped[charType] || (gameData.equipped[charType] = {});
+}
+
+// 이 uid를 끼고 있는 쿠키가 있으면 그 쿠키 id, 없으면 null.
+function wornBy(uid) {
+    if (!gameData.equipped) return null;
+    return Object.keys(gameData.equipped).find(ct =>
+        SHARED.EQUIP_SLOT_KEYS.some(k => gameData.equipped[ct][k] === uid)) || null;
+}
+
+function grantEquipment(itemId) {
+    const item = SHARED.equipmentFor(itemId);
+    if (!item) return null;
+    const uid = gameData.nextEquipUid || 1;
+    gameData.nextEquipUid = uid + 1;
+    inventoryItems().push({ uid, itemId, level: 0 });
+    saveGameData(gameData);
+    return { uid, itemId, item };
+}
+
+// 클리어할 때마다 그 출처의 드랍 표에서 하나를 뽑는다.
+function rollClearDrop(key) {
+    const table = SHARED.clearDropsFor(key);
+    if (!table || !table.length) return null;
+    return grantEquipment(table[Math.floor(Math.random() * table.length)]);
+}
+
+function equipItem(charType, uid) {
+    const entry = bagEntry(uid);
+    const item = entry && SHARED.equipmentFor(entry.itemId);
+    if (!item) return false;
+    // 다른 쿠키가 끼고 있었다면 거기서 먼저 벗긴다.
+    const owner = wornBy(uid);
+    if (owner) delete gameData.equipped[owner][item.slot];
+    equippedOf(charType)[item.slot] = uid;
+    saveGameData(gameData);
+    return true;
+}
+
+function unequipSlot(charType, slot) {
+    delete equippedOf(charType)[slot];
+    saveGameData(gameData);
+}
+
+// 서버에 보낼 장비 목록: 수치가 아니라 **장비 id**만 보낸다.
+// 보너스 계산은 서버가 shared.js의 표를 보고 직접 한다.
+function equipPayload(charType) {
+    const worn = equippedOf(charType);
+    const out = {};
+    SHARED.EQUIP_SLOT_KEYS.forEach(slot => {
+        const entry = bagEntry(worn[slot]);
+        if (entry) out[slot] = entry.itemId;
+    });
+    return out;
+}
+
+function equipBonusOf(charType) {
+    return SHARED.equipBonusFor(equipPayload(charType), charType);
+}
+
+// 장비 하나의 능력치를 사람이 읽을 수 있는 한 줄로.
+function equipStatText(src) {
+    const parts = [];
+    if (src.bonusAttack) parts.push(`공격력 ${src.bonusAttack > 0 ? '+' : ''}${src.bonusAttack}`);
+    if (src.bonusHealth) parts.push(`체력 ${src.bonusHealth > 0 ? '+' : ''}${src.bonusHealth}`);
+    if (src.bonusSpeed) parts.push(`이동 속도 ${src.bonusSpeed > 0 ? '+' : ''}${src.bonusSpeed}`);
+    if (src.bonusDamageTaken) parts.push(`받는 피해 ${Math.round((1 - src.bonusDamageTaken) * 100)}% 감소`);
+    if (src.bonusCooldown) parts.push(`재사용 대기시간 ${Math.round((1 - src.bonusCooldown) * 100)}% 감소`);
+    return parts.join(' · ');
+}
+
+function equipDropChipHtml(dropped) {
+    if (!dropped) return '';
+    const item = dropped.item;
+    return `
+        <div class="reward-chip">
+            <span class="reward-chip-icon">${item.icon}</span>
+            <span class="reward-chip-amount">${item.name}</span>
+            <span class="reward-chip-label">${item.grade} 장비</span>
+        </div>`;
+}
 
 function isAdmin() {
     return !!gameData.admin;
@@ -1096,6 +1197,101 @@ function attackDamageText(stats) {
     return stats.attackDamage != null ? String(stats.attackDamage) : '-';
 }
 
+// ---- 장비 고르기 ----
+let equipPickerSlot = null;
+
+function openEquipPicker(slot) {
+    const slotDef = SHARED.EQUIP_SLOTS.find(s => s.key === slot);
+    if (!slotDef || !viewingCharacterId) return;
+    equipPickerSlot = slot;
+    equipPickerTitle.textContent = `${slotDef.icon} ${slotDef.name}`;
+    renderEquipPicker();
+    equipPicker.classList.remove('hidden');
+}
+
+function closeEquipPicker() {
+    equipPickerSlot = null;
+    equipPicker.classList.add('hidden');
+}
+
+function renderEquipPicker() {
+    const charType = viewingCharacterId;
+    const worn = equippedOf(charType);
+    const rows = inventoryItems()
+        .map(entry => ({ entry, item: SHARED.equipmentFor(entry.itemId) }))
+        .filter(r => r.item && r.item.slot === equipPickerSlot);
+
+    equipPickerUnequip.classList.toggle('hidden', !worn[equipPickerSlot]);
+
+    if (!rows.length) {
+        equipPickerList.innerHTML = `<p class="equip-picker-empty">가지고 있는 ${
+            (SHARED.EQUIP_SLOTS.find(s => s.key === equipPickerSlot) || {}).name || ''
+        } 장비가 없습니다. 스토리나 보스를 깨면 떨어집니다.</p>`;
+        return;
+    }
+
+    equipPickerList.innerHTML = rows.map(({ entry, item }) => {
+        const isOn = worn[equipPickerSlot] === entry.uid;
+        const otherOwner = !isOn && wornBy(entry.uid);
+        let ownerLine = '';
+        if (item.ownerChar) {
+            const active = SHARED.ownerBonusActive(item, charType);
+            const ownerName = (SHARED.CHARACTERS[item.ownerChar] || {}).name || item.ownerChar;
+            ownerLine = `<div class="equip-item-owner${active ? '' : ' inactive'}">${
+                active ? item.ownerText : `${ownerName} 전용 — 이 쿠키에게는 발동하지 않습니다`
+            }</div>`;
+        }
+        const wornLine = otherOwner
+            ? `<div class="equip-item-worn">${(SHARED.CHARACTERS[otherOwner] || {}).name || otherOwner}가 착용 중 — 가져오면 벗겨집니다</div>`
+            : '';
+        return `
+            <div class="equip-item${isOn ? ' equipped' : ''}" data-uid="${entry.uid}">
+                <span class="equip-item-icon">${item.icon}</span>
+                <span class="equip-item-main">
+                    <div class="equip-item-name">${item.name} <span class="${gradeClass(item.grade)}">${item.grade}</span></div>
+                    <div class="equip-item-stats">${equipStatText(item) || '능력치 없음'}</div>
+                    ${ownerLine}${wornLine}
+                </span>
+                ${isOn ? '<span class="equip-item-worn">착용 중</span>' : ''}
+            </div>`;
+    }).join('');
+}
+
+equipPickerList.addEventListener('click', (e) => {
+    const row = e.target.closest('.equip-item');
+    if (!row || !equipPickerSlot) return;
+    equipItem(viewingCharacterId, Number(row.dataset.uid));
+    closeEquipPicker();
+    openCharacterDetail(viewingCharacterId);
+});
+
+equipPickerUnequip.addEventListener('click', () => {
+    if (!equipPickerSlot) return;
+    unequipSlot(viewingCharacterId, equipPickerSlot);
+    closeEquipPicker();
+    openCharacterDetail(viewingCharacterId);
+});
+
+equipPickerClose.addEventListener('click', closeEquipPicker);
+equipPicker.addEventListener('click', (e) => { if (e.target === equipPicker) closeEquipPicker(); });
+
+charDetailSlotEls.forEach(el => {
+    el.addEventListener('click', () => openEquipPicker(el.dataset.slot));
+});
+
+// 장착한 장비를 슬롯에 썬다.
+function renderCharDetailEquipment(charType) {
+    const worn = equippedOf(charType);
+    charDetailSlotEls.forEach(el => {
+        const entry = bagEntry(worn[el.dataset.slot]);
+        const item = entry && SHARED.equipmentFor(entry.itemId);
+        const valueEl = el.querySelector('.equip-value');
+        valueEl.textContent = item ? item.name : '-';
+        valueEl.classList.toggle('empty', !item);
+        el.classList.toggle('filled', !!item);
+    });
+}
+
 function openCharacterDetail(id) {
     viewingCharacterId = id;
     const stats = SHARED.CHARACTERS[id];
@@ -1106,8 +1302,16 @@ function openCharacterDetail(id) {
     charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
-    charDetailAtk.textContent = attackDamageText(stats);
-    charDetailHp.textContent = stats.health != null ? stats.health : '-';
+    const bonus = equipBonusOf(id);
+    charDetailAtk.innerHTML = attackDamageText(stats)
+        + (bonus.attack ? `<span class="cd-stat-bonus">+${bonus.attack}</span>` : '');
+    charDetailHp.innerHTML = (stats.health != null ? stats.health : '-')
+        + (bonus.health ? `<span class="cd-stat-bonus">+${bonus.health}</span>` : '');
+    // 지금까지 비어 있던 헤더의 숫자: 장비를 포함한 공격력+체력 합산.
+    charDetailPower.textContent = String(
+        (Number(String(attackDamageText(stats)).split(' / ')[0]) || 0) + bonus.attack
+        + (stats.health || 0) + bonus.health);
+    renderCharDetailEquipment(id);
     charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
     charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
     charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
@@ -1424,7 +1628,7 @@ eventContentEl.addEventListener('click', (e) => {
 // is opened with (see floorDefFor in shared.js).
 function enterEventStage(id) {
     if (!SHARED.EVENT_STAGE_DEFS[id]) return;
-    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker' });
+    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker') });
 }
 
 eventBtn.addEventListener('click', () => {
@@ -1823,7 +2027,7 @@ backFromTowerBtn.addEventListener('click', () => showScreen('storyMode'));
 towerPlayBtn.addEventListener('click', () => {
     if (towerPlayBtn.disabled) return;
     if (!SHARED.STORY_FLOOR_DEFS[selectedStoryFloor]) return; // no content for this floor yet
-    socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType: gameData.selectedCharacter || 'kicker' });
+    socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker') });
 });
 
 // ---- Story fight: floor bridge combat ----
@@ -1870,6 +2074,7 @@ socket.on('storyFloorStarted', (data) => {
     const p = data.player;
     storyPlayer = {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
+        equipSpeed: 0, equipCooldown: 1, // filled in below from what this cookie has on
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
         comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0
@@ -1884,6 +2089,10 @@ socket.on('storyFloorStarted', (data) => {
     storyDropSplashes = [];
     storyQuakeUntil = 0;
     updateStoryHpBar();
+    // 서버가 공격력·체력·받는 피해를 맡고, 이동 속도와 쿠다운 표시는 클라이언트 몴이다.
+    const myBonus = equipBonusOf(p.charType);
+    storyPlayer.equipSpeed = myBonus.speed;
+    storyPlayer.equipCooldown = myBonus.cooldown;
     updateStoryMonstersLeft();
     syncMobileButtonIcons(p.charType, true);
     showScreen('storyFight');
@@ -2029,7 +2238,9 @@ socket.on('storyFloorResult', ({ result, floor }) => {
                 saveGameData(gameData);
             }
             // 깔 때마다 전액 -- 첫 클리어인지와 무관하다.
-            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(SHARED.storyRewardKey(floor)));
+            const key = SHARED.storyRewardKey(floor);
+            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(key))
+                + equipDropChipHtml(rollClearDrop(key));
         }
     } else {
         resultTitle.textContent = '패배...';
@@ -2113,7 +2324,8 @@ function storyWorldFromMouse() {
 function storyCanUseSkill(now) {
     if (!storyPlayer || !storyPlayer.alive) return false;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    return !!stats.skillType && now - storyPlayer.lastSkillClientTime >= stats.skillCooldown;
+    return !!stats.skillType
+        && now - storyPlayer.lastSkillClientTime >= stats.skillCooldown * (storyPlayer.equipCooldown || 1);
 }
 
 // 나비모드 has no duration: while it is running the ultimate button is the
@@ -2126,7 +2338,8 @@ function storyCanUseUltimate(now) {
     if (!storyPlayer || !storyPlayer.alive) return false;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     if (ultimateIsHeldOn(stats, storyPlayer)) return true;
-    return !!stats.ultimateType && now - storyPlayer.lastUltimateClientTime >= stats.ultimateCooldownMs;
+    return !!stats.ultimateType
+        && now - storyPlayer.lastUltimateClientTime >= stats.ultimateCooldownMs * (storyPlayer.equipCooldown || 1);
 }
 
 function tryStoryUseSkill() {
@@ -2248,14 +2461,16 @@ function updateStoryCooldownDisplay(now) {
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     let skillRemain = 0, ultRemain = 0;
     if (stats.skillType) {
-        const remain = Math.max(0, stats.skillCooldown - (now - storyPlayer.lastSkillClientTime)) / 1000;
+        const remain = Math.max(0, stats.skillCooldown * (storyPlayer.equipCooldown || 1)
+            - (now - storyPlayer.lastSkillClientTime)) / 1000;
         storyMySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         skillRemain = remain;
     }
     if (ultimateIsHeldOn(stats, storyPlayer)) {
         storyMyUltimateCdEl.textContent = '사용중';
     } else if (stats.ultimateType) {
-        const remain = Math.max(0, stats.ultimateCooldownMs - (now - storyPlayer.lastUltimateClientTime)) / 1000;
+        const remain = Math.max(0, stats.ultimateCooldownMs * (storyPlayer.equipCooldown || 1)
+            - (now - storyPlayer.lastUltimateClientTime)) / 1000;
         storyMyUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
     }
@@ -2266,7 +2481,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;
@@ -2763,11 +2978,11 @@ function handleMultiOrSoloClick(isMulti) {
             detailSoloBtn.disabled = true;
             detailLeaveBtn.classList.remove('hidden');
             startSearchTimer();
-            socket.emit('joinRaid', { bossId: selectedBossId, charType });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, equip: equipPayload(charType) });
         } else {
             detailMultiBtn.disabled = true;
             detailSoloBtn.disabled = true;
-            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true, equip: equipPayload(charType) });
             socket.emit('startRaid');
         }
     } else if (raidPhase === 'matched' && !myReady) {
@@ -2845,6 +3060,13 @@ socket.on('raidStarted', (data) => {
     Object.entries(data.players).forEach(([id, p]) => {
         const pl = new Player(id, p.charType, p.x, p.y, id === socket.id);
         pl.hp = p.hp; pl.maxHp = p.maxHp; pl.facing = p.facing; pl.alive = p.alive; pl.shieldHp = p.shieldHp || 0;
+        // Only my own cookie's equipment is known here -- a partner's numbers
+        // live on the server, which is the side that matters for damage.
+        if (id === socket.id) {
+            const b = equipBonusOf(p.charType);
+            pl.equipSpeed = b.speed;
+            pl.equipCooldown = b.cooldown;
+        }
         players[id] = pl;
     });
     partnerHpContainer.classList.toggle('hidden', Object.keys(players).length < 2);
@@ -3015,7 +3237,8 @@ socket.on('raidResult', ({ result }) => {
         resultDesc.textContent = '보스를 물리쳤습니다.';
         if (currentRoomState) {
             recordClear(currentRoomState.bossId, performance.now() - raidStartAt);
-            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(currentRoomState.bossId));
+            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(currentRoomState.bossId))
+                + equipDropChipHtml(rollClearDrop(currentRoomState.bossId));
         }
     } else {
         resultTitle.textContent = '전멸...';
@@ -3062,14 +3285,16 @@ function updateCooldownDisplay(now) {
     if (!me) return;
     let skillRemain = 0, ultRemain = 0;
     if (me.stats.skillType) {
-        const remain = Math.max(0, me.stats.skillCooldown - (now - me.lastSkillClientTime)) / 1000;
+        const remain = Math.max(0, me.stats.skillCooldown * (me.equipCooldown || 1)
+            - (now - me.lastSkillClientTime)) / 1000;
         mySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         skillRemain = remain;
     }
     if (ultimateIsHeldOn(me.stats, me)) {
         myUltimateCdEl.textContent = '사용중';
     } else if (me.stats.ultimateType) {
-        const remain = Math.max(0, me.stats.ultimateCooldownMs - (now - me.lastUltimateClientTime)) / 1000;
+        const remain = Math.max(0, me.stats.ultimateCooldownMs * (me.equipCooldown || 1)
+            - (now - me.lastUltimateClientTime)) / 1000;
         myUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
     }

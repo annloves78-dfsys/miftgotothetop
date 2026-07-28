@@ -91,6 +91,21 @@ function activateGuestLocalSlot(index) {
     guestLocal.activeSlot = index;
     const incoming = guestSlotBag(index);
     GUEST_SLOT_FIELDS.forEach(f => { guestLocal[f] = incoming[f]; });
+    applyGuestEquipBonus();
+}
+
+// 이동 속도와 쿠다운 표시는 클라이언트 몴이므로, 지금 슬롯의 쿠키 장비를
+// 그때그때 다시 읽어둔다. 공격력·체력·받는 피해는 서버가 맡는다.
+function applyGuestEquipBonus() {
+    if (!guestLocal) return;
+    const b = equipBonusOf(guestCurrentCharType());
+    guestLocal.equipSpeed = b.speed;
+    guestLocal.equipCooldown = b.cooldown;
+}
+
+function guestCurrentCharType() {
+    const me = guestState && guestState.players[socket.id];
+    return (me && me.charType) || 'kicker';
 }
 
 // Four cookies in both modes. (Multiplayer used to cut you down to one; only
@@ -216,11 +231,11 @@ function guestStartClick(isMulti) {
             guestSoloBtn.disabled = true;
             guestLeaveBtn.classList.remove('hidden');
             guestMultiBtn.textContent = '대기중...';
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, equipParty: lineup.map(id => equipPayload(id)) });
         } else {
             guestMultiBtn.disabled = true;
             guestSoloBtn.disabled = true;
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, solo: true });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, solo: true, equipParty: lineup.map(id => equipPayload(id)) });
             socket.emit('startGuestRaid');
         }
     } else if (guestPhase === 'matched' && !guestMyReady) {
@@ -343,6 +358,7 @@ socket.on('guestStarted', (data) => {
     guestCollapseOverlay.classList.add('hidden');
     guestFightSettings.classList.add('hidden');
     syncGuestMobileIcons(me ? me.charType : 'kicker');
+    applyGuestEquipBonus();
     updateGuestHpBars();
     showScreen('guestFight');
     startGuestLoop();
@@ -458,6 +474,21 @@ socket.on('guestPlayerDamaged', (d) => {
     Object.assign(guestState.players[d.id], d);
     updateGuestHpBars();
 });
+// 부활: 체력은 guestPlayerDamaged가 이미 실어 오지만, 부활했다는 것이
+// 보이지 않으면 그냥 회복한 것처럼 보인다.
+socket.on('guestPlayerRevived', ({ id, hp }) => {
+    if (!guestState || !guestState.players[id]) return;
+    guestState.players[id].hp = hp;
+    guestState.players[id].alive = true;
+    updateGuestHpBars();
+});
+
+socket.on('guestReviveBlast', ({ id }) => {
+    const p = guestState && guestState.players[id];
+    if (!p) return;
+    guestImpacts.push({ x: p.x, y: p.y, radius: 220, until: performance.now() + 500, bolt: true });
+});
+
 socket.on('guestPlayerHealed', (d) => {
     if (!guestState || !guestState.players[d.id]) return;
     Object.assign(guestState.players[d.id], d);
@@ -664,13 +695,20 @@ function tryGuestUseSkill() {
 
 function guestCanUseSkill(now) {
     const stats = guestStats();
-    return !!stats.skillType && now - guestLocal.lastSkillClientTime >= stats.skillCooldown;
+    return !!stats.skillType
+        && now - guestLocal.lastSkillClientTime >= stats.skillCooldown * guestEquipCooldown();
+}
+
+// 장비의 쿠다운 감소는 지금 나와 있는 슬롯의 쿠키 것을 따른다.
+function guestEquipCooldown() {
+    return (guestLocal && guestLocal.equipCooldown) || 1;
 }
 
 function guestCanUseUltimate(now) {
     const stats = guestStats();
     if (ultimateIsHeldOn(stats, guestLocal)) return true;
-    return !!stats.ultimateType && now - guestLocal.lastUltimateClientTime >= stats.ultimateCooldownMs;
+    return !!stats.ultimateType
+        && now - guestLocal.lastUltimateClientTime >= stats.ultimateCooldownMs * guestEquipCooldown();
 }
 
 function tryGuestUseUltimate() {
@@ -744,7 +782,8 @@ function updateGuestCooldownDisplay(now) {
     }
     if (stats.ultimateType) {
         if (ultimateIsHeldOn(stats, guestLocal)) ultRemain = 0;
-        else ultRemain = Math.max(0, stats.ultimateCooldownMs - (now - guestLocal.lastUltimateClientTime)) / 1000;
+        else ultRemain = Math.max(0, stats.ultimateCooldownMs * guestEquipCooldown()
+            - (now - guestLocal.lastUltimateClientTime)) / 1000;
         guestMyUltimateCdEl.textContent = ultRemain > 0.05 ? `${ultRemain.toFixed(1)}s` : '사용가능';
     }
     syncGuestMobileCooldowns(skillRemain, ultRemain);
@@ -755,7 +794,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed);
         let dx = 0, dy = 0;
         if (keys['w'] || keys['W']) dy -= speed;
         if (keys['s'] || keys['S']) dy += speed;

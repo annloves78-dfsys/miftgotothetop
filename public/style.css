@@ -2604,3 +2604,68 @@ body.mc-on .guest-collapse-sub { font-size: 14px; }
 body.mc-on .currency-bar { top: 10px; right: 12px; gap: 5px; }
 body.mc-on .currency-pill { padding: 4px 7px; font-size: 11px; }
 body.mc-on .reward-chip { min-width: 54px; padding: 5px 6px; }
+
+/* ---- 장비 ---- */
+.equip-slot.clickable { cursor: pointer; transition: 0.15s; }
+.equip-slot.clickable:hover { border-color: #7f8c8d; background: #202737; }
+.equip-slot.filled { border-color: #f39c12; }
+.equip-slot .equip-value.empty { color: #7f8c8d; }
+
+.equip-picker-panel {
+    width: min(560px, 92vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background: #22293a;
+    border: 2px solid #34495e;
+    border-radius: 12px;
+}
+
+.equip-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 18px;
+    font-weight: bold;
+    color: #ecf0f1;
+}
+
+.equip-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    min-height: 60px;
+}
+
+.equip-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #1a1f2b;
+    border: 2px solid #34495e;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.equip-item:hover { border-color: #7f8c8d; }
+.equip-item.equipped { border-color: #f39c12; }
+.equip-item-icon { font-size: 22px; }
+.equip-item-main { flex: 1; min-width: 0; }
+.equip-item-name { font-size: 14px; color: #ecf0f1; }
+.equip-item-stats { font-size: 12px; color: #7fd4f5; }
+/* 전용 효과: 지금 쿠키에게 발동하면 노랑, 아니면 흐리게 죽여서
+   "끼워도 안 돌아간다"는 것이 한눈에 보이게 한다. */
+.equip-item-owner { font-size: 11px; color: #f1c40f; }
+.equip-item-owner.inactive { color: #7f8c8d; text-decoration: line-through; }
+.equip-item-worn { font-size: 11px; color: #95a5a6; }
+.equip-picker-empty { font-size: 13px; color: #7f8c8d; text-align: center; padding: 16px 0; }
+
+.cd-stat-bonus { color: #2ecc71; font-size: 12px; margin-left: 4px; }
+
+body.mc-on .equip-picker-panel { padding: 12px; }
+body.mc-on .equip-item { padding: 7px 9px; }
