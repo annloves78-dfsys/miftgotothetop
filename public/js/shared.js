@@ -491,12 +491,12 @@ const CHARACTERS = {
         attackType: 'vampire_slash',
         attackRange: 150,
         attackWidth: 60,
-        attackDamage: 10,
-        attackCooldown: 500,
+        attackDamage: 8,
+        attackCooldown: 300,
         attackVampireEvery: 4, // 매 4번째 공격이 흥혈 베기
         attackVampireRange: 175, // 흥혈 베기만 조금 더 크게 벌다
         attackVampireWidth: 80,
-        attackVampireHealRatio: 0.2,
+        attackVampireHealRatio: 0.1, // 흡혈 베기로 쓰러뜨렸을 때만
         // 패시브 1: 적중할 때마다 확률적으로 큰 회복이 터진다.
         passiveHitHealChance: 0.2,
         passiveHitHealRatio: 0.25,
@@ -505,12 +505,11 @@ const CHARACTERS = {
         passiveReviveCount: 1,
         passiveReviveHpRatio: 0.5,
         awakenOnReviveNo: 2,
-        // 순간이동: 때파기와 같은 모양이되 내려앉는 범위가 훨씬 작고,
-        // 대신 이동하면서 자기 체력을 채운다.
+        // 순간이동: 때파기처럼 자리를 찍어서 그 자리로 간다. 표식은 남기지
+        // 않고, 이동하면서 자기 체력만 채운다. skillRadius는 표식 반경이
+        // 아니라 모바일에서 자리를 안 찍었을 때 앞으로 나가는 거리다.
         skillType: 'blink_heal',
         skillRadius: 90,
-        skillMarkUses: 3,
-        skillMarkMultiplier: 1.3,
         skillHealRatio: 0.1,
         skillCooldown: 10000,
         // 크게베기: 0.3초 예열 뒤에 엄청 큰 반공간을 벤다.
@@ -1605,7 +1604,7 @@ const EQUIPMENT = {
     },
     runner_boots: {
         name: '달리기 부츠', slot: 'boots', grade: '희귀', icon: '👟',
-        bonusSpeed: 0.3
+        bonusHealth: 10, bonusDamageTaken: 0.97
     },
     // ---- 스톤 골렘 ----
     golem_blade: {
@@ -1624,7 +1623,7 @@ const EQUIPMENT = {
     },
     golem_greaves: {
         name: '골렘의 돌다리', slot: 'leggings', grade: '희귀', icon: '🦵',
-        bonusHealth: 12, bonusSpeed: -0.1
+        bonusHealth: 12, bonusDamageTaken: 0.97
     },
     // ---- 시하라얼 ----
     shihara_spear: {
@@ -1640,10 +1639,10 @@ const EQUIPMENT = {
     },
     shadow_boots: {
         name: '그림자 부츠', slot: 'boots', grade: '에픽', icon: '🥾',
-        bonusSpeed: 0.5, bonusHealth: 6,
+        bonusHealth: 16, bonusCooldown: 0.95,
         ownerChar: 'sugarfly',
-        ownerBonus: { bonusSpeed: 0.3 },
-        ownerText: '슈가 플라이맛 쿠키가 착용하면 이동 속도가 0.3 더 빨라집니다.'
+        ownerBonus: { bonusCooldown: 0.9 },
+        ownerText: '슈가 플라이맛 쿠키가 착용하면 재사용 대기시간이 10% 더 줄어듭니다.'
     }
 };
 

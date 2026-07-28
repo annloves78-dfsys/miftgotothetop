@@ -104,6 +104,10 @@ const menuBtn = document.getElementById('menu-btn');
 const sideMenu = document.getElementById('side-menu');
 // The ☰ menu is now just two entries (계정 / 조작); everything else moved onto
 // those two screens.
+const accountResetBtn = document.getElementById('account-reset-btn');
+const accountResetModal = document.getElementById('account-reset-modal');
+const accountResetYes = document.getElementById('account-reset-yes');
+const accountResetNo = document.getElementById('account-reset-no');
 const menuAccountBtn = document.getElementById('menu-account-btn');
 const menuControlsBtn = document.getElementById('menu-controls-btn');
 const accountBackBtn = document.getElementById('account-back-btn');
@@ -158,6 +162,20 @@ document.addEventListener('click', (e) => {
         sideMenu.classList.add('hidden');
     }
 });
+
+// 계정 초기화. 되돌릴 수 없으니 한 번 더 묻고, 지운 뒤에는 화면을 다시 띄운다
+// (곳곳에 흩어진 화면을 하나씩 되돌리는 것보다 새로 그리는 쪽이 확실하다).
+// 로그인 상태라면 초기화된 상태를 클라우드에도 밀어 넣어서, 다시 로그인해도
+// 예전 진행 상황이 되살아나지 않게 한다.
+if (accountResetBtn) {
+    accountResetBtn.addEventListener('click', () => accountResetModal.classList.remove('hidden'));
+    accountResetNo.addEventListener('click', () => accountResetModal.classList.add('hidden'));
+    accountResetYes.addEventListener('click', () => {
+        const fresh = resetGameData();
+        saveGameData(fresh);
+        location.reload();
+    });
+}
 
 menuAccountBtn.addEventListener('click', () => {
     sideMenu.classList.add('hidden');
@@ -567,10 +585,10 @@ function describeAbility(stats, kind) {
                 + ` (1타 재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'vampire_slash') {
-            return `보라빛 대검으로 전방 ${stats.attackRange}px를 베어 ${stats.attackDamage}의 피해를 줍니다.`
-                + ` ${stats.attackVampireEvery}번째 공격은 흥혈 베기로 바뀌어 더 넓게(${stats.attackVampireRange}px) 베고,`
-                + ` 적중하면 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 회복합니다.`
-                + ` (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+            return `보라빛 대검으로 전방 ${stats.attackRange}px를 가로로 베어 ${stats.attackDamage}의 피해를 줍니다.`
+                + ` ${stats.attackVampireEvery}번째 공격은 흡혈 베기로 바뀌어 더 넓게(${stats.attackVampireRange}px) 베고,`
+                + ` 그 베기로 적을 쓰러뜨리면 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 회복합니다.`
+                + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
             return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
@@ -609,9 +627,8 @@ function describeAbility(stats, kind) {
             case 'earthquake':
                 return `땅을 흔들어 지진을 일으킵니다. 적이 ${stats.skillThresholdCount}명 이하면 모든 적에게 ${stats.skillDamage}의 피해를 주고, 그보다 많으면 가장 가까운 적 한 명을 즉시 쓰러뜨립니다.${cd}`;
             case 'blink_heal':
-                return `직접 지정한 위치로 순간이동합니다. 내려앉은 자리 반경 ${stats.skillRadius}px 안의 적은`
-                    + ` ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 받고, 이동하면서 자신의 최대 체력`
-                    + ` ${Math.round(stats.skillHealRatio * 100)}%를 회복합니다.${cd}`;
+                return `직접 지정한 위치로 순간이동하면서 자신의 최대 체력`
+                    + ` ${Math.round(stats.skillHealRatio * 100)}%를 회복합니다. 피해도 표식도 없습니다.${cd}`;
             case 'mark_burst':
                 return `떨어뜨릴 위치를 직접 지정해 물방울을 터뜨립니다. 반경 ${stats.skillRadius}px 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다. 피해는 없습니다.${cd}`;
             case 'burrow_mark':
@@ -2526,6 +2543,7 @@ function tryStoryAttack() {
     if (now - storyPlayer.lastAttackClientTime < cooldown) return;
     storyPlayer.lastAttackClientTime = now;
     storyPlayer.attackEffectUntil = now + 180;
+    advanceSweepCount(storyPlayer, stats);
     if (stats.attackType === 'combo_two_stage') {
         // Mirror the server's stage bookkeeping so the effect draws the right shape.
         storyPlayer.attackEffectStage = stats.attackStages[storyPlayer.comboStage || 0];
@@ -2874,7 +2892,14 @@ function storyRender(now) {
         storyCtx.save();
         storyCtx.translate(storyPlayer.x, storyPlayer.y);
 
-        if (now < (storyPlayer.attackEffectUntil || 0)) {
+        if (now < (storyPlayer.attackEffectUntil || 0) && stats.attackType === 'vampire_slash') {
+            const sh = sweepShape(stats, storyPlayer.attackVampire);
+            storyCtx.save();
+            storyCtx.rotate(storyPlayer.facing);
+            drawSweepSlash(storyCtx, R, sh.range, sh.width,
+                1 - ((storyPlayer.attackEffectUntil || 0) - now) / SWEEP_MS, storyPlayer.attackVampire);
+            storyCtx.restore();
+        } else if (now < (storyPlayer.attackEffectUntil || 0)) {
             const stage = storyPlayer.attackEffectStage;
             const aRange = stage ? stage.range : stats.attackRange;
             const aWidth = (stage ? stage.width : stats.attackWidth) || 40;
@@ -3518,7 +3543,7 @@ function isTargetedUltimate(type) {
 // rather than fired from the body, so they arm the same way an ultimate does:
 // trigger once to aim, left-click to commit, trigger again to cancel.
 function isTargetedSkill(type) {
-    return type === 'burrow_mark' || type === 'mark_burst';
+    return type === 'burrow_mark' || type === 'mark_burst' || type === 'blink_heal';
 }
 // Where a placed skill lands with no mouse (mobile): just ahead of the player.
 function mobileSkillTarget(x, y, facing, stats) {

@@ -40,6 +40,49 @@ const SKILL_FULL_DURATION_EFFECTS = ['spin_heal', 'guard_stance'];
 // How far off the body centre this swing's corridor sits, in the frame already
 // rotated to `facing` (+y = the player's right). Only dual_spear uses it; keep in
 // step with resolveAttack's originX/originY in server.js.
+// 가로로 베는 모션. 칼이 한쪽 끝에서 반대쪽 끝까지 훑고 지나가고 지나간
+// 자리에 잔상이 짧게 남는다. 판정은 서버가 직사각형으로 보므로, 훑는
+// 부채꼴은 그 직사각형을 덮을 만큼 크게 그린다. 흡혈 베기일 때는 붉게.
+const SWEEP_MS = 180;
+function drawSweepSlash(c, R, range, width, t, vampire) {
+    const half = Math.max(0.55, Math.atan2(width / 2, range * 0.55));
+    const a = -half + 2 * half * Math.min(1, t);
+    const tail = Math.max(-half, a - 0.6);
+    const outer = R + range;
+    const fade = t > 0.7 ? Math.max(0, 1 - (t - 0.7) / 0.3) : 1;
+    c.save();
+    c.beginPath();
+    c.arc(0, 0, outer, tail, a);
+    c.arc(0, 0, R, a, tail, true);
+    c.closePath();
+    c.fillStyle = vampire ? `rgba(192, 57, 43, ${0.4 * fade})` : `rgba(142, 68, 173, ${0.32 * fade})`;
+    c.fill();
+    // 칼날이 지금 지나가는 자리
+    c.beginPath();
+    c.moveTo(Math.cos(a) * R, Math.sin(a) * R);
+    c.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+    c.strokeStyle = vampire ? `rgba(255, 130, 110, ${fade})` : `rgba(206, 160, 255, ${fade})`;
+    c.lineWidth = 5;
+    c.stroke();
+    c.restore();
+}
+
+// 몇 번째 공격인지 세서 흡혈 차례를 미리 안다. 서버도 같은 규칙으로 센다.
+function advanceSweepCount(o, stats) {
+    if (stats.attackType !== 'vampire_slash') return;
+    o.attackSeq = (o.attackSeq || 0) + 1;
+    o.attackVampire = !!stats.attackVampireEvery
+        && o.attackSeq % stats.attackVampireEvery === 0;
+}
+
+// 흡혈 베기는 조금 더 크게 벤다.
+function sweepShape(stats, vampire) {
+    return vampire
+        ? { range: stats.attackVampireRange || stats.attackRange,
+            width: stats.attackVampireWidth || stats.attackWidth }
+        : { range: stats.attackRange, width: stats.attackWidth };
+}
+
 function attackSideShift(stats, side) {
     if (stats.attackType !== 'dual_spear') return 0;
     return (side || 0) === 0 ? stats.attackSideOffset : -stats.attackSideOffset;
@@ -187,6 +230,7 @@ class Player {
             this.attackEffectSide = this.spearSide || 0;
             this.spearSide = (this.spearSide || 0) === 0 ? 1 : 0;
         }
+        advanceSweepCount(this, this.stats);
         if (this.stats.skillType === 'guard_stance') {
             this.skillEffectUntil = 0; // attacking breaks the guard stance
         }
@@ -231,7 +275,14 @@ class Player {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        if (now < this.attackEffectUntil) {
+        if (now < this.attackEffectUntil && this.stats.attackType === 'vampire_slash') {
+            const sh = sweepShape(this.stats, this.attackVampire);
+            ctx.save();
+            ctx.rotate(facingAngle);
+            drawSweepSlash(ctx, R, sh.range, sh.width,
+                1 - (this.attackEffectUntil - now) / SWEEP_MS, this.attackVampire);
+            ctx.restore();
+        } else if (now < this.attackEffectUntil) {
             // Straight-line kick corridor, drawn extending forward from the body.
             const stage = this.attackEffectStage;
             const range = stage ? stage.range : this.stats.attackRange;

@@ -668,6 +668,7 @@ function tryGuestAttack() {
     if (now - guestLocal.lastAttackClientTime < cd) return;
     guestLocal.lastAttackClientTime = now;
     guestLocal.attackEffectUntil = now + 180;
+    advanceSweepCount(guestLocal, stats);
     if (stats.attackType === 'combo_two_stage') {
         guestLocal.attackEffectStage = stats.attackStages[guestLocal.comboStage || 0];
         guestLocal.comboStage = ((guestLocal.comboStage || 0) + 1) % stats.attackStages.length;
@@ -1128,7 +1129,15 @@ function guestRender(now) {
         guestCtx.save();
         guestCtx.translate(px, py);
 
-        if (mine && guestLocal && now < guestLocal.attackEffectUntil) {
+        if (mine && guestLocal && now < guestLocal.attackEffectUntil
+            && stats.attackType === 'vampire_slash') {
+            const sh = sweepShape(stats, guestLocal.attackVampire);
+            guestCtx.save();
+            guestCtx.rotate(facing);
+            drawSweepSlash(guestCtx, R, sh.range, sh.width,
+                1 - (guestLocal.attackEffectUntil - now) / SWEEP_MS, guestLocal.attackVampire);
+            guestCtx.restore();
+        } else if (mine && guestLocal && now < guestLocal.attackEffectUntil) {
             const stage = guestLocal.attackEffectStage;
             const range = stage ? stage.range : stats.attackRange;
             const width = (stage ? stage.width : stats.attackWidth) || 40;

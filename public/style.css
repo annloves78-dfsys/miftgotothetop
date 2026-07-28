@@ -1168,7 +1168,7 @@ html, body {
 }
 
 .cd-equip-col {
-    flex: 1;
+    flex: 1.5;
     justify-content: center;
 }
 
@@ -2670,17 +2670,62 @@ body.mc-on .reward-chip { min-width: 54px; padding: 5px 6px; }
 body.mc-on .equip-picker-panel { padding: 12px; }
 body.mc-on .equip-item { padding: 7px 9px; }
 
-/* 장비 칸이 여섯 개까지 늘어나면 .cd-body 밖으로 넘치고, 넘친 부분은
-   밑에 오는 스킬 칸이 덮어버려서 마지막 칸(부츠)이 안 눌렸다. 칸 안에서
-   스크롤되게 해서 밖으로 샐지 않게 한다. */
+/* 장비 칸이 여섯 개까지 늘어나면 한 줄로는 .cd-body 밖으로 넘치고, 넘친 부분을
+   밑의 스킬 칸이 덮어버려서 마지막 칸(부츠)이 안 눌렸다. 스크롤은 불편하니,
+   두 줄로 나누고 칸 높이를 줄여서 여섯 칸이 전부 한 눈에 들어오게 한다.
+   장비 이름은 아이콘/칸이름 밑에 따로 깔아서 이름이 길어도 들어간다. */
 .cd-equip-col {
     min-height: 0;
-    overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: min-content;
+    align-content: center;
+    gap: 8px;
 }
+
+.cd-equip-col .equip-slot {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    row-gap: 1px;
+    column-gap: 7px;
+    padding: 7px 10px;
+    min-width: 0;
+}
+
+.cd-equip-col .equip-label {
+    font-size: 12px;
+    min-width: 0;
+}
+
+.cd-equip-col .equip-value {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    line-height: 1.25;
+    /* 이름이 길면 칸을 밀어내지 말고 줄임표로 자른다 */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.mc-on .cd-equip-col { gap: 6px; }
+body.mc-on .cd-equip-col .equip-slot { padding: 5px 8px; }
+body.mc-on .cd-equip-col .equip-value { font-size: 11px; }
 
 .gacha-ticket-count {
     font-size: 15px;
     color: #f1c40f;
     margin-left: 10px;
     vertical-align: middle;
+}
+
+/* 되돌릴 수 없는 버튼은 색으로 먼저 알린다 */
+.menu-item-btn.danger-btn {
+    border-color: #c0392b;
+    color: #e88b80;
+}
+
+.menu-item-btn.danger-btn:hover {
+    background: #3a1e1b;
 }

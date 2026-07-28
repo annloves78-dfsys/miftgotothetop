@@ -231,16 +231,19 @@ function toggleButterflyMode(character, p, now) {
 // 슈가 플라이맛's passive: every Nth landed hit heals the cookie itself.
 // Returns how much to heal (0 most swings).
 // 번개악마맛: 적중할 때마다 확률적으로 최대 체력의 일부를 회복한다.
-// 흥혈 베기가 맞았을 때의 회복과는 별개라, 둘 다 터질 수 있다.
 function passiveChanceHeal(character, p, swing) {
     let heal = 0;
     if (character.passiveHitHealChance && Math.random() < character.passiveHitHealChance) {
         heal += Math.round(p.maxHp * character.passiveHitHealRatio);
     }
-    if (swing && swing.vampire && character.attackVampireHealRatio) {
-        heal += Math.round(p.maxHp * character.attackVampireHealRatio);
-    }
     return heal;
+}
+
+// 흡혈 베기는 맞히기만 해서는 안 빨리고, 그 베기로 적을 쓰러뜨려야 채워진다.
+// 몬스터든 보스든 규칙은 같다.
+function vampireKillHeal(character, p, swing, killed) {
+    if (!killed || !swing || !swing.vampire || !character.attackVampireHealRatio) return 0;
+    return Math.round(p.maxHp * character.attackVampireHealRatio);
 }
 
 // 크게베기는 베기 전에 짧게 예열한다. 방에 남아 있을 때만 터지게 하기 위해
@@ -935,7 +938,7 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
     if (m.hp <= 0) {
         m.alive = false;
         io.to(roomId).emit('monsterDefeated', { id: mid });
-        return;
+        return true; // 흡혈 베기가 이 한 방으로 끝냈는지 알려준다
     }
     io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
 
@@ -998,11 +1001,13 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
 
     room.bossHp = Math.max(0, room.bossHp - dmg);
     io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: attackerId });
-    if (room.bossHp <= 0) endRoom(roomId, 'win');
+    const killedBoss = room.bossHp <= 0;
+    if (killedBoss) endRoom(roomId, 'win');
 
     // Some cookies heal whenever the attack actually connects (only a chance to
     // proc, if attackHealChance is set). The ultimate can raise the amount.
-    const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
+    const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+        + vampireKillHeal(character, p, swing, killedBoss);
     if (selfHeal) {
         p.hp = Math.min(p.maxHp, p.hp + selfHeal);
         io.to(roomId).emit('playerHealed', { id: attackerId, hp: p.hp });
@@ -2759,6 +2764,7 @@ io.on('connection', (socket) => {
             && character.attackType !== 'vampire_slash') return;
 
         let anyHit = false;
+        let anyKill = false;
         const swing = resolveAttack(character, p, now, rapid);
         const baseAttackDamage = swing.damage;
         advanceAttackSequence(character, p);
@@ -2767,15 +2773,16 @@ io.on('connection', (socket) => {
             if (!m.alive) continue;
             if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
                 anyHit = true;
-                landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
+                if (landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
                     knockback: true, floorDef, fromX: p.x, fromY: p.y,
                     marks: !!(p.elementMarkUntil && now < p.elementMarkUntil)
-                });
+                })) anyKill = true;
             }
         }
 
         if (anyHit) {
-            const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
+            const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+                + vampireKillHeal(character, p, swing, anyKill);
             if (selfHeal) {
                 p.hp = Math.min(p.maxHp, p.hp + selfHeal);
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
@@ -2964,12 +2971,14 @@ io.on('connection', (socket) => {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
-            io.to(roomId).emit('storySkillMark', {
-                id: socket.id, x: spot.x, y: spot.y,
-                radius: character.skillRadius, element: character.element
-            });
-            markMonstersInCircle(roomId, room, spot.x, spot.y,
-                character.skillRadius, character.element, skillMarkOpts(character));
+            if (character.skillType !== 'blink_heal') {
+                io.to(roomId).emit('storySkillMark', {
+                    id: socket.id, x: spot.x, y: spot.y,
+                    radius: character.skillRadius, element: character.element
+                });
+                markMonstersInCircle(roomId, room, spot.x, spot.y,
+                    character.skillRadius, character.element, skillMarkOpts(character));
+            }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp }));
         }
@@ -3257,12 +3266,14 @@ io.on('connection', (socket) => {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('playerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
-            io.to(roomId).emit('skillMark', {
-                id: socket.id, x: spot.x, y: spot.y,
-                radius: character.skillRadius, element: character.element
-            });
-            markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
-                character.element, skillMarkOpts(character), 'bossMarked');
+            if (character.skillType !== 'blink_heal') {
+                io.to(roomId).emit('skillMark', {
+                    id: socket.id, x: spot.x, y: spot.y,
+                    radius: character.skillRadius, element: character.element
+                });
+                markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
+                    character.element, skillMarkOpts(character), 'bossMarked');
+            }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp }));
         } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
@@ -3674,7 +3685,11 @@ io.on('connection', (socket) => {
 
         damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
         if (!rooms[roomId]) return;
-        const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing);
+        const killedAny = targets.some(t => (t.boss
+            ? room.bossHp <= 0
+            : !(room.monsters[t.mid] && room.monsters[t.mid].alive)));
+        const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+            + vampireKillHeal(character, p, swing, killedAny);
         if (selfHeal) {
             p.hp = Math.min(p.maxHp, p.hp + selfHeal);
             p.partyHp[p.active] = p.hp;
@@ -3782,14 +3797,16 @@ io.on('connection', (socket) => {
                 p.x = spot.x; p.y = spot.y;
                 io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
             }
-            io.to(roomId).emit('guestSkillMark', {
-                id: socket.id, x: spot.x, y: spot.y,
-                radius: character.skillRadius, element: character.element
-            });
-            markMonstersInCircle(roomId, room, spot.x, spot.y,
-                character.skillRadius, character.element, skillMarkOpts(character));
-            markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
-                character.element, skillMarkOpts(character), 'guestBossMarked');
+            if (character.skillType !== 'blink_heal') {
+                io.to(roomId).emit('guestSkillMark', {
+                    id: socket.id, x: spot.x, y: spot.y,
+                    radius: character.skillRadius, element: character.element
+                });
+                markMonstersInCircle(roomId, room, spot.x, spot.y,
+                    character.skillRadius, character.element, skillMarkOpts(character));
+                markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
+                    character.element, skillMarkOpts(character), 'guestBossMarked');
+            }
             healSelfBySkill(character, p, () => {
                 p.partyHp[p.active] = p.hp;
                 io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
