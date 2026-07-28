@@ -10,7 +10,7 @@ const defaultCurrencies = {
     materialRare: 0,  // 고급 장비강화 재료
     potion: 0,        // 강화포션
     potionRare: 0,    // 고급 강화포션
-    seasonTicket: 0   // 시즌 뽑기 티켓; earned from the 이벤트 칸's missions
+    seasonTicket: 0   // 레전더리 뽑기 티켓; earned by clearing 이벤트 스테이지
 };
 
 const defaultData = {
@@ -18,7 +18,7 @@ const defaultData = {
     bestClearTimeMs: {},
     selectedCharacter: 'kicker',
     // Every cookie starts unlocked EXCEPT the season-limited ones -- those are
-    // what 시즌 뽑기 is for.
+    // what 레전더리 뽑기 is for.
     unlockedCharacters: Object.keys(SHARED.CHARACTERS)
         .filter(id => !SHARED.CHARACTERS[id].seasonLimited),
     clearedStoryFloors: [],
@@ -48,7 +48,7 @@ function loadGameData() {
             // unlockedCharacters array (the merge above just keeps the old
             // array) — there's no unlock system yet, so patch every cookie in.
             // ...but never patch in a season-limited cookie: those have to be
-            // pulled from 시즌 뽑기, so an old save must not be handed one.
+            // pulled from 레전더리 뽑기, so an old save must not be handed one.
             Object.keys(SHARED.CHARACTERS).forEach(id => {
                 if (SHARED.CHARACTERS[id].seasonLimited) return;
                 if (!data.unlockedCharacters.includes(id)) data.unlockedCharacters.push(id);

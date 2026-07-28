@@ -297,7 +297,7 @@ const CHARACTERS = {
         ultimateDebuffDurationMs: 10000,
         ultimateCooldownMs: 30000
     },
-    // 시즌 한정 (물과 불의 싸움). The first cookie that fights at range: it
+    // 레전더리 이벤트 한정. The first cookie that fights at range: it
     // throws a drop rather than swinging, and everything it does is in service
     // of 물 속성부여 -- see applyElementMark for how a 물 mark and a 바람 mark
     // refuse to overwrite each other.
@@ -310,7 +310,7 @@ const CHARACTERS = {
         grade: '레전더리',
         element: '물',
         role: '스트라이커',
-        // 시즌 뽑기로만 얻는다: excluded from the starting roster, unlike every
+        // 레전더리 뽑기로만 얻는다: excluded from the starting roster, unlike every
         // other cookie so far. Also keeps it out of play until its abilities
         // below are actually implemented server-side.
         seasonLimited: true,
@@ -483,16 +483,16 @@ const GUEST_PARTY_SIZE = 4;
 // selected one's content on the right. Running a different event later is a
 // data change here rather than new screens.
 //
-// 물과 불의 싸움: two sides, each a short ladder of its own playable stages.
+// 레전더리 이벤트: 물/불 두 갈래, 각각 직접 플레이하는 스테이지 사다리.
 // A stage is an ordinary story-mode bridge (same shape as STORY_FLOOR_DEFS), so
 // it runs on the story engine untouched -- see floorDefFor. First clear pays its
 // tickets; clearing both ladders pays a bonus. Tickets are the only way into
-// 시즌 뽑기.
+// 레전더리 뽑기.
 const EVENT_TICKET_KEY = 'seasonTicket';
 
 const EVENT = {
     id: 'water_vs_fire',
-    name: '물과 불의 싸움',
+    name: '레전더리 이벤트',
     icon: '🌊',
     period: '상시',
     // Each stage: { id, name, reward, def }. `id` doubles as the floor key the
@@ -925,7 +925,7 @@ const MONSTERS = {
         attackCooldown: 3000,
         telegraphMs: 500
     },
-    // ---- 이벤트(물과 불의 싸움) 전용 ----
+    // ---- 레전더리 이벤트 전용 ----
     // 물 side: a sturdy front line backed by archers. Slower and safer to fight
     // than the 불 side, which trades health for speed and damage.
     water_drop: {

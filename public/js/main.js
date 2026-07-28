@@ -290,7 +290,7 @@ const CURRENCY_LABELS = {
     materialRare: '고급 장비강화 재료',
     potion: '강화포션',
     potionRare: '고급 강화포션',
-    seasonTicket: '시즌 뽑기 티켓'
+    seasonTicket: '레전더리 뽑기 티켓'
 };
 
 function isAdmin() {
@@ -1048,7 +1048,7 @@ shopBtn.addEventListener('click', () => {
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
 
-// ---- Event: 물과 불의 싸움 ----
+// ---- Event: 레전더리 이벤트 ----
 // Laid out like the shop -- categories down the left, the selected one on the
 // right. 안내 / 물 미션 / 불 미션.
 const eventBtn = document.getElementById('event-btn');
@@ -1632,7 +1632,7 @@ socket.on('storyFloorResult', ({ result, floor }) => {
         if (stage) {
             const earned = rewardEventStage(stage.id); // 0 on a replay
             resultDesc.textContent = earned
-                ? `${stage.name} 클리어! 시즌 뽑기 티켓 ${earned}장을 받았습니다.`
+                ? `${stage.name} 클리어! 레전더리 뽑기 티켓 ${earned}장을 받았습니다.`
                 : `${stage.name}을(를) 다시 클리어했습니다. (티켓은 첫 클리어에만)`;
         } else {
             resultDesc.textContent = `${floor}층을 클리어했습니다.`;
