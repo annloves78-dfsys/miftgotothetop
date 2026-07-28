@@ -1467,6 +1467,20 @@ const GACHA_TABLE = {
     '게스트': 0.05
 };
 // Soul stones are tracked per cookie -- this many of one cookie's stones unlocks it.
+// ==================== 클리어 보상 ====================
+// 깔 때마다 전액. 첫 클리어인지는 보지 않는다 -- 몇 번을 깔든 같은
+// 양을 받으므로 재료가 모자라면 상위 층을 반복해서 파머는 것이 정상 경로다.
+// key는 스토리는 'story<층>', 보스 레이드는 보스 id 그대로.
+const CLEAR_REWARDS = {
+    story1: { material: 1, potion: 1, coins: 100, diamonds: 10 },
+    story2: { material: 3, potion: 5, coins: 300, diamonds: 10 },
+    boss1: { material: 10, coins: 1000, potion: 15 },   // 스톤 골렘
+    boss2: { materialRare: 10, coins: 1100, potionRare: 10 } // 시하라얼
+};
+
+function storyRewardKey(floor) { return 'story' + floor; }
+function clearRewardFor(key) { return CLEAR_REWARDS[key] || null; }
+
 const SOUL_STONES_PER_CHARACTER = 100;
 
 // 레전더리 뽑기. One banner per featured legendary, bought with ITS OWN ticket
@@ -1497,7 +1511,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

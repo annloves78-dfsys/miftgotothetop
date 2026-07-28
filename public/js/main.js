@@ -29,8 +29,15 @@ function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.add('hidden'));
     screens[name].classList.remove('hidden');
     applyMobileControlsVisibility();
+    // The lobby is where the currency bar lives; redraw it on the way in so a
+    // reward taken on the result screen is already reflected.
+    if (name === 'lobby') renderCurrencyBar();
 }
 
+const lobbyCurrencyBar = document.getElementById('lobby-currency-bar');
+const towerRewardsEl = document.getElementById('tower-rewards');
+const detailBossRewardsEl = document.getElementById('detail-boss-rewards');
+const resultRewardsEl = document.getElementById('result-rewards');
 const playBtn = document.getElementById('play-btn');
 const characterSelectBtn = document.getElementById('character-select-btn');
 const selectedCharNameEl = document.getElementById('selected-char-name');
@@ -294,6 +301,22 @@ const CURRENCY_LABELS = {
     ticketMagma: '마그마맛 뽑기 티켓',
     ticketLightning: '번개전사맛 뽑기 티켓'
 };
+
+const CURRENCY_ICONS = {
+    coins: '🪙',
+    diamonds: '💎',
+    material: '🪨',
+    materialRare: '💊',
+    potion: '🧪',
+    potionRare: '⚗️',
+    ticketWaterdrop: '🎫',
+    ticketMagma: '🎫',
+    ticketLightning: '🎫'
+};
+
+// The pills in the lobby's top-right corner. Tickets are left out -- they have
+// their own counters on the event and 레전더리 뽑기 screens.
+const LOBBY_CURRENCIES = ['coins', 'diamonds', 'material', 'materialRare', 'potion', 'potionRare'];
 
 function isAdmin() {
     return !!gameData.admin;
@@ -1216,16 +1239,53 @@ function ticketAmount(key) {
     return isAdmin() ? Infinity : (gameData.currencies[key] || 0);
 }
 
+// ---- 클리어 보상 ----
+// 하나의 지급 경로. 티켓이든 코인이든 재료이든 전부 여기를 거친다.
+function grantCurrencies(bag) {
+    if (!bag) return;
+    Object.entries(bag).forEach(([key, n]) => {
+        gameData.currencies[key] = (gameData.currencies[key] || 0) + n;
+    });
+    saveGameData(gameData);
+    renderCurrencyBar();
+}
+
+function grantTickets(key, n) {
+    grantCurrencies({ [key]: n });
+}
+
+function rewardChipsHtml(bag) {
+    if (!bag) return '';
+    return Object.entries(bag).map(([key, n]) => `
+        <div class="reward-chip">
+            <span class="reward-chip-icon">${CURRENCY_ICONS[key] || '🎁'}</span>
+            <span class="reward-chip-amount">${n.toLocaleString()}</span>
+            <span class="reward-chip-label">${CURRENCY_LABELS[key] || key}</span>
+        </div>`).join('');
+}
+
+// 깔 때마다 전액: 첫 클리어인지 안 따진다.
+function payClearReward(key) {
+    const bag = SHARED.clearRewardFor(key);
+    if (!bag) return null;
+    grantCurrencies(bag);
+    return bag;
+}
+
+function renderCurrencyBar() {
+    if (!lobbyCurrencyBar) return;
+    lobbyCurrencyBar.innerHTML = LOBBY_CURRENCIES.map(key => `
+        <span class="currency-pill" title="${CURRENCY_LABELS[key]}">
+            <span class="currency-pill-icon">${CURRENCY_ICONS[key]}</span>${currencyText(key)}
+        </span>`).join('');
+}
+
 function updateEventBadge() {
     const n = claimableCount();
     eventBadge.textContent = String(n);
     eventBadge.classList.toggle('hidden', n === 0);
 }
 
-function grantTickets(key, n) {
-    gameData.currencies[key] = (gameData.currencies[key] || 0) + n;
-    saveGameData(gameData);
-}
 
 // The 전체 클리어 bonus is the only thing here you press a button to take --
 // stage tickets are paid the moment the stage is first cleared.
@@ -1754,6 +1814,7 @@ function renderTower() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     towerCharIcon.style.background = charIconBackground(stats);
     towerCharName.textContent = stats.name;
+    towerRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(SHARED.storyRewardKey(selectedStoryFloor)));
     towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor) || !floorDef;
 }
 
@@ -1947,6 +2008,7 @@ socket.on('storyReviveBlast', () => {
 
 socket.on('storyFloorResult', ({ result, floor }) => {
     stopStoryLoop();
+    resultRewardsEl.innerHTML = '';
     const stage = eventStageById(floor);
     if (!stage) selectedStoryFloor = floor;
     if (result === 'win') {
@@ -1966,6 +2028,8 @@ socket.on('storyFloorResult', ({ result, floor }) => {
                 gameData.clearedStoryFloors.push(floor);
                 saveGameData(gameData);
             }
+            // 깔 때마다 전액 -- 첫 클리어인지와 무관하다.
+            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(SHARED.storyRewardKey(floor)));
         }
     } else {
         resultTitle.textContent = '패배...';
@@ -2674,6 +2738,7 @@ function openBossDetail(bossId) {
     detailBossIcon.textContent = (bossListEntry && bossListEntry.icon) || '🗿';
     detailBossIcon.style.background = bossDef.color || '#7f8c8d';
     detailBossHp.textContent = `${bossDef.maxHpPerPlayer} (1인 기준)`;
+    detailBossRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(bossId));
     updateDetailCharPreview();
     showScreen('bossDetail');
 }
@@ -2935,6 +3000,7 @@ let resultReturnScreen = 'bossSelect'; // where the result screen's back button 
 
 socket.on('raidResult', ({ result }) => {
     stopLoop();
+    resultRewardsEl.innerHTML = '';
     settingsMenu.classList.add('hidden');
     leavePendingBanner.classList.add('hidden');
     leaveRequestModal.classList.add('hidden');
@@ -2949,6 +3015,7 @@ socket.on('raidResult', ({ result }) => {
         resultDesc.textContent = '보스를 물리쳤습니다.';
         if (currentRoomState) {
             recordClear(currentRoomState.bossId, performance.now() - raidStartAt);
+            resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(currentRoomState.bossId));
         }
     } else {
         resultTitle.textContent = '전멸...';

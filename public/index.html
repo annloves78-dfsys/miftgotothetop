@@ -10,6 +10,7 @@
     <!-- Lobby -->
     <div id="lobby-screen" class="screen">
         <button id="menu-btn" class="menu-btn" aria-label="메뉴">☰</button>
+        <div id="lobby-currency-bar" class="currency-bar"></div>
         <div id="side-menu" class="side-menu hidden">
             <div class="menu-section">
                 <button id="menu-account-btn" class="menu-item-btn">👤 계정</button>
@@ -269,6 +270,7 @@
                     <div id="tower-char-icon" class="char-icon-circle small"></div>
                     <div id="tower-char-name" class="char-name"></div>
                 </div>
+                <div id="tower-rewards" class="reward-preview"></div>
                 <button id="tower-play-btn" class="play-btn">플레이</button>
             </div>
         </div>
@@ -387,6 +389,7 @@
                 <div class="detail-specs">
                     <div class="spec-row"><span class="spec-label">체력</span><span id="detail-boss-hp">-</span></div>
                 </div>
+                <div id="detail-boss-rewards" class="reward-preview"></div>
                 <div class="detail-actions">
                     <button id="detail-multi-btn" class="play-btn">멀티플레이</button>
                     <button id="detail-solo-btn" class="play-btn">솔로플레이</button>
@@ -519,6 +522,7 @@
     <div id="result-screen" class="screen hidden">
         <h1 id="result-title">승리!</h1>
         <p id="result-desc"></p>
+        <div id="result-rewards" class="reward-preview"></div>
         <button id="result-back-btn" class="play-btn">보스 선택으로</button>
     </div>
 
