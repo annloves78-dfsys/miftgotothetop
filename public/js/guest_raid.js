@@ -10,7 +10,6 @@
 const guestRaidModeCard = document.getElementById('guest-raid-mode-card');
 const guestPartySlotsEl = document.getElementById('guest-party-slots');
 const guestPartyHintEl = document.getElementById('guest-party-hint');
-const guestBossPowerEl = document.getElementById('guest-boss-power');
 const guestBossHpSpecEl = document.getElementById('guest-boss-hp');
 const guestMultiBtn = document.getElementById('guest-multi-btn');
 const guestSoloBtn = document.getElementById('guest-solo-btn');
@@ -158,7 +157,6 @@ function renderGuestPartySlots() {
 
 function renderGuestDetail() {
     const def = SHARED.GUEST_BOSS_DEFS[GUEST_ID];
-    guestBossPowerEl.textContent = `${def.recommendedPower} (${SHARED.GUEST_PARTY_SIZE}명 합계)`;
     guestBossHpSpecEl.textContent = def.maxHp;
     renderGuestPartySlots();
     if (guestPhase === 'idle') {

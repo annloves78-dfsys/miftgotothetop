@@ -202,6 +202,12 @@ html, body {
 .ev-stage.locked { opacity: 0.5; }
 .ev-stage-done { color: #2ecc71; font-weight: bold; }
 
+/* The boss card at the end of a side's row. */
+.ev-boss { border-color: #a569bd; }
+.ev-boss-badge { border-color: #f1c40f; }
+.ev-boss .ev-badge-step { font-size: 9px; letter-spacing: 1px; color: #f1c40f; }
+.ev-boss-note { color: #f1c40f; font-weight: bold; }
+
 .ev-mission-badge {
     width: 62px;
     height: 62px;
@@ -316,6 +322,70 @@ html, body {
 .ev-mission .ev-reward-amount { font-size: 14px; }
 .ev-mission .ev-claim-btn { padding: 10px 0; }
 .ev-mission .ev-claimed { padding: 10px 0; }
+
+/* 레전더리 뽑기: featured cookie on the right, banner list on the left. Same
+   top-aligned override the event list needs -- .shop-content centers otherwise. */
+#legendary-content {
+    display: block;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    text-align: left;
+}
+
+.shop-cat-btn.lg-soon { opacity: 0.6; }
+
+.lg-soon-note {
+    color: #bdc3c7;
+    font-size: 15px;
+    line-height: 1.7;
+    text-align: center;
+    padding: 40px 0;
+}
+
+.lg-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #3a2c5e, #241d3d);
+    border: 2px solid #a569bd;
+    margin-bottom: 14px;
+}
+
+.lg-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px solid #f1c40f;
+    flex-shrink: 0;
+}
+
+.lg-head-main { flex: 1; }
+.lg-name { font-size: 19px; font-weight: bold; }
+.lg-owned { font-size: 12px; color: #2ecc71; }
+.lg-tickets { font-size: 13px; color: #f1c40f; margin: 4px 0 7px; }
+
+.lg-odds { margin-bottom: 14px; }
+.lg-odds .gacha-odds-row:first-child { border-color: #f1c40f; }
+
+#legendary-screen .gacha-pull-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+#legendary-screen .gacha-pull-actions .play-btn {
+    position: static;
+    width: auto;
+    padding: 12px 22px;
+}
+
+#legendary-result { min-height: 90px; }
 
 /* Shop */
 .shop-layout {

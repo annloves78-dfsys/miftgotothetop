@@ -47,7 +47,7 @@
     <div id="event-screen" class="screen hidden">
         <div class="event-header">
             <h2 id="event-title">이벤트</h2>
-            <div class="event-ticket-count">🎫 레전더리 뽑기 티켓 <span id="event-ticket-amount">0</span>장</div>
+            <div class="event-ticket-count">🎫 <span id="event-ticket-name">물방울맛</span> 뽑기 티켓 <span id="event-ticket-amount">0</span>장</div>
         </div>
         <div class="shop-layout">
             <div id="event-categories" class="shop-categories"></div>
@@ -81,11 +81,11 @@
                     <span class="gacha-banner-desc">티켓 없이 뽑기 (테스트 중)</span>
                 </span>
             </button>
-            <button class="gacha-banner locked" disabled>
+            <button id="gacha-legendary-btn" class="gacha-banner">
                 <span class="gacha-banner-icon">🌸</span>
                 <span class="gacha-banner-text">
                     <span class="gacha-banner-name">레전더리 뽑기</span>
-                    <span class="gacha-banner-desc">준비중</span>
+                    <span class="gacha-banner-desc">이벤트 티켓으로 지정 레전더리 뽑기</span>
                 </span>
             </button>
             <button class="gacha-banner locked" disabled>
@@ -125,6 +125,17 @@
                 <button id="gacha-pull-1-btn" class="play-btn">1회 뽑기</button>
                 <button id="gacha-pull-10-btn" class="play-btn">10회 뽑기</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Gacha: 레전더리 banner. Pick a featured legendary on the left, pull with
+         that cookie's own ticket on the right. -->
+    <div id="legendary-screen" class="screen hidden">
+        <button id="legendary-back-btn" class="back-corner-btn">← 뒤로</button>
+        <h2>🌸 레전더리 뽑기</h2>
+        <div class="shop-layout">
+            <div id="legendary-list" class="shop-categories"></div>
+            <div id="legendary-content" class="shop-content"></div>
         </div>
     </div>
 
@@ -253,7 +264,6 @@
             </div>
             <div class="tower-right">
                 <div class="detail-specs">
-                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="tower-floor-power">-</span></div>
                 </div>
                 <div id="tower-char-preview" class="char-preview clickable" title="눌러서 캐릭터 변경">
                     <div id="tower-char-icon" class="char-icon-circle small"></div>
@@ -375,7 +385,6 @@
                 <h2 id="detail-boss-name">보스 이름</h2>
                 <div id="detail-boss-icon" class="boss-icon-circle">🗿</div>
                 <div class="detail-specs">
-                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="detail-boss-power">-</span></div>
                     <div class="spec-row"><span class="spec-label">체력</span><span id="detail-boss-hp">-</span></div>
                 </div>
                 <div class="detail-actions">
@@ -403,7 +412,6 @@
                 <h2 id="guest-boss-name">번개지옥맛 쿠키</h2>
                 <div id="guest-boss-icon" class="boss-icon-circle">👑</div>
                 <div class="detail-specs">
-                    <div class="spec-row"><span class="spec-label">권장 전투력</span><span id="guest-boss-power">-</span></div>
                     <div class="spec-row"><span class="spec-label">체력</span><span id="guest-boss-hp">-</span></div>
                 </div>
                 <div class="detail-actions">

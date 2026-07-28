@@ -20,7 +20,6 @@ const CHARACTERS = {
         element: '바람',
         role: '힐러',
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // straight-line hit in the facing direction
         attackRange: 70, // how far the line-shaped kick reaches
@@ -47,7 +46,6 @@ const CHARACTERS = {
         element: '어둠',
         role: '대미지 딜러',
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // same straight-line mechanic, just a longer "hook" reach
         attackRange: 150,
@@ -73,7 +71,6 @@ const CHARACTERS = {
         element: '바람',
         role: '힐러',
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // same straight-line mechanic, long reach
         attackRange: 150,
@@ -103,7 +100,6 @@ const CHARACTERS = {
         element: '불',
         role: '탱커',
         health: 110,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // shield bash: same straight-line corridor mechanic
         attackRange: 90,
@@ -134,7 +130,6 @@ const CHARACTERS = {
         element: '불',
         role: '대미지 딜러',
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // 불주먹: same straight-line corridor mechanic
         attackRange: 90,
@@ -167,7 +162,6 @@ const CHARACTERS = {
         element: '바람',
         role: '스트라이커',
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         attackType: 'melee_kick', // 긴 다리: same corridor mechanic, longer reach
         attackRange: 160,
@@ -201,7 +195,6 @@ const CHARACTERS = {
         element: '빛',
         role: '대미지 딜러',
         health: 130,
-        combatPower: 500, // starting value for every character
         speed: 2,
         // 짜릿한 주먹: alternates right/left punches, each swing dealing a
         // different amount. Uses the same straight-line corridor as melee_kick.
@@ -236,7 +229,6 @@ const CHARACTERS = {
         element: '물',
         role: '탱커',
         health: 115,
-        combatPower: 500, // starting value for every character
         speed: 2.5, // rides a board -- +0.5 over the baseline 2
         attackType: 'melee_kick', // board swing, same corridor mechanic
         attackRange: 90,
@@ -266,7 +258,6 @@ const CHARACTERS = {
         element: '빛',
         role: '대미지 딜러',
         health: 120,
-        combatPower: 500, // starting value for every character
         speed: 2,
         // Shield + fire sword, as a two-hit combo. Stage 0 is a wide sweep with
         // only medium reach; stage 1 is a long, narrow thrust that opens
@@ -315,7 +306,6 @@ const CHARACTERS = {
         // below are actually implemented server-side.
         seasonLimited: true,
         health: 100,
-        combatPower: 500, // starting value for every character
         speed: 2,
         // 물방울 던지기: a real projectile, so it travels and can miss.
         attackType: 'throw_projectile',
@@ -351,7 +341,6 @@ const CHARACTERS = {
         element: '어둠',
         role: '대미지 딜러',
         health: 140,
-        combatPower: 500, // starting value for every character
         speed: 2,
         // 창 두 개: thrusts with the right-hand spear, then the left, then
         // repeats -- one spear per hand, never both at once. Same
@@ -487,8 +476,8 @@ const GUEST_PARTY_SIZE = 4;
 // A stage is an ordinary story-mode bridge (same shape as STORY_FLOOR_DEFS), so
 // it runs on the story engine untouched -- see floorDefFor. First clear pays its
 // tickets; clearing both ladders pays a bonus. Tickets are the only way into
-// 레전더리 뽑기.
-const EVENT_TICKET_KEY = 'seasonTicket';
+// 레전더리 뽑기, and each side pays ITS OWN cookie's ticket -- 물 스테이지는
+// 물방울맛 티켓, 불 스테이지는 화염맛 티켓 (see LEGENDARY_BANNERS).
 
 const EVENT = {
     id: 'water_vs_fire',
@@ -502,12 +491,12 @@ const EVENT = {
         water: {
             label: '💧 물',
             icon: '💧',
+            ticketKey: 'ticketWaterdrop',
             stages: [
                 {
                     id: 'ev_w1', name: '얕은 여울', reward: 1,
                     def: {
                         levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
-                        recommendedPower: 400,
                         gates: [{ entrance: -800, exit: -1300, room: 0 }],
                         monsters: [
                             { type: 'water_drop', x: -950, y: -35, room: 0 },
@@ -522,7 +511,6 @@ const EVENT = {
                     id: 'ev_w2', name: '거센 물살', reward: 2,
                     def: {
                         levelType: 'bridge', levelLength: 1800, laneHalfWidth: 70,
-                        recommendedPower: 500,
                         gates: [{ entrance: -800, exit: -1600, room: 0 }],
                         monsters: [
                             { type: 'water_drop', x: -950, y: -40, room: 0 },
@@ -542,7 +530,6 @@ const EVENT = {
                     id: 'ev_w3', name: '물대포 진지', reward: 2,
                     def: {
                         levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
-                        recommendedPower: 600,
                         gates: [
                             { entrance: -700, exit: -1150, room: 0 },
                             { entrance: -1150, exit: -2150, room: 1 }
@@ -566,7 +553,6 @@ const EVENT = {
                     id: 'ev_w4', name: '깊은 물', reward: 3,
                     def: {
                         levelType: 'bridge', levelLength: 2600, laneHalfWidth: 70,
-                        recommendedPower: 700,
                         gates: [
                             { entrance: -700, exit: -1350, room: 0 },
                             { entrance: -1350, exit: -2400, room: 1 }
@@ -591,17 +577,35 @@ const EVENT = {
                         star: { x: -2520, y: 0 }
                     }
                 }
-            ]
+            ],
+            // 4개를 다 깨야 열리는 보스. 유일하게 반복 도전이 되고, 깔 때마다
+            // 티켓을 주므로 티켓을 무한히 모을 수 있다. (임시 보스 -- 진짜
+            // 보스가 오면 이 def만 갈아끼우면 된다.)
+            boss: {
+                id: 'ev_wb', name: '물의 수호자', reward: 1, repeatable: true,
+                def: {
+                    levelType: 'bridge', levelLength: 1800, laneHalfWidth: 90,
+                    gates: [{ entrance: -700, exit: -1600, room: 0 }],
+                    monsters: [
+                        { type: 'water_guardian', x: -1200, y: 0, room: 0 },
+                        { type: 'water_cannon', x: -1000, y: -60, room: 0 },
+                        { type: 'water_cannon', x: -1000, y: 60, room: 0 },
+                        { type: 'water_drop', x: -900, y: -30, room: 0 },
+                        { type: 'water_drop', x: -900, y: 30, room: 0 }
+                    ],
+                    star: { x: -1720, y: 0 }
+                }
+            }
         },
         fire: {
             label: '🔥 불',
             icon: '🔥',
+            ticketKey: 'ticketFlame',
             stages: [
                 {
                     id: 'ev_f1', name: '불씨', reward: 1,
                     def: {
                         levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
-                        recommendedPower: 450,
                         gates: [{ entrance: -800, exit: -1300, room: 0 }],
                         monsters: [
                             { type: 'flame_slice', x: -950, y: -35, room: 0 },
@@ -617,7 +621,6 @@ const EVENT = {
                     id: 'ev_f2', name: '타오르는 다리', reward: 2,
                     def: {
                         levelType: 'bridge', levelLength: 1900, laneHalfWidth: 70,
-                        recommendedPower: 550,
                         gates: [{ entrance: -800, exit: -1700, room: 0 }],
                         monsters: [
                             { type: 'flame_slice', x: -950, y: -45, room: 0 },
@@ -635,7 +638,6 @@ const EVENT = {
                     id: 'ev_f3', name: '화염 포탑', reward: 2,
                     def: {
                         levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
-                        recommendedPower: 650,
                         gates: [
                             { entrance: -700, exit: -1150, room: 0 },
                             { entrance: -1150, exit: -2150, room: 1 }
@@ -658,7 +660,6 @@ const EVENT = {
                     id: 'ev_f4', name: '불의 심장', reward: 3,
                     def: {
                         levelType: 'bridge', axis: 'y', levelLength: 2600, laneHalfWidth: 70,
-                        recommendedPower: 750,
                         gates: [
                             { entrance: -700, exit: -1400, room: 0 },
                             { entrance: -1400, exit: -2400, room: 1 }
@@ -682,10 +683,127 @@ const EVENT = {
                         star: { x: 0, y: -2520 }
                     }
                 }
-            ]
+            ],
+            boss: {
+                id: 'ev_fb', name: '불의 수호자', reward: 1, repeatable: true,
+                def: {
+                    levelType: 'bridge', levelLength: 1800, laneHalfWidth: 90,
+                    gates: [{ entrance: -700, exit: -1600, room: 0 }],
+                    monsters: [
+                        { type: 'flame_guardian', x: -1200, y: 0, room: 0 },
+                        { type: 'flame_turret', x: -1400, y: -70, room: 0 },
+                        { type: 'flame_turret', x: -1400, y: 70, room: 0 },
+                        { type: 'flame_slice', x: -900, y: -30, room: 0 },
+                        { type: 'flame_slice', x: -900, y: 30, room: 0 },
+                        { type: 'flame_slice', x: -1000, y: 0, room: 0 }
+                    ],
+                    star: { x: -1720, y: 0 }
+                }
+            }
+        },
+        // 번개전사맛 쿠키도 레전더리라 자기 사다리를 갖는다.
+        lightning: {
+            label: '⚡ 번개',
+            icon: '⚡',
+            ticketKey: 'ticketLightning',
+            stages: [
+                {
+                    id: 'ev_l1', name: '정전기', reward: 1,
+                    def: {
+                        levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
+                        gates: [{ entrance: -800, exit: -1300, room: 0 }],
+                        monsters: [
+                            { type: 'spark_slice', x: -950, y: -35, room: 0 },
+                            { type: 'spark_slice', x: -950, y: 35, room: 0 },
+                            { type: 'spark_slice', x: -1100, y: 0, room: 0 },
+                            { type: 'spark_slice', x: -1230, y: -35, room: 0 }
+                        ],
+                        star: { x: -1420, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_l2', name: '번짝이는 다리', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 1900, laneHalfWidth: 70,
+                        gates: [{ entrance: -800, exit: -1700, room: 0 }],
+                        monsters: [
+                            { type: 'spark_slice', x: -950, y: -45, room: 0 },
+                            { type: 'spark_slice', x: -950, y: 0, room: 0 },
+                            { type: 'spark_slice', x: -950, y: 45, room: 0 },
+                            { type: 'spark_slice', x: -1200, y: -30, room: 0 },
+                            { type: 'spark_slice', x: -1200, y: 30, room: 0 },
+                            { type: 'tesla_coil', x: -1500, y: 0, room: 0 }
+                        ],
+                        star: { x: -1820, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_l3', name: '전기 코일 지대', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
+                        gates: [
+                            { entrance: -700, exit: -1150, room: 0 },
+                            { entrance: -1150, exit: -2150, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'spark_slice', x: -850, y: -35, room: 0 },
+                            { type: 'spark_slice', x: -850, y: 35, room: 0 },
+                            { type: 'spark_slice', x: -1000, y: 0, room: 0 },
+                            { type: 'tesla_coil', x: -1450, y: -55, room: 1 },
+                            { type: 'tesla_coil', x: -1650, y: 55, room: 1 },
+                            { type: 'spark_slice', x: -1800, y: 0, room: 1 },
+                            { type: 'tesla_coil', x: -1950, y: -30, room: 1 }
+                        ],
+                        star: { x: -2250, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_l4', name: '번개가 치는 곣', reward: 3,
+                    def: {
+                        levelType: 'bridge', axis: 'y', levelLength: 2600, laneHalfWidth: 70,
+                        gates: [
+                            { entrance: -700, exit: -1400, room: 0 },
+                            { entrance: -1400, exit: -2400, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'spark_slice', x: -45, y: -850, room: 0 },
+                            { type: 'spark_slice', x: 0, y: -850, room: 0 },
+                            { type: 'spark_slice', x: 45, y: -850, room: 0 },
+                            { type: 'spark_slice', x: -30, y: -1000, room: 0 },
+                            { type: 'spark_slice', x: 30, y: -1000, room: 0 },
+                            { type: 'tesla_coil', x: 0, y: -1150, room: 0 },
+                            { type: 'spark_slice', x: -40, y: -1700, room: 1 },
+                            { type: 'spark_slice', x: 40, y: -1800, room: 1 },
+                            { type: 'tesla_coil', x: -50, y: -1900, room: 1 },
+                            { type: 'tesla_coil', x: 50, y: -2050, room: 1 },
+                            { type: 'spark_slice', x: 0, y: -2150, room: 1 },
+                            { type: 'tesla_coil', x: 0, y: -2250, room: 1 }
+                        ],
+                        star: { x: 0, y: -2520 }
+                    }
+                }
+            ],
+            boss: {
+                id: 'ev_lb', name: '번개의 수호자', reward: 1, repeatable: true,
+                def: {
+                    levelType: 'bridge', levelLength: 1800, laneHalfWidth: 90,
+                    gates: [{ entrance: -700, exit: -1600, room: 0 }],
+                    monsters: [
+                        { type: 'spark_guardian', x: -1250, y: 0, room: 0 },
+                        { type: 'tesla_coil', x: -1450, y: -70, room: 0 },
+                        { type: 'tesla_coil', x: -1450, y: 70, room: 0 },
+                        { type: 'spark_slice', x: -900, y: -30, room: 0 },
+                        { type: 'spark_slice', x: -900, y: 30, room: 0 },
+                        { type: 'spark_slice', x: -1000, y: 0, room: 0 }
+                    ],
+                    star: { x: -1720, y: 0 }
+                }
+            }
         }
     },
-    bothClearedReward: 4 // 전체 클리어 보너스 티켓 (8 + 8 + 4 = 20장)
+    // 전체 클리어 보너스. Paid as this many of EACH side's ticket, since the two
+    // tickets are not interchangeable: 8 + 2 = 10장씩.
+    bothClearedReward: 2
 };
 
 // Kept as a list so the 이벤트 칸 can show several at once later.
@@ -696,7 +814,15 @@ const EVENTS = [EVENT];
 function allEventStages() {
     return Object.values(EVENT.stages).reduce((acc, side) => acc.concat(side.stages), []);
 }
-const EVENT_STAGE_DEFS = allEventStages().reduce((acc, s) => { acc[s.id] = s.def; return acc; }, {});
+// The bosses are separate: they don't count toward 전체 클리어 and they can be
+// replayed forever, but they are entered exactly like a stage.
+function allEventBosses() {
+    return Object.values(EVENT.stages).map(side => side.boss).filter(Boolean);
+}
+function allEventPlayable() {
+    return allEventStages().concat(allEventBosses());
+}
+const EVENT_STAGE_DEFS = allEventPlayable().reduce((acc, s) => { acc[s.id] = s.def; return acc; }, {});
 
 // The one place that turns whatever a story room was entered with -- a floor
 // number or an event stage id -- into its level layout.
@@ -714,7 +840,6 @@ const GUEST_BOSS_DEFS = {
         charType: 'lightninghell', // borrows that cookie's purple/yellow for the body
         maxHp: 500,
         radius: 46,
-        recommendedPower: 2000, // for a full party of 4 combined
         homeY: -235, // sits at the back of the field
         skillIntervalMs: 1000, // picks a new skill every second it is idle
         patterns: {
@@ -966,6 +1091,82 @@ const MONSTERS = {
         attackCooldown: 2400,
         telegraphMs: 350
     },
+    spark_slice: {
+        name: '번개 조각',
+        color: '#f1c40f',
+        health: 45,
+        speed: 4,
+        aggroRange: 580,
+        preferredDistance: 75,
+        attackRange: 115,
+        attackDamage: 6,
+        attackCooldown: 2200,
+        telegraphMs: 300
+    },
+    tesla_coil: {
+        name: '전기 코일',
+        color: '#e67e22',
+        health: 70,
+        speed: 0,
+        aggroRange: 620,
+        preferredDistance: 0,
+        attackRange: 620,
+        attackCooldown: 2600,
+        telegraphMs: 400,
+        laser: true,
+        laserDurationMs: 700, // holds longer than the 화염 포탑, but ticks softer
+        laserDamage: 1,
+        laserTickMs: 100,
+        laserRange: 620,
+        laserWidth: 24,
+        laserTrackSpeed: 90
+    },
+    // ---- 이벤트 보스 (임시) ----
+    // Placeholder guardians so the boss slot is playable and its ticket loop
+    // works; the real bosses are coming as a data swap.
+    water_guardian: {
+        name: '물의 수호자',
+        color: '#1f6fb2',
+        health: 400,
+        speed: 2,
+        aggroRange: 700,
+        preferredDistance: 200,
+        projectileSpeed: 420,
+        attackRange: 320,
+        attackDamage: 6,
+        attackCooldown: 1600,
+        telegraphMs: 400
+    },
+    flame_guardian: {
+        name: '불의 수호자',
+        color: '#c0392b',
+        health: 400,
+        speed: 3,
+        aggroRange: 700,
+        preferredDistance: 70,
+        attackRange: 130,
+        attackDamage: 9,
+        attackCooldown: 1600,
+        telegraphMs: 350
+    },
+    spark_guardian: {
+        name: '번개의 수호자',
+        color: '#f39c12',
+        health: 400,
+        speed: 2,
+        aggroRange: 700,
+        preferredDistance: 0,
+        attackRange: 700,
+        attackCooldown: 2000,
+        telegraphMs: 400,
+        laser: true,
+        laserDurationMs: 900,
+        laserDamage: 2,
+        laserTickMs: 100,
+        laserRange: 700,
+        laserWidth: 30,
+        laserTrackSpeed: 100
+    },
     flame_turret: {
         name: '화염 포탑',
         color: '#c0392b',
@@ -1025,7 +1226,6 @@ const STORY_FLOOR_DEFS = {
         levelType: 'bridge',
         levelLength: 1750, // how far the bridge extends to the left of the start
         laneHalfWidth: 70, // how far off the y=0 centerline the player can wander
-        recommendedPower: 500, // shown on the tower's floor-select screen
         gates: [
             { entrance: -900, exit: -1500, room: 0 }
         ],
@@ -1046,7 +1246,6 @@ const STORY_FLOOR_DEFS = {
         levelType: 'bridge',
         levelLength: 2600,
         laneHalfWidth: 70,
-        recommendedPower: 600,
         gates: [
             { entrance: -700, exit: -1150, room: 0 },
             { entrance: -1150, exit: -2450, room: 1 }
@@ -1079,7 +1278,6 @@ const STORY_FLOOR_DEFS = {
         axis: 'y',
         levelLength: 2600,
         laneHalfWidth: 70,
-        recommendedPower: 700,
         gates: [
             { entrance: -700, exit: -1450, room: 0 },
             { entrance: -1450, exit: -2350, room: 1 }
@@ -1127,8 +1325,35 @@ const GACHA_TABLE = {
 // Soul stones are tracked per cookie -- this many of one cookie's stones unlocks it.
 const SOUL_STONES_PER_CHARACTER = 30;
 
+// 레전더리 뽑기. One banner per season-limited legendary. Each banner is bought
+// with ITS OWN ticket (earned from that element's 레전더리 이벤트 stages), and
+// rolls the normal table with two changes: the banner's cookie sits at
+// LEGENDARY_BANNER_RATE, and the 영혼석 slot always pays that cookie's stones
+// instead of a random cookie's. Collecting SOUL_STONES_PER_CHARACTER of them is
+// the guaranteed route, so a run of bad luck still gets you there.
+const LEGENDARY_BANNER_RATE = 2; // %
+const LEGENDARY_BANNER_SOUL_STONES = 3; // stones per 영혼석 hit on this banner
+const LEGENDARY_BANNERS = [
+    { id: 'waterdrop', charType: 'waterdrop', icon: '💧', ticketKey: 'ticketWaterdrop', side: 'water' },
+    { id: 'lightning', charType: 'lightning', icon: '⚡', ticketKey: 'ticketLightning', side: 'lightning' },
+    // 화염맛 쿠키 has no stats yet, so its banner shows as 준비중 -- but its
+    // tickets still bank up from the 불 stages, ready for when it lands.
+    { id: 'flame', charType: 'flame', icon: '🔥', ticketKey: 'ticketFlame', side: 'fire', name: '화염맛 쿠키' }
+];
+
+// The banner's own table: the normal one with the featured cookie carved out of
+// the 영혼석 share, so the listed numbers still add to 100.
+function legendaryGachaTable(charType) {
+    const base = { ...GACHA_TABLE };
+    base[GACHA_SOUL_STONE_KEY] -= LEGENDARY_BANNER_RATE;
+    return { featured: LEGENDARY_BANNER_RATE, ...base };
+}
+function legendaryBannerFor(id) {
+    return LEGENDARY_BANNERS.find(b => b.id === id) || null;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, EVENT_STAGE_DEFS, allEventStages, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_TICKET_KEY, EVENT_STAGE_DEFS, allEventStages, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }

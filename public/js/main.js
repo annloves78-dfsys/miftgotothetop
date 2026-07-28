@@ -6,6 +6,7 @@ const screens = {
     shop: document.getElementById('shop-screen'),
     gacha: document.getElementById('gacha-screen'),
     gachaPull: document.getElementById('gacha-pull-screen'),
+    legendary: document.getElementById('legendary-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
@@ -46,7 +47,6 @@ const backFromDetailBtn = document.getElementById('back-from-detail-btn');
 const charDetailBackBtn = document.getElementById('char-detail-back-btn');
 const charDetailIcon = document.getElementById('char-detail-icon');
 const charDetailName = document.getElementById('char-detail-name');
-const charDetailPower = document.getElementById('char-detail-power');
 const charDetailGrade = document.getElementById('char-detail-grade');
 const charDetailElement = document.getElementById('char-detail-element');
 const charDetailRole = document.getElementById('char-detail-role');
@@ -290,7 +290,9 @@ const CURRENCY_LABELS = {
     materialRare: '고급 장비강화 재료',
     potion: '강화포션',
     potionRare: '고급 강화포션',
-    seasonTicket: '레전더리 뽑기 티켓'
+    ticketWaterdrop: '물방울맛 뽑기 티켓',
+    ticketFlame: '화염맛 뽑기 티켓',
+    ticketLightning: '번개전사맛 뽑기 티켓'
 };
 
 function isAdmin() {
@@ -539,7 +541,6 @@ const detailCharName = document.getElementById('detail-char-name');
 const detailChangeCharBtn = document.getElementById('detail-change-char-btn');
 const detailBossName = document.getElementById('detail-boss-name');
 const detailBossIcon = document.getElementById('detail-boss-icon');
-const detailBossPower = document.getElementById('detail-boss-power');
 const detailBossHp = document.getElementById('detail-boss-hp');
 const detailMultiBtn = document.getElementById('detail-multi-btn');
 const detailSoloBtn = document.getElementById('detail-solo-btn');
@@ -984,7 +985,6 @@ function openCharacterDetail(id) {
     const stats = SHARED.CHARACTERS[id];
     charDetailIcon.style.background = charIconBackground(stats);
     charDetailName.textContent = stats.name;
-    charDetailPower.textContent = stats.combatPower;
     charDetailGrade.textContent = stats.grade || '-';
     charDetailGrade.className = gradeClass(stats.grade);
     charDetailAwakenSlot.classList.toggle('hidden', !hasAwakenSlot(stats.grade));
@@ -1056,6 +1056,7 @@ const eventBadge = document.getElementById('event-badge');
 const backFromEventBtn = document.getElementById('back-from-event-btn');
 const eventTitleEl = document.getElementById('event-title');
 const eventTicketAmountEl = document.getElementById('event-ticket-amount');
+const eventTicketNameEl = document.getElementById('event-ticket-name');
 const eventCategoriesEl = document.getElementById('event-categories');
 const eventContentEl = document.getElementById('event-content');
 
@@ -1068,11 +1069,23 @@ function eventStages(side) {
 function allEventStages() {
     return Object.keys(EV.stages).flatMap(eventStages);
 }
+function eventBoss(side) {
+    return (EV.stages[side] && EV.stages[side].boss) || null;
+}
+function allEventBosses() {
+    return Object.keys(EV.stages).map(eventBoss).filter(Boolean);
+}
+// Bosses are entered exactly like a stage, so lookups have to see both.
 function eventStageById(id) {
-    return allEventStages().find(s => s.id === id) || null;
+    return allEventStages().concat(allEventBosses()).find(s => s.id === id) || null;
 }
 function eventStageCleared(id) {
     return gameData.eventCleared.includes(id);
+}
+// The boss only opens once its whole side is done.
+function eventBossUnlocked(side) {
+    if (isAdmin()) return true;
+    return eventStages(side).every(s => eventStageCleared(s.id));
 }
 // Stages open one at a time, like tower floors: you have to clear the one
 // before it on the same side.
@@ -1089,7 +1102,8 @@ function eventBonusClaimed() {
     return gameData.eventClaimed.includes('both');
 }
 // What the lobby badge counts: stages you could go clear right now, plus the
-// 전체 클리어 bonus once it is sitting there waiting to be taken.
+// 전체 클리어 bonus once it is sitting there waiting to be taken. Bosses are
+// left out -- they never stop being available, so they'd pin the badge on.
 function claimableCount() {
     let n = 0;
     Object.keys(EV.stages).forEach(side => {
@@ -1101,8 +1115,12 @@ function claimableCount() {
     return n;
 }
 
-function ticketAmount() {
-    return isAdmin() ? Infinity : (gameData.currencies[SHARED.EVENT_TICKET_KEY] || 0);
+// Each side pays its own cookie's ticket -- they are separate currencies.
+function ticketKeyOf(sideKey) {
+    return (EV.stages[sideKey] && EV.stages[sideKey].ticketKey) || 'ticketWaterdrop';
+}
+function ticketAmount(key) {
+    return isAdmin() ? Infinity : (gameData.currencies[key] || 0);
 }
 
 function updateEventBadge() {
@@ -1111,9 +1129,8 @@ function updateEventBadge() {
     eventBadge.classList.toggle('hidden', n === 0);
 }
 
-function grantTickets(n) {
-    gameData.currencies[SHARED.EVENT_TICKET_KEY] =
-        (gameData.currencies[SHARED.EVENT_TICKET_KEY] || 0) + n;
+function grantTickets(key, n) {
+    gameData.currencies[key] = (gameData.currencies[key] || 0) + n;
     saveGameData(gameData);
 }
 
@@ -1122,38 +1139,73 @@ function grantTickets(n) {
 function claimEventBonus() {
     if (eventBonusClaimed() || !bothSidesCleared()) return;
     gameData.eventClaimed.push('both');
-    grantTickets(EV.bothClearedReward);
+    // Paid in BOTH tickets: one side's ticket is no use on the other's banner.
+    Object.keys(EV.stages).forEach(k => grantTickets(ticketKeyOf(k), EV.bothClearedReward));
     saveGameData(gameData);
     renderEventScreen();
     updateEventBadge();
 }
 
-// Paid on the FIRST clear of a stage; replaying it is for practice only.
-function rewardEventStage(id) {
-    const stage = eventStageById(id);
-    if (!stage || eventStageCleared(id)) return 0;
-    gameData.eventCleared.push(id);
-    grantTickets(stage.reward);
-    saveGameData(gameData);
-    updateEventBadge();
-    return stage.reward;
+// Which side a stage (or that side's boss) belongs to, so it pays the right ticket.
+function eventSideOf(id) {
+    return Object.keys(EV.stages).find(k =>
+        eventStages(k).some(s => s.id === id) || (eventBoss(k) && eventBoss(k).id === id)) || 'water';
 }
 
-// One stage card, read top to bottom: badge, name, 권장 전투력, reward, 입장.
+// The normal stages pay ONCE -- they can't be replayed at all. The boss is the
+// opposite: it can be run forever and pays its ticket every single clear, which
+// is where the endless ticket supply comes from.
+function rewardEventStage(id) {
+    const stage = eventStageById(id);
+    if (!stage) return null;
+    const repeat = !!stage.repeatable;
+    if (!repeat && eventStageCleared(id)) return null;
+    if (!eventStageCleared(id)) gameData.eventCleared.push(id);
+    const key = ticketKeyOf(eventSideOf(id));
+    grantTickets(key, stage.reward);
+    saveGameData(gameData);
+    updateEventBadge();
+    return { amount: stage.reward, label: CURRENCY_LABELS[key], repeat };
+}
+
+// One stage card, read top to bottom: badge, name, status, reward, 입장.
+// A cleared stage is DONE -- there is no replaying it, so its button is spent.
 function stageCardHtml(stage, index, side, sideKey) {
     const cleared = eventStageCleared(stage.id);
     const unlocked = eventStageUnlocked(sideKey, index);
-    const btn = !unlocked
-        ? `<button class="ev-claim-btn" disabled>🔒 잠김</button>`
-        : `<button class="ev-claim-btn" data-stage="${stage.id}">${cleared ? '재도전' : '입장'}</button>`;
+    let btn;
+    if (cleared) btn = `<button class="ev-claim-btn" disabled>클리어 완료</button>`;
+    else if (!unlocked) btn = `<button class="ev-claim-btn" disabled>🔒 잠김</button>`;
+    else btn = `<button class="ev-claim-btn" data-stage="${stage.id}">입장</button>`;
     return `<div class="ev-mission ev-stage${cleared ? ' claimed' : ''}${unlocked ? '' : ' locked'}">`
         + `<div class="ev-mission-badge"><span class="ev-badge-icon">${side.icon}</span>`
         + `<span class="ev-badge-step">${index + 1}</span></div>`
         + `<div class="ev-mission-name">${stage.name}</div>`
-        + `<div class="ev-mission-text">권장 전투력 ${stage.def.recommendedPower}<br>`
-        + `${cleared ? '<span class="ev-stage-done">✔ 클리어</span>' : (unlocked ? '앞 스테이지 클리어 완료' : '앞 스테이지를 먼저 클리어')}</div>`
+        + `<div class="ev-mission-text">`
+        + `${cleared ? '<span class="ev-stage-done">✔ 클리어</span>' : (unlocked ? '한 번만 도전 가능' : '앞 스테이지를 먼저 클리어')}</div>`
         + `<div class="ev-reward-chip"><span class="ev-reward-icon">🎫</span>`
         + `<span class="ev-reward-amount">${stage.reward}</span></div>`
+        + btn
+        + `</div>`;
+}
+
+// The boss sits at the end of the row: it needs all four, then never locks
+// again. Every clear pays its ticket, so this is the endless ticket source.
+function bossCardHtml(boss, side, sideKey) {
+    const open = eventBossUnlocked(sideKey);
+    const beaten = eventStageCleared(boss.id);
+    const btn = open
+        ? `<button class="ev-claim-btn" data-stage="${boss.id}">${beaten ? '다시 도전' : '도전'}</button>`
+        : `<button class="ev-claim-btn" disabled>🔒 잠김</button>`;
+    return `<div class="ev-mission ev-stage ev-boss${open ? '' : ' locked'}">`
+        + `<div class="ev-mission-badge ev-boss-badge"><span class="ev-badge-icon">👑</span>`
+        + `<span class="ev-badge-step">BOSS</span></div>`
+        + `<div class="ev-mission-name">${boss.name}</div>`
+        + `<div class="ev-mission-text">`
+        + `${open ? '<span class="ev-boss-note">♾ 무한 반복 · 깔 때마다 티켓</span>'
+            : '스테이지 4개를 모두 클리어'}</div>`
+        + `<div class="ev-reward-chip"><span class="ev-reward-icon">🎫</span>`
+        + `<span class="ev-reward-amount">${boss.reward}</span></div>`
         + btn
         + `</div>`;
 }
@@ -1181,7 +1233,10 @@ function eventHeaderHtml() {
 
 function renderEventScreen() {
     eventTitleEl.textContent = `${EV.icon} ${EV.name}`;
-    eventTicketAmountEl.textContent = isAdmin() ? '∞' : String(ticketAmount());
+    const sideKeyForTickets = EV.stages[eventCategory] ? eventCategory : 'water';
+    const tkey = ticketKeyOf(sideKeyForTickets);
+    eventTicketNameEl.textContent = CURRENCY_LABELS[tkey].replace(' 뽑기 티켓', '');
+    eventTicketAmountEl.textContent = isAdmin() ? '∞' : String(ticketAmount(tkey));
 
     eventCategoriesEl.innerHTML = '';
     Object.entries(EV.stages).forEach(([key, side]) => {
@@ -1201,6 +1256,7 @@ function renderEventScreen() {
     eventContentEl.innerHTML = eventHeaderHtml()
         + `<div class="ev-mission-grid">`
         + side.stages.map((s, i) => stageCardHtml(s, i, side, sideKey)).join('')
+        + (side.boss ? bossCardHtml(side.boss, side, sideKey) : '')
         + `</div>`;
 }
 
@@ -1289,7 +1345,7 @@ function applyGachaResults(results) {
     let changed = false;
     for (const r of results) {
         if (r.kind === 'soul') {
-            gameData.soulStones[r.charType] = (gameData.soulStones[r.charType] || 0) + 1;
+            gameData.soulStones[r.charType] = (gameData.soulStones[r.charType] || 0) + (r.amount || 1);
             changed = true;
         } else if (r.kind === 'char' && !gameData.unlockedCharacters.includes(r.charType)) {
             gameData.unlockedCharacters.push(r.charType);
@@ -1300,7 +1356,12 @@ function applyGachaResults(results) {
 }
 
 function renderGachaResults(results) {
-    gachaResultEl.innerHTML = results.map(r => {
+    gachaResultEl.innerHTML = gachaResultsHtml(results);
+}
+
+// Shared by both banners so a pull looks the same wherever it came from.
+function gachaResultsHtml(results) {
+    return results.map(r => {
         if (r.kind === 'emptyGrade') {
             return `<div class="gacha-card empty-grade">
                 <span class="${gradeClass(r.grade)}">${r.grade}</span>
@@ -1312,7 +1373,7 @@ function renderGachaResults(results) {
             const have = gameData.soulStones[r.charType] || 0;
             return `<div class="gacha-card soul">
                 <div class="gacha-card-icon soul-icon" style="background: ${charIconBackground(stats)}">💎</div>
-                <div class="gacha-card-name">${stats.name}의 영혼석</div>
+                <div class="gacha-card-name">${stats.name}의 영혼석${r.amount > 1 ? ` x${r.amount}` : ''}</div>
                 <div class="gacha-card-sub">${have} / ${SHARED.SOUL_STONES_PER_CHARACTER}</div>
             </div>`;
         }
@@ -1393,6 +1454,136 @@ gachaNormalBtn.addEventListener('click', () => {
 });
 gachaPullBackBtn.addEventListener('click', () => showScreen('gacha'));
 
+// ---- 레전더리 뽑기 ----
+// Same table as the normal banner with two swaps: the featured cookie is pulled
+// at LEGENDARY_BANNER_RATE, and the 영혼석 slot always pays THAT cookie's
+// stones. Each pull costs one of that cookie's own event tickets.
+const gachaLegendaryBtn = document.getElementById('gacha-legendary-btn');
+const legendaryBackBtn = document.getElementById('legendary-back-btn');
+const legendaryListEl = document.getElementById('legendary-list');
+const legendaryContentEl = document.getElementById('legendary-content');
+let selectedBanner = SHARED.LEGENDARY_BANNERS[0].id;
+
+function bannerCookie(banner) {
+    return SHARED.CHARACTERS[banner.charType] || null;
+}
+function bannerName(banner) {
+    const c = bannerCookie(banner);
+    return c ? c.name : (banner.name || banner.id);
+}
+function bannerTickets(banner) {
+    return ticketAmount(banner.ticketKey);
+}
+
+// One pull on a banner: featured cookie, that cookie's stones, or the normal
+// table's other outcomes.
+function rollLegendaryOnce(banner) {
+    const table = SHARED.legendaryGachaTable(banner.charType);
+    const entries = Object.entries(table);
+    const total = entries.reduce((sum, [, w]) => sum + w, 0);
+    let r = Math.random() * total;
+    let outcome = entries[entries.length - 1][0];
+    for (const [key, w] of entries) {
+        if (r < w) { outcome = key; break; }
+        r -= w;
+    }
+    if (outcome === 'featured') return { kind: 'char', grade: '레전더리', charType: banner.charType };
+    if (outcome === SHARED.GACHA_SOUL_STONE_KEY) {
+        return { kind: 'soul', charType: banner.charType, amount: SHARED.LEGENDARY_BANNER_SOUL_STONES };
+    }
+    const pool = charactersOfGrade(outcome).filter(id => id !== banner.charType);
+    if (pool.length === 0) return { kind: 'emptyGrade', grade: outcome };
+    return { kind: 'char', grade: outcome, charType: pool[Math.floor(Math.random() * pool.length)] };
+}
+
+function doLegendaryPull(count) {
+    const banner = SHARED.legendaryBannerFor(selectedBanner);
+    if (!banner || !bannerCookie(banner)) return;
+    const have = bannerTickets(banner);
+    if (have < count) return;
+    if (!isAdmin()) {
+        gameData.currencies[banner.ticketKey] = have - count;
+        saveGameData(gameData);
+    }
+    const results = [];
+    for (let i = 0; i < count; i++) results.push(rollLegendaryOnce(banner));
+    applyGachaResults(results);
+    renderLegendaryScreen(gachaResultsHtml(results));
+}
+
+function legendaryOddsHtml(banner) {
+    const table = SHARED.legendaryGachaTable(banner.charType);
+    const cookie = bannerCookie(banner);
+    return Object.entries(table).map(([key, pct]) => {
+        let label;
+        if (key === 'featured') label = `<span class="grade-legendary">★ ${cookie.name}</span>`;
+        else if (key === SHARED.GACHA_SOUL_STONE_KEY) label = `💎 ${cookie.name}의 영혼석 (${SHARED.LEGENDARY_BANNER_SOUL_STONES}개)`;
+        else label = `<span class="${gradeClass(key)}">${key}</span>`;
+        return `<div class="gacha-odds-row"><span class="gacha-odds-label">${label}</span>`
+            + `<span class="gacha-odds-pct">${pct}%</span></div>`;
+    }).join('');
+}
+
+function renderLegendaryScreen(resultHtml) {
+    legendaryListEl.innerHTML = '';
+    SHARED.LEGENDARY_BANNERS.forEach(b => {
+        const ready = !!bannerCookie(b);
+        const btn = document.createElement('button');
+        btn.className = 'shop-cat-btn ev-cat' + (b.id === selectedBanner ? ' selected' : '')
+            + (ready ? '' : ' lg-soon');
+        btn.dataset.banner = b.id;
+        btn.innerHTML = `<span class="ev-cat-icon">${b.icon}</span>`
+            + `<span class="ev-cat-body"><span class="ev-cat-label">${bannerName(b)}</span>`
+            + `<span class="ev-cat-count">🎫 ${isAdmin() ? '∞' : bannerTickets(b)}장${ready ? '' : ' · 준비중'}</span></span>`;
+        btn.addEventListener('click', () => { selectedBanner = b.id; renderLegendaryScreen(); });
+        legendaryListEl.appendChild(btn);
+    });
+
+    const banner = SHARED.legendaryBannerFor(selectedBanner);
+    const cookie = bannerCookie(banner);
+    if (!cookie) {
+        legendaryContentEl.innerHTML = `<div class="lg-soon-note">${bannerName(banner)}는 아직 준비중입니다.<br>`
+            + `모아둔 🎫 ${isAdmin() ? '∞' : bannerTickets(banner)}장은 그대로 남아 있어요.</div>`;
+        return;
+    }
+    const tickets = bannerTickets(banner);
+    const stones = gameData.soulStones[banner.charType] || 0;
+    const need = SHARED.SOUL_STONES_PER_CHARACTER;
+    const owned = isCharacterUnlocked(banner.charType);
+    legendaryContentEl.innerHTML = `<div class="lg-head">`
+        + `<div class="lg-icon" style="background:${charIconBackground(cookie)}"></div>`
+        + `<div class="lg-head-main"><div class="lg-name">${cookie.name}`
+        + `${owned ? ' <span class="lg-owned">보유중</span>' : ''}</div>`
+        + `<div class="lg-tickets">🎫 ${CURRENCY_LABELS[banner.ticketKey]} `
+        + `<b>${isAdmin() ? '∞' : tickets}</b>장 · 1회당 1장</div>`
+        + `<div class="ev-mission-bar big"><div class="ev-mission-fill" style="width:${Math.min(100, (stones / need) * 100)}%"></div>`
+        + `<span class="ev-mission-count">영혼석 ${stones}/${need}</span></div></div></div>`
+        + `<div class="gacha-odds-list lg-odds">${legendaryOddsHtml(banner)}</div>`
+        + `<div id="legendary-result" class="gacha-result">${resultHtml
+            || '<p class="gacha-result-empty">티켓을 써서 뽑아보세요.</p>'}</div>`
+        + `<div class="gacha-pull-actions">`
+        + `<button class="play-btn lg-pull" data-count="1"${tickets < 1 ? ' disabled' : ''}>1회 뽑기 (🎫1)</button>`
+        + `<button class="play-btn lg-pull" data-count="10"${tickets < 10 ? ' disabled' : ''}>10회 뽑기 (🎫10)</button>`
+        + `<button class="secondary-btn lg-claim"${stones < need ? ' disabled' : ''}>영혼석으로 획득 (${stones}/${need})</button>`
+        + `</div>`;
+}
+
+legendaryContentEl.addEventListener('click', (e) => {
+    const pull = e.target.closest ? e.target.closest('.lg-pull') : null;
+    if (pull && !pull.disabled) { doLegendaryPull(Number(pull.dataset.count)); return; }
+    const claim = e.target.closest ? e.target.closest('.lg-claim') : null;
+    if (claim && !claim.disabled) {
+        claimCharacterFromSoulStones(SHARED.legendaryBannerFor(selectedBanner).charType);
+        renderLegendaryScreen();
+    }
+});
+
+gachaLegendaryBtn.addEventListener('click', () => {
+    renderLegendaryScreen();
+    showScreen('legendary');
+});
+legendaryBackBtn.addEventListener('click', () => showScreen('gacha'));
+
 detailChangeCharBtn.addEventListener('click', () => openCharacterSelect('bossDetail'));
 
 // ---- Mode select ----
@@ -1408,7 +1599,6 @@ storyModeCard.addEventListener('click', () => showScreen('storyMode'));
 const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');
 const storySoloBtn = document.getElementById('story-solo-btn');
 const towerFloorListEl = document.getElementById('tower-floor-list');
-const towerFloorPower = document.getElementById('tower-floor-power');
 const towerCharPreview = document.getElementById('tower-char-preview');
 const towerCharIcon = document.getElementById('tower-char-icon');
 const towerCharName = document.getElementById('tower-char-name');
@@ -1464,7 +1654,6 @@ function renderTower() {
     });
 
     const floorDef = SHARED.STORY_FLOOR_DEFS[selectedStoryFloor];
-    towerFloorPower.textContent = floorDef ? floorDef.recommendedPower : '준비중';
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     towerCharIcon.style.background = charIconBackground(stats);
     towerCharName.textContent = stats.name;
@@ -1630,10 +1819,13 @@ socket.on('storyFloorResult', ({ result, floor }) => {
         resultTitle.textContent = stage ? '스테이지 클리어!' : '층 클리어!';
         resultTitle.style.color = '#2ecc71';
         if (stage) {
-            const earned = rewardEventStage(stage.id); // 0 on a replay
-            resultDesc.textContent = earned
-                ? `${stage.name} 클리어! 레전더리 뽑기 티켓 ${earned}장을 받았습니다.`
-                : `${stage.name}을(를) 다시 클리어했습니다. (티켓은 첫 클리어에만)`;
+            const earned = rewardEventStage(stage.id); // null only if it can't pay again
+            if (earned) {
+                resultDesc.textContent = `${stage.name} 클리어! ${earned.label} ${earned.amount}장을 받았습니다.`
+                    + (earned.repeat ? ' 보스는 몇 번이든 다시 도전할 수 있어요.' : '');
+            } else {
+                resultDesc.textContent = `${stage.name}을(를) 클리어했습니다.`;
+            }
         } else {
             resultDesc.textContent = `${floor}층을 클리어했습니다.`;
             if (!gameData.clearedStoryFloors.includes(floor)) {
@@ -2302,7 +2494,6 @@ function openBossDetail(bossId) {
     detailBossName.textContent = bossDef.name;
     detailBossIcon.textContent = (bossListEntry && bossListEntry.icon) || '🗿';
     detailBossIcon.style.background = bossDef.color || '#7f8c8d';
-    detailBossPower.textContent = '미정';
     detailBossHp.textContent = `${bossDef.maxHpPerPlayer} (1인 기준)`;
     updateDetailCharPreview();
     showScreen('bossDetail');

@@ -10,7 +10,11 @@ const defaultCurrencies = {
     materialRare: 0,  // 고급 장비강화 재료
     potion: 0,        // 강화포션
     potionRare: 0,    // 고급 강화포션
-    seasonTicket: 0   // 레전더리 뽑기 티켓; earned by clearing 이벤트 스테이지
+    // 레전더리 뽑기 티켓. One per featured cookie, earned by clearing that
+    // element's 레전더리 이벤트 stages; they are NOT interchangeable.
+    ticketWaterdrop: 0,
+    ticketFlame: 0,
+    ticketLightning: 0
 };
 
 const defaultData = {
@@ -56,6 +60,12 @@ function loadGameData() {
             // Same story for currencies: a save from before a currency existed
             // would otherwise leave it undefined rather than 0.
             data.currencies = { ...defaultCurrencies, ...(data.currencies || {}) };
+            // Saves from when there was one shared 시즌 뽑기 티켓: those were all
+            // earned before 화염맛 existed, so they become 물방울맛 tickets.
+            if (data.currencies.seasonTicket) {
+                data.currencies.ticketWaterdrop += data.currencies.seasonTicket;
+                delete data.currencies.seasonTicket;
+            }
             data.eventCleared = data.eventCleared || [];
             data.eventClaimed = data.eventClaimed || [];
             return data;
