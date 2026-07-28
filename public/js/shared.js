@@ -621,6 +621,8 @@ const BOSS_DEFS = {
         name: '시하라얼',
         color: '#f1c40f',
         maxHpPerPlayer: 1000, // fixed at the arena center, same as boss1
+        // 몸에 닿아 있기만 해도 아프다. 패턴과 상관없이 0.1초마다 1씩.
+        contact: { damage: 1, tickMs: 100 },
         restMsRange: [3000, 10000],
         patterns: {
             // 창 찌르기: a red line telegraphs from the boss straight toward

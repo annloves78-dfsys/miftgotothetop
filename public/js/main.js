@@ -52,6 +52,7 @@ function equipSlotsFor(charType) {
 }
 const towerRewardsEl = document.getElementById('tower-rewards');
 const detailBossRewardsEl = document.getElementById('detail-boss-rewards');
+const detailBossContact = document.getElementById('detail-boss-contact');
 const resultRewardsEl = document.getElementById('result-rewards');
 const playBtn = document.getElementById('play-btn');
 const characterSelectBtn = document.getElementById('character-select-btn');
@@ -3150,6 +3151,13 @@ function openBossDetail(bossId) {
     detailBossIcon.textContent = (bossListEntry && bossListEntry.icon) || '🗿';
     detailBossIcon.style.background = bossDef.color || '#7f8c8d';
     detailBossHp.textContent = `${bossDef.maxHpPerPlayer} (1인 기준)`;
+    // 닿기만 해도 아픈 보스는 미리 알려준다 -- 붙어서 싸우는 쿠키에게는
+    // 그 자체가 하나의 패턴이다.
+    detailBossContact.classList.toggle('hidden', !bossDef.contact);
+    if (bossDef.contact) {
+        detailBossContact.querySelector('span:last-child').textContent =
+            `몸에 닿아 있으면 ${(bossDef.contact.tickMs / 1000).toString().replace(/\.0$/, '')}초마다 ${bossDef.contact.damage}`;
+    }
     detailBossRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(bossId));
     updateDetailCharPreview();
     showScreen('bossDetail');

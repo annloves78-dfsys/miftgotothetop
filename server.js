@@ -546,6 +546,26 @@ function tickRoom(roomId) {
 
     if (room.bossStunnedUntil && now < room.bossStunnedUntil) return; // frozen: no pattern progression at all
 
+    // 시하라얼처럼 몸에 닿아 있는 것만으로 아픈 보스. 패턴과 따로 돌아서,
+    // 붙어서 때리는 쿠키는 계속 조금씩 깎인다. 기절한 동안은 안 아프다
+    // (위에서 이미 돌아갔다).
+    if (bossDef.contact) {
+        for (const [id, p] of Object.entries(room.players)) {
+            if (!p || !p.alive) continue;
+            // 서버는 애초에 보스 몸 안으로는 못 들어오게 막으므로, "닿았다"는
+            // 곧 가장 가까이 붙은 상태다. 소수점 오차로 빠져나가지 않게 2px 여유.
+            if (Math.hypot(p.x, p.y) > BOSS_RADIUS + PLAYER_RADIUS + 2) {
+                p.contactNextAt = 0; // 떨어졌다 다시 붙으면 바로 한 대
+                continue;
+            }
+            if (!p.contactNextAt) p.contactNextAt = now;
+            if (now < p.contactNextAt) continue;
+            p.contactNextAt = now + bossDef.contact.tickMs;
+            applyDamageToPlayer(roomId, id, bossDef.contact.damage, { contact: true });
+            if (!rooms[roomId]) return;
+        }
+    }
+
     if (room.bossState === 'idle') {
         if (now >= room.nextAttackAt) {
             const patternNames = Object.keys(bossDef.patterns);
