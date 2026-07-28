@@ -57,6 +57,8 @@ let guestIsTargetingSkill = false; // 때파기 / 물방울 터트리기 aim lik
 let guestPhaseNo = 1;        // 1차 / 2차
 let guestMonsters = {};      // 부하 소환 (2차)
 let guestProjectiles = {};
+let guestDrops = {}; // id -> thrown 물방울 in flight
+let guestDropSplashes = []; // [{x, y, until}]
 let guestFallZones = [];
 let guestBarrage = null;     // { size, spears }
 let guestBossLaser = null;   // { angle, range, width }
@@ -430,6 +432,7 @@ socket.on('guestPhase2Started', (data) => {
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestImpacts = []; guestFallZones = [];
     guestMonsters = {}; guestProjectiles = {};
+    guestDrops = {}; guestDropSplashes = [];
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     if (me) syncGuestMobileIcons(me.charType);
     updateGuestHpBars();
@@ -509,7 +512,19 @@ socket.on('guestUltimateMark', (d) => {
     guestImpacts.push({ ...d, until: performance.now() + 700 });
 });
 socket.on('guestButterflyMode', ({ id, on }) => {
-    if (guestLocal && id === socket.id) guestLocal.butterflyOn = on;
+    if (!guestLocal || id !== socket.id) return;
+    guestLocal.butterflyOn = on;
+    // Releasing it is what starts the cooldown -- switching it on does not.
+    guestLocal.lastUltimateClientTime = on ? Infinity : performance.now();
+});
+
+socket.on('guestDropThrown', ({ id, x, y, vx, vy, radius }) => {
+    guestDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+});
+
+socket.on('guestDropGone', ({ id, hit, x, y }) => {
+    delete guestDrops[id];
+    if (hit) guestDropSplashes.push({ x, y, until: performance.now() + 260 });
 });
 
 socket.on('guestPlayerTeleported', ({ id, x, y }) => {
@@ -530,6 +545,7 @@ socket.on('guestResult', ({ result }) => {
     guestDiscardOverlay.classList.add('hidden');
     guestDiscardChoicesEl.classList.remove('locked');
     guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
+    guestDrops = {}; guestDropSplashes = [];
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
     const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
@@ -653,6 +669,7 @@ function guestCanUseSkill(now) {
 
 function guestCanUseUltimate(now) {
     const stats = guestStats();
+    if (ultimateIsHeldOn(stats, guestLocal)) return true;
     return !!stats.ultimateType && now - guestLocal.lastUltimateClientTime >= stats.ultimateCooldownMs;
 }
 
@@ -726,7 +743,8 @@ function updateGuestCooldownDisplay(now) {
         guestMySkillCdEl.textContent = skillRemain > 0.05 ? `${skillRemain.toFixed(1)}s` : '사용가능';
     }
     if (stats.ultimateType) {
-        ultRemain = Math.max(0, stats.ultimateCooldownMs - (now - guestLocal.lastUltimateClientTime)) / 1000;
+        if (ultimateIsHeldOn(stats, guestLocal)) ultRemain = 0;
+        else ultRemain = Math.max(0, stats.ultimateCooldownMs - (now - guestLocal.lastUltimateClientTime)) / 1000;
         guestMyUltimateCdEl.textContent = ultRemain > 0.05 ? `${ultRemain.toFixed(1)}s` : '사용가능';
     }
     syncGuestMobileCooldowns(skillRemain, ultRemain);
@@ -1006,6 +1024,9 @@ function guestRender(now) {
         guestCtx.fillRect(-8, -2, 16, 4);
         guestCtx.restore();
     });
+    drawThrownDrops(guestCtx, guestDrops, now);
+    guestDropSplashes = guestDropSplashes.filter(s => now < s.until);
+    drawDropSplashes(guestCtx, guestDropSplashes, now);
 
     // The boss.
     const bossStats = SHARED.CHARACTERS[def.charType];

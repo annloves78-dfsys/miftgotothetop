@@ -341,7 +341,7 @@ const CHARACTERS = {
         colorRight: '#ff2d78', // hot pink
         grade: '레전더리',
         element: '불',
-        role: '대미지 딜러',
+        role: '스트라이커',
         seasonLimited: true,
         health: 90,
         speed: 2,

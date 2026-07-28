@@ -504,7 +504,7 @@ function describeAbility(stats, kind) {
             case 'magma_pour':
                 return `직접 지정한 위치에 마그마를 쏟습니다. 반경 ${stats.ultimateRadius}px 안의 적에게 ${stats.ultimateDamage}의 피해를 주고, ${sec(stats.ultimateMarkDurationMs)}초 동안 횟수 제한 없이 ${stats.element} 속성 표식을 남깁니다.${cd}`;
             case 'guard_surge':
-                return `자신에게 ${stats.ultimateShieldAmount}짜리 보호막을 씨우고 체력을 ${stats.ultimateHealAmount}만큼 회복합니다.${cd}`;
+                return `팀 전체에게 ${stats.ultimateShieldAmount}짜리 보호막을 씌우고 체력을 ${stats.ultimateHealAmount}만큼 회복시킵니다.${cd}`;
             case 'team_guard':
                 return `팀원 모두의 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복시키고, ${stats.ultimateShieldAmount}짜리 보호막을 씨워줍니다.${cd}`;
             case 'butterfly_mode':
@@ -580,7 +580,18 @@ const SKILL_ICONS = {
     lightning_strike: '⚡',
     dual_spear: '🔱',
     undying_soul: '👻',
-    earthquake: '🌎'
+    earthquake: '🌎',
+    throw_projectile: '💧',
+    mark_burst: '💦',
+    mark_flood: '🌊',
+    burrow_mark: '⛏️',
+    magma_pour: '🌋',
+    pull_in: '🧲',
+    guard_surge: '💠',
+    wide_slash: '🪓',
+    team_guard: '🫂',
+    charge_dash: '🏃',
+    butterfly_mode: '🦋'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -868,6 +879,42 @@ function setupUltimateJoystick(zoneEl, isStory) {
 // Dashed landing circle for a targeted ultimate. Passing the caster's position
 // also draws a guide line from them to the spot, which is what makes the
 // stick-aimed cast readable.
+// 던져진 물방울. Drawn straight from the throw: its velocity never changes,
+// so the client can place it exactly without a per-tick sync from the server.
+function drawThrownDrops(c, drops, now) {
+    Object.values(drops).forEach(d => {
+        const t = (now - d.at) / 1000;
+        const x = d.x + d.vx * t;
+        const y = d.y + d.vy * t;
+        const r = d.radius || 10;
+        c.save();
+        c.translate(x, y);
+        const grad = c.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.2, 0, 0, r);
+        grad.addColorStop(0, '#eaf8ff');
+        grad.addColorStop(1, '#1f6fb2');
+        c.beginPath();
+        c.arc(0, 0, r, 0, Math.PI * 2);
+        c.fillStyle = grad;
+        c.fill();
+        c.strokeStyle = 'rgba(255,255,255,0.85)';
+        c.lineWidth = 2;
+        c.stroke();
+        c.restore();
+    });
+}
+
+// The splash where one landed (or fizzled out).
+function drawDropSplashes(c, splashes, now) {
+    splashes.forEach(s => {
+        const life = (s.until - now) / 260;
+        c.beginPath();
+        c.arc(s.x, s.y, 8 + (1 - life) * 16, 0, Math.PI * 2);
+        c.strokeStyle = `rgba(127, 212, 245, ${Math.max(0, life)})`;
+        c.lineWidth = 3;
+        c.stroke();
+    });
+}
+
 function drawUltimatePreview(c, x, y, radius, fromX, fromY) {
     c.save();
     c.setLineDash([8, 6]);
@@ -1750,6 +1797,8 @@ let storyImpactEffects = []; // [{x, y, radius, until}]
 // between the server's 50ms ticks instead of visibly stepping.
 let storyProjectiles = {};
 let storyProjectileSparks = []; // [{x, y, until}] brief flash where an arrow landed
+let storyDrops = {}; // id -> thrown 물방울 in flight
+let storyDropSplashes = []; // [{x, y, until}]
 let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 
@@ -1770,6 +1819,8 @@ socket.on('storyFloorStarted', (data) => {
     storyMagmaZones = [];
     storyProjectiles = {};
     storyProjectileSparks = [];
+    storyDrops = {};
+    storyDropSplashes = [];
     storyQuakeUntil = 0;
     updateStoryHpBar();
     updateStoryMonstersLeft();
@@ -1785,6 +1836,15 @@ socket.on('storyTick', ({ monsters, projectiles }) => {
     for (const [id, pr] of Object.entries(projectiles || {})) next[id] = { ...pr, at };
     storyProjectiles = next;
     updateStoryMonstersLeft();
+});
+
+socket.on('storyDropThrown', ({ id, x, y, vx, vy, radius }) => {
+    storyDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+});
+
+socket.on('storyDropGone', ({ id, hit, x, y }) => {
+    delete storyDrops[id];
+    if (hit) storyDropSplashes.push({ x, y, until: performance.now() + 260 });
 });
 
 socket.on('storyProjectileFired', ({ id, x, y, vx, vy, angle }) => {
@@ -1852,7 +1912,10 @@ socket.on('storyUltimateMark', ({ x, y, radius }) => {
 });
 // 나비모드 is a toggle, so the server tells us which way it went.
 socket.on('storyButterflyMode', ({ id, on }) => {
-    if (storyPlayer && id === socket.id) storyPlayer.butterflyOn = on;
+    if (!storyPlayer || id !== socket.id) return;
+    storyPlayer.butterflyOn = on;
+    // Releasing it is what starts the cooldown -- switching it on does not.
+    storyPlayer.lastUltimateClientTime = on ? Infinity : performance.now();
 });
 
 socket.on('storyPlayerTeleported', ({ id, x, y }) => {
@@ -1989,9 +2052,16 @@ function storyCanUseSkill(now) {
     return !!stats.skillType && now - storyPlayer.lastSkillClientTime >= stats.skillCooldown;
 }
 
+// 나비모드 has no duration: while it is running the ultimate button is the
+// OFF switch, so it is never on cooldown, and the 30s only starts on release.
+function ultimateIsHeldOn(stats, p) {
+    return !!p && stats.ultimateType === 'butterfly_mode' && !!p.butterflyOn;
+}
+
 function storyCanUseUltimate(now) {
     if (!storyPlayer || !storyPlayer.alive) return false;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    if (ultimateIsHeldOn(stats, storyPlayer)) return true;
     return !!stats.ultimateType && now - storyPlayer.lastUltimateClientTime >= stats.ultimateCooldownMs;
 }
 
@@ -2118,7 +2188,9 @@ function updateStoryCooldownDisplay(now) {
         storyMySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         skillRemain = remain;
     }
-    if (stats.ultimateType) {
+    if (ultimateIsHeldOn(stats, storyPlayer)) {
+        storyMyUltimateCdEl.textContent = '사용중';
+    } else if (stats.ultimateType) {
         const remain = Math.max(0, stats.ultimateCooldownMs - (now - storyPlayer.lastUltimateClientTime)) / 1000;
         storyMyUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
@@ -2409,6 +2481,10 @@ function storyRender(now) {
         storyCtx.restore();
     });
 
+    drawThrownDrops(storyCtx, storyDrops, now);
+    storyDropSplashes = storyDropSplashes.filter(s => now < s.until);
+    drawDropSplashes(storyCtx, storyDropSplashes, now);
+
     storyProjectileSparks = storyProjectileSparks.filter(s => now < s.until);
     storyProjectileSparks.forEach(s => {
         const life = (s.until - now) / 220;
@@ -2685,6 +2761,17 @@ let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in are
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
 let raidQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
+let raidDrops = {}; // id -> thrown 물방울 in flight
+let raidDropSplashes = []; // [{x, y, until}]
+
+socket.on('dropThrown', ({ id, x, y, vx, vy, radius }) => {
+    raidDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+});
+
+socket.on('dropGone', ({ id, hit, x, y }) => {
+    delete raidDrops[id];
+    if (hit) raidDropSplashes.push({ x, y, until: performance.now() + 260 });
+});
 
 socket.on('raidStarted', (data) => {
     boss = new Boss(currentRoomState.bossId);
@@ -2700,6 +2787,8 @@ socket.on('raidStarted', (data) => {
     isTargetingUltimate = false;
     impactEffects = [];
     magmaZones = [];
+    raidDrops = {};
+    raidDropSplashes = [];
     bossMark = null;
     raidQuakeUntil = 0;
     resetDetailActions();
@@ -2743,7 +2832,9 @@ socket.on('ultimateMark', ({ x, y, radius }) => {
 });
 socket.on('butterflyMode', ({ id, on }) => {
     const p = players[id];
-    if (p) p.butterflyOn = on;
+    if (!p) return;
+    p.butterflyOn = on;
+    if (id === socket.id) p.lastUltimateClientTime = on ? Infinity : performance.now();
 });
 
 socket.on('playerTeleported', ({ id, x, y }) => {
@@ -2908,7 +2999,9 @@ function updateCooldownDisplay(now) {
         mySkillCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         skillRemain = remain;
     }
-    if (me.stats.ultimateType) {
+    if (ultimateIsHeldOn(me.stats, me)) {
+        myUltimateCdEl.textContent = '사용중';
+    } else if (me.stats.ultimateType) {
         const remain = Math.max(0, me.stats.ultimateCooldownMs - (now - me.lastUltimateClientTime)) / 1000;
         myUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
@@ -3146,6 +3239,10 @@ function render(now) {
         ctx.restore();
     }
     Object.values(players).forEach(p => p.draw(ctx, now));
+
+    drawThrownDrops(ctx, raidDrops, now);
+    raidDropSplashes = raidDropSplashes.filter(s => now < s.until);
+    drawDropSplashes(ctx, raidDropSplashes, now);
 
     impactEffects = impactEffects.filter(fx => now < fx.until);
     impactEffects.forEach(fx => {

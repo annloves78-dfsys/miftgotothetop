@@ -110,6 +110,8 @@ function createRoom(bossId, solo) {
         bossHp: 0,
         bossMaxHp: 0,
         bossState: 'idle',
+        playerProjectiles: {}, // id -> thrown drop in flight; see spawnPlayerProjectile
+        nextPlayerProjectileId: 0,
         bossPattern: null,
         bossPatternStartAt: 0,
         bossPatternRuntime: null,
@@ -404,6 +406,19 @@ function tickRoom(roomId) {
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
 
+    // Thrown drops, against the one thing in this arena worth hitting.
+    tickPlayerProjectiles(roomId, room, 50, (pr) => {
+        if (Math.hypot(pr.x, pr.y) > pr.radius + BOSS_RADIUS) {
+            // Nothing to hit out here, and past the arena wall it is gone.
+            return Math.hypot(pr.x, pr.y) > ARENA_RADIUS;
+        }
+        const owner = room.players[pr.ownerId];
+        if (!owner) return true;
+        landRaidHitOnBoss(roomId, room, pr.ownerId, owner, CHARACTERS[owner.charType], pr.damage, Date.now());
+        return true;
+    }, 'dropGone');
+    if (!rooms[roomId]) return;
+
     // Team-wide buffs (e.g. the healer's ultimate) tick independently of the
     // boss's own attack state machine below.
     if (room.activeBuffs && room.activeBuffs.length) {
@@ -648,6 +663,8 @@ function createStoryRoom(floor) {
         monsters: {},
         projectiles: {}, // id -> arrow in flight; see spawnMonsterProjectile
         nextProjectileId: 0,
+        playerProjectiles: {}, // id -> thrown drop in flight; see spawnPlayerProjectile
+        nextPlayerProjectileId: 0,
         starDefeated: false,
         activeBuffs: [],
         loopHandle: null
@@ -770,6 +787,182 @@ function tickMonsterProjectiles(ctx, alivePlayers, dtMs) {
                 if (!rooms[roomId]) return; // player died; room already torn down
             }
         }
+    }
+}
+
+
+// ==================== Player projectiles ====================
+// A melee swing resolves the instant the button is pressed. A thrown attack
+// (물방울맛's 물방울 던지기) leaves the cookie and travels, so it is resolved on
+// the room's 50ms tick and can miss outright. All three room kinds share the
+// spawn/tick pair below; only "what it can hit" differs, and that is handed in.
+
+function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev) {
+    if (!room.playerProjectiles) { room.playerProjectiles = {}; room.nextPlayerProjectileId = 0; }
+    const id = `pp${room.nextPlayerProjectileId++}`;
+    const speed = character.attackProjectileSpeed;
+    const pr = {
+        ownerId,
+        x: p.x, y: p.y,
+        vx: Math.cos(p.facing) * speed,
+        vy: Math.sin(p.facing) * speed,
+        radius: character.attackProjectileRadius,
+        damage: effectiveAttackDamage(character, p, now),
+        // It fizzles once it has flown attackRange, so the range on the
+        // character card is the range you actually get.
+        rangeLeft: character.attackRange,
+        // The ultimate's marking window is captured at the throw: what matters
+        // is whether it was open when the drop left the cookie's hand.
+        marks: !!(p.elementMarkUntil && now < p.elementMarkUntil),
+        charType: p.charType
+    };
+    room.playerProjectiles[id] = pr;
+    io.to(roomId).emit(ev, {
+        id, ownerId, charType: pr.charType,
+        x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy, radius: pr.radius
+    });
+    return id;
+}
+
+// `resolveHit(pr)` returns truthy if the drop struck something this step.
+function tickPlayerProjectiles(roomId, room, dtMs, resolveHit, goneEv) {
+    if (!room.playerProjectiles) return;
+    const dt = dtMs / 1000;
+    for (const [id, pr] of Object.entries(room.playerProjectiles)) {
+        pr.x += pr.vx * dt;
+        pr.y += pr.vy * dt;
+        pr.rangeLeft -= Math.hypot(pr.vx, pr.vy) * dt;
+        const hit = resolveHit(pr);
+        if (!rooms[roomId]) return; // that hit ended the room
+        if (!room.playerProjectiles[id]) continue; // already cleaned up
+        if (hit || pr.rangeLeft <= 0) {
+            delete room.playerProjectiles[id];
+            io.to(roomId).emit(goneEv, { id, hit: !!hit, x: pr.x, y: pr.y });
+        }
+    }
+}
+
+// One landed player hit on a story monster: mark bonus, burn, knockback and the
+// ultimate's mark window. Written once so the melee swing and the thrown drop
+// can never drift apart.
+function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
+    const dmg = Math.round(baseDamage * consumeElementMark(m, character, now));
+    m.hp = Math.max(0, m.hp - dmg);
+    if (m.hp <= 0) {
+        m.alive = false;
+        io.to(roomId).emit('monsterDefeated', { id: mid });
+        return;
+    }
+    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+
+    if (character.attackBurnDamage) {
+        room.activeBuffs.push({
+            type: 'attack_burn',
+            casterId: attackerId,
+            targetMonsterId: mid,
+            damage: character.attackBurnDamage,
+            tickMs: character.attackBurnIntervalMs,
+            ticksLeft: character.attackBurnTicks,
+            lastTickAt: now,
+            endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
+        });
+    }
+
+    // Shove the target back (the raid boss doesn't have this -- it's fixed in
+    // place -- so this only ever fires here).
+    if (opts.knockback && character.attackKnockback) {
+        const floorDef = opts.floorDef;
+        const dx = m.x - opts.fromX, dy = m.y - opts.fromY;
+        const kdist = Math.hypot(dx, dy) || 1;
+        let nx = m.x + (dx / kdist) * character.attackKnockback;
+        let ny = m.y + (dy / kdist) * character.attackKnockback;
+        if (nx > 40) nx = 40;
+        if (nx < -floorDef.levelLength) nx = -floorDef.levelLength;
+        if (ny > floorDef.laneHalfWidth) ny = floorDef.laneHalfWidth;
+        if (ny < -floorDef.laneHalfWidth) ny = -floorDef.laneHalfWidth;
+        m.x = nx; m.y = ny;
+    }
+
+    // While the ultimate window is open, a landed attack marks the target --
+    // unless something else already marked it with a different element.
+    if (opts.marks) {
+        const marked = applyElementMark(m, character.element, {
+            charges: character.ultimateMarkUses,
+            multiplier: character.ultimateMarkMultiplier
+        }, now);
+        if (marked) {
+            io.to(roomId).emit('monsterMarked', {
+                id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+            });
+        }
+    }
+}
+
+// The same thing for the raid boss, which keeps its mark on the room rather
+// than on itself and heals/burns through the raid room's own helpers.
+function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, now) {
+    let dmg = baseDamage;
+
+    // Element mark: a matching-element attacker deals bonus damage vs a marked
+    // boss. Goes through the shared helper so a timed mark (폭포 / 마그마 쏟기)
+    // behaves the same here.
+    const before = room.bossElementMark;
+    const mult = consumeElementMark(bossMarkTarget(room), character, now);
+    dmg = Math.round(dmg * mult);
+    let markChanged = before !== room.bossElementMark
+        || (before && room.bossElementMark && before.charges !== room.bossElementMark.charges);
+
+    room.bossHp = Math.max(0, room.bossHp - dmg);
+    io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: attackerId });
+    if (room.bossHp <= 0) endRoom(roomId, 'win');
+
+    // Some cookies heal whenever the attack actually connects (only a chance to
+    // proc, if attackHealChance is set). The ultimate can raise the amount.
+    const selfHeal = passiveHitHeal(character, p);
+    if (selfHeal) {
+        p.hp = Math.min(p.maxHp, p.hp + selfHeal);
+        io.to(roomId).emit('playerHealed', { id: attackerId, hp: p.hp });
+    }
+    if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
+        const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+        healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+    }
+
+    // Burn: a couple of small extra ticks after the initial hit.
+    if (character.attackBurnDamage) {
+        room.activeBuffs.push({
+            type: 'attack_burn',
+            casterId: attackerId,
+            damage: character.attackBurnDamage,
+            tickMs: character.attackBurnIntervalMs,
+            ticksLeft: character.attackBurnTicks,
+            lastTickAt: now,
+            endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
+        });
+    }
+
+    // While the ultimate window is active, a landed attack marks the boss.
+    if (p.elementMarkUntil && now < p.elementMarkUntil) {
+        if (room.bossElementMark && room.bossElementMark.element === character.element) {
+            room.bossElementMark.charges += character.ultimateMarkUses;
+        } else {
+            room.bossElementMark = {
+                element: character.element,
+                charges: character.ultimateMarkUses,
+                multiplier: character.ultimateMarkMultiplier
+            };
+        }
+        markChanged = true;
+    }
+
+    if (markChanged) {
+        io.to(roomId).emit('bossMarked', room.bossElementMark
+            ? {
+                element: room.bossElementMark.element,
+                charges: room.bossElementMark.charges,
+                until: room.bossElementMark.until
+            }
+            : { element: null, charges: 0 });
     }
 }
 
@@ -1154,6 +1347,41 @@ function tickStoryRoom(roomId) {
     if (!rooms[roomId]) return; // room may have just ended (player died) mid-loop above
     tickMonsterProjectiles(ctx, alivePlayers, 50);
     if (!rooms[roomId]) return; // an arrow may have just killed the last player
+
+    // Thrown drops. A drop can also pop the stage's star, so 물방울맛 can
+    // actually finish a floor without ever touching anything.
+    const dropFloorDef = floorDefFor(room.floor);
+    tickPlayerProjectiles(roomId, room, 50, (pr) => {
+        for (const [mid, m] of Object.entries(room.monsters)) {
+            if (!m.alive) continue;
+            if (Math.hypot(pr.x - m.x, pr.y - m.y) > pr.radius + MONSTER_RADIUS) continue;
+            const owner = room.players[pr.ownerId];
+            const oc = owner ? CHARACTERS[owner.charType] : CHARACTERS[pr.charType];
+            landStoryHitOnMonster(roomId, room, mid, m, pr.ownerId, oc, pr.damage, Date.now(),
+                { knockback: false, marks: pr.marks });
+            if (owner && owner.alive) {
+                const selfHeal = passiveHitHeal(oc, owner);
+                if (selfHeal) {
+                    owner.hp = Math.min(owner.maxHp, owner.hp + selfHeal);
+                    io.to(roomId).emit('storyPlayerHealed', { id: pr.ownerId, hp: owner.hp });
+                }
+                if (oc.attackHealOnUse && Math.random() < (oc.attackHealChance ?? 1)) {
+                    healStoryPlayer(room, roomId, oc.attackHealOnUse);
+                }
+            }
+            return true;
+        }
+        if (dropFloorDef && dropFloorDef.star && !room.starDefeated
+            && Math.hypot(pr.x - dropFloorDef.star.x, pr.y - dropFloorDef.star.y) <= pr.radius + STAR_RADIUS) {
+            room.starDefeated = true;
+            io.to(roomId).emit('starHit', {});
+            endStoryRoom(roomId, 'win');
+            return true;
+        }
+        return false;
+    }, 'storyDropGone');
+    if (!rooms[roomId]) return; // a drop just hit the star
+
     io.to(roomId).emit('storyTick', { monsters: publicMonsters(room), projectiles: publicProjectiles(room) });
 }
 
@@ -1189,6 +1417,8 @@ function createGuestRoom(guestId, solo) {
         monsters: {}, // 부하 소환 (2차) fills this
         nextMonsterId: 0,
         projectiles: {}, // arrows from summoned chocolate_cake_slices
+        playerProjectiles: {}, // id -> thrown drop in flight; see spawnPlayerProjectile
+        nextPlayerProjectileId: 0,
         nextProjectileId: 0,
         bossShieldHp: 0, // 흑화 puts one on the boss
         playerDamageDebuffUntil: 0, // ...and dulls everyone's damage until then
@@ -2002,6 +2232,30 @@ function tickGuestRoom(roomId) {
         }
     }
 
+    // Thrown drops. The boss and any add are both in the way of the same drop.
+    tickPlayerProjectiles(roomId, room, 50, (pr) => {
+        if (Math.abs(pr.x) > GUEST_ARENA_HALF_W || Math.abs(pr.y) > GUEST_ARENA_HALF_H) return true;
+        const targets = guestCircleTargets(room, pr.x, pr.y, pr.radius);
+        if (!targets.length) return false;
+        damageGuestTargets(roomId, room, targets, pr.damage, pr.ownerId);
+        if (!rooms[roomId]) return true;
+        const owner = room.players[pr.ownerId];
+        if (owner && owner.alive) {
+            const oc = CHARACTERS[owner.charType];
+            const selfHeal = passiveHitHeal(oc, owner);
+            if (selfHeal) {
+                owner.hp = Math.min(owner.maxHp, owner.hp + selfHeal);
+                owner.partyHp[owner.active] = owner.hp;
+                io.to(roomId).emit('guestPlayerHealed', { id: pr.ownerId, hp: owner.hp, partyHp: owner.partyHp });
+            }
+            if (oc.attackHealOnUse && Math.random() < (oc.attackHealChance ?? 1)) {
+                healGuestTeam(room, roomId, oc.attackHealOnUse);
+            }
+        }
+        return true;
+    }, 'guestDropGone');
+    if (!rooms[roomId]) return;
+
     // Summoned adds (2차) live in the same room and fight on their own clock.
     if (Object.keys(room.monsters).length) {
         const mctx = guestMonsterCtx(roomId, room);
@@ -2374,9 +2628,16 @@ io.on('connection', (socket) => {
         const cooldown = attackCooldownFor(character, p, rapid);
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
+
+        // 던지는 기본공격: nothing is resolved here -- the drop is put in the
+        // air and the room's tick decides whether it ever reaches anything.
+        if (character.attackType === 'throw_projectile') {
+            spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'storyDropThrown');
+            return;
+        }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
             && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
-        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
         let anyHit = false;
         const swing = resolveAttack(character, p, now, rapid);
@@ -2387,58 +2648,10 @@ io.on('connection', (socket) => {
             if (!m.alive) continue;
             if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
                 anyHit = true;
-
-                // Element mark: a matching-element attacker deals bonus
-                // damage vs a marked monster and burns down one charge.
-                const dmg = Math.round(baseAttackDamage * consumeElementMark(m, character, now));
-
-                m.hp = Math.max(0, m.hp - dmg);
-                if (m.hp <= 0) {
-                    m.alive = false;
-                    io.to(roomId).emit('monsterDefeated', { id: mid });
-                } else {
-                    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
-                    if (character.attackBurnDamage) {
-                        room.activeBuffs.push({
-                            type: 'attack_burn',
-                            casterId: socket.id,
-                            targetMonsterId: mid,
-                            damage: character.attackBurnDamage,
-                            tickMs: character.attackBurnIntervalMs,
-                            ticksLeft: character.attackBurnTicks,
-                            lastTickAt: now,
-                            endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
-                        });
-                    }
-
-                    // Shove the target back (the boss doesn't have this --
-                    // it's fixed in place -- so this only ever fires here).
-                    if (character.attackKnockback) {
-                        const dx = m.x - p.x, dy = m.y - p.y;
-                        const kdist = Math.hypot(dx, dy) || 1;
-                        let nx = m.x + (dx / kdist) * character.attackKnockback;
-                        let ny = m.y + (dy / kdist) * character.attackKnockback;
-                        if (nx > 40) nx = 40;
-                        if (nx < -floorDef.levelLength) nx = -floorDef.levelLength;
-                        if (ny > floorDef.laneHalfWidth) ny = floorDef.laneHalfWidth;
-                        if (ny < -floorDef.laneHalfWidth) ny = -floorDef.laneHalfWidth;
-                        m.x = nx; m.y = ny;
-                    }
-
-                    // While the ultimate window is active, a landed attack marks
-                    // the target -- unless something else already marked it.
-                    if (p.elementMarkUntil && now < p.elementMarkUntil) {
-                        const marked = applyElementMark(m, character.element, {
-                            charges: character.ultimateMarkUses,
-                            multiplier: character.ultimateMarkMultiplier
-                        }, now);
-                        if (marked) {
-                            io.to(roomId).emit('monsterMarked', {
-                                id: mid, element: m.elementMark.element, charges: m.elementMark.charges
-                            });
-                        }
-                    }
-                }
+                landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
+                    knockback: true, floorDef, fromX: p.x, fromY: p.y,
+                    marks: !!(p.elementMarkUntil && now < p.elementMarkUntil)
+                });
             }
         }
 
@@ -2689,8 +2902,7 @@ io.on('connection', (socket) => {
                 }
             }
         } else if (character.ultimateType === 'guard_surge') {
-            p.shieldHp = character.ultimateShieldAmount;
-            io.to(roomId).emit('storyPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
+            shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
             healStoryPlayer(room, roomId, character.ultimateHealAmount);
         } else if (character.ultimateType === 'team_guard') {
             for (const [id, pl] of Object.entries(room.players)) {
@@ -2830,71 +3042,16 @@ io.on('connection', (socket) => {
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
+        if (character.attackType === 'throw_projectile') {
+            spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'dropThrown');
+            return;
+        }
         if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
             || character.attackType === 'combo_two_stage' || character.attackType === 'dual_spear') {
             const swing = resolveAttack(character, p, now, rapid);
             advanceAttackSequence(character, p);
             if (meleeLineHit(swing.originX, swing.originY, p.facing, swing.range, swing.width, BOSS_RADIUS)) {
-                let dmg = swing.damage;
-
-                // Element mark: a matching-element attacker deals bonus
-                // damage vs a marked boss. Goes through the shared helper so a
-                // timed mark (폭포 / 마그마 쏟기) behaves the same here.
-                const before = room.bossElementMark;
-                const mult = consumeElementMark(bossMarkTarget(room), character, now);
-                dmg = Math.round(dmg * mult);
-                const markChanged = before !== room.bossElementMark
-                    || (before && room.bossElementMark && before.charges !== room.bossElementMark.charges);
-
-                room.bossHp = Math.max(0, room.bossHp - dmg);
-                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
-                if (room.bossHp <= 0) endRoom(roomId, 'win');
-
-                // Some cookies heal the team whenever the attack actually
-                // connects (only a chance to proc, if attackHealChance is
-                // set). The ultimate can temporarily raise the heal amount.
-                const selfHeal = passiveHitHeal(character, p);
-                if (selfHeal) {
-                    p.hp = Math.min(p.maxHp, p.hp + selfHeal);
-                    io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
-                }
-                if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-                    const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
-                    healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
-                }
-
-                // Burn: a couple of small extra ticks after the initial hit.
-                if (character.attackBurnDamage) {
-                    room.activeBuffs.push({
-                        type: 'attack_burn',
-                        casterId: socket.id,
-                        damage: character.attackBurnDamage,
-                        tickMs: character.attackBurnIntervalMs,
-                        ticksLeft: character.attackBurnTicks,
-                        lastTickAt: now,
-                        endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
-                    });
-                }
-
-                // While the ultimate window is active, a landed attack marks the boss.
-                if (p.elementMarkUntil && now < p.elementMarkUntil) {
-                    if (room.bossElementMark && room.bossElementMark.element === character.element) {
-                        room.bossElementMark.charges += character.ultimateMarkUses;
-                    } else {
-                        room.bossElementMark = { element: character.element, charges: character.ultimateMarkUses, multiplier: character.ultimateMarkMultiplier };
-                    }
-                    markChanged = true;
-                }
-
-                if (markChanged) {
-                    io.to(roomId).emit('bossMarked', room.bossElementMark
-                        ? {
-                            element: room.bossElementMark.element,
-                            charges: room.bossElementMark.charges,
-                            until: room.bossElementMark.until
-                        }
-                        : { element: null, charges: 0 });
-                }
+                landRaidHitOnBoss(roomId, room, socket.id, p, character, swing.damage, now);
             }
         }
     });
@@ -3036,10 +3193,8 @@ io.on('connection', (socket) => {
                 lastTickAt: now
             });
         } else if (character.ultimateType === 'guard_surge') {
-            p.shieldHp = character.ultimateShieldAmount;
-            io.to(roomId).emit('playerShielded', { id: socket.id, shieldHp: p.shieldHp });
-            p.hp = Math.min(p.maxHp, p.hp + character.ultimateHealAmount);
-            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            shieldTeam(room, roomId, character.ultimateShieldAmount);
+            healTeam(room, roomId, character.ultimateHealAmount);
         } else if (character.ultimateType === 'team_guard') {
             for (const [id, pl] of Object.entries(room.players)) {
                 if (!pl.alive) continue;
@@ -3333,6 +3488,10 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid)) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
+        if (character.attackType === 'throw_projectile') {
+            spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'guestDropThrown');
+            return;
+        }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
             && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear') return;
 
@@ -3479,11 +3638,8 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
 
         if (character.ultimateType === 'guard_surge') {
-            p.shieldHp = character.ultimateShieldAmount;
-            io.to(roomId).emit('guestPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
-            p.hp = Math.min(p.maxHp, p.hp + character.ultimateHealAmount);
-            p.partyHp[p.active] = p.hp;
-            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            healGuestTeam(room, roomId, character.ultimateHealAmount);
             return;
         }
         if (character.ultimateType === 'team_guard') {

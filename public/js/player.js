@@ -128,6 +128,8 @@ class Player {
     }
 
     canUseUltimate(now) {
+        // 나비모드: while it is on, the button switches it off instead.
+        if (this.alive && this.stats.ultimateType === 'butterfly_mode' && this.butterflyOn) return true;
         return this.alive && !!this.stats.ultimateType && now - this.lastUltimateClientTime >= this.stats.ultimateCooldownMs;
     }
 
