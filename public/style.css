@@ -368,24 +368,43 @@ html, body {
 .lg-owned { font-size: 12px; color: #2ecc71; }
 .lg-tickets { font-size: 13px; color: #f1c40f; margin: 4px 0 7px; }
 
-.lg-odds { margin-bottom: 14px; }
-.lg-odds .gacha-odds-row:first-child { border-color: #f1c40f; }
-
-#legendary-screen .gacha-pull-actions {
+/* Results on the left, pull buttons pinned in a column on the right. */
+.lg-body {
     display: flex;
-    gap: 12px;
-    justify-content: center;
-    margin-top: 14px;
-    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 14px;
 }
 
-#legendary-screen .gacha-pull-actions .play-btn {
+.lg-main { flex: 1; min-width: 0; }
+
+.lg-side {
+    flex: 0 0 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.lg-side .play-btn,
+.lg-side .secondary-btn {
     position: static;
-    width: auto;
-    padding: 12px 22px;
+    width: 100%;
+    margin: 0;
+    padding: 12px 8px;
+    line-height: 1.35;
 }
 
-#legendary-result { min-height: 90px; }
+.lg-side small { font-size: 11px; opacity: 0.85; }
+
+.lg-odds { margin-bottom: 12px; }
+.lg-featured-odds { border-color: #f1c40f; }
+
+/* The pull results get their own scroll box: a 10-pull stays inside it instead
+   of growing the page and pushing the buttons out of reach. */
+.lg-result {
+    max-height: 40vh;
+    overflow-y: auto;
+    padding-right: 4px;
+}
 
 /* Shop */
 .shop-layout {

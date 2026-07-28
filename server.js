@@ -820,6 +820,71 @@ function applyElementMark(target, element, opts, now) {
     return true;
 }
 
+// A raid/guest boss keeps its mark on the room instead of on a monster object.
+// This wrapper lets the mark helpers above work on it without a second copy.
+function bossMarkTarget(room) {
+    return {
+        get elementMark() { return room.bossElementMark; },
+        set elementMark(v) { room.bossElementMark = v; }
+    };
+}
+
+// 물방울맛 / 마그마맛 both hand out an element mark over a circle rather than on
+// a hit. `opts` is either { charges, multiplier } or { durationMs, multiplier }.
+function markMonstersInCircle(roomId, room, x, y, radius, element, opts) {
+    const now = Date.now();
+    let marked = 0;
+    for (const [mid, m] of Object.entries(room.monsters || {})) {
+        if (!m.alive) continue;
+        if (Math.hypot(x - m.x, y - m.y) > radius + MONSTER_RADIUS) continue;
+        if (!applyElementMark(m, element, opts, now)) continue; // another element got there first
+        marked++;
+        io.to(roomId).emit('monsterMarked', {
+            id: mid, element: m.elementMark.element,
+            charges: m.elementMark.charges, until: m.elementMark.until
+        });
+    }
+    return marked;
+}
+
+// Same thing for the single boss in a raid/guest room.
+function markBossInCircle(roomId, room, x, y, radius, element, opts, ev) {
+    if (Math.hypot(x, y) > radius + BOSS_RADIUS) return 0;
+    if (!applyElementMark(bossMarkTarget(room), element, opts, Date.now())) return 0;
+    io.to(roomId).emit(ev, {
+        element: room.bossElementMark.element,
+        charges: room.bossElementMark.charges,
+        until: room.bossElementMark.until
+    });
+    return 1;
+}
+
+// The options bag for a cookie's mark-granting skill / ultimate.
+// A click-to-place ability's target, validated. Returns null for anything that
+// isn't a real pair of finite numbers so a garbage payload can't place a zone.
+function targetPoint(payload) {
+    const x = payload && payload.targetX;
+    const y = payload && payload.targetY;
+    if (typeof x !== 'number' || typeof y !== 'number') return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
+// Keeps a placed point inside the round arena the raid/guest rooms use.
+function clampToArena(x, y, radius) {
+    const dist = Math.hypot(x, y);
+    if (dist <= radius) return { x, y };
+    const scale = dist > 0 ? radius / dist : 0;
+    return { x: x * scale, y: y * scale };
+}
+
+function skillMarkOpts(character) {
+    return { charges: character.skillMarkUses, multiplier: character.skillMarkMultiplier };
+}
+function ultimateMarkOpts(character) {
+    return { durationMs: character.ultimateMarkDurationMs, multiplier: character.ultimateMarkMultiplier };
+}
+
 function elementMarkExpired(mark, now) {
     if (!mark) return true;
     if (mark.until && now >= mark.until) return true;
@@ -2336,7 +2401,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('storyPlayerSkill', () => {
+    socket.on('storyPlayerSkill', (payload) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
@@ -2435,6 +2500,24 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('monsterDefeated', { id: victimId });
             }
         }
+        // 마그마맛 때파기 / 물방울맛 물방울 터트리기: both pick a spot and
+        // mark whatever is standing near it. 때파기 also puts the cookie there.
+        else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const floorDef = floorDefFor(room.floor);
+            const spot = clampToLane(floorDef, t.x, t.y);
+            if (character.skillType === 'burrow_mark') {
+                p.x = spot.x; p.y = spot.y;
+                io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            }
+            io.to(roomId).emit('storySkillMark', {
+                id: socket.id, x: spot.x, y: spot.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markMonstersInCircle(roomId, room, spot.x, spot.y,
+                character.skillRadius, character.element, skillMarkOpts(character));
+        }
         // speed_boost is purely client-side; nothing more to do here.
     });
 
@@ -2482,6 +2565,29 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        } else if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
+            // 마그마 쏟기 / 폭포: both drop a marked circle on a chosen spot;
+            // only 마그마 쏟기 also deals damage.
+            const t0 = targetPoint(payload);
+            if (!t0) return;
+            const floorDef = floorDefFor(room.floor);
+            const spot = clampToLane(floorDef, t0.x, t0.y);
+            io.to(roomId).emit('storyUltimateMark', {
+                id: socket.id, x: spot.x, y: spot.y, radius: character.ultimateRadius,
+                element: character.element, durationMs: character.ultimateMarkDurationMs,
+                damage: character.ultimateDamage || 0
+            });
+            if (character.ultimateDamage) {
+                for (const [mid, m] of Object.entries(room.monsters)) {
+                    if (!m.alive) continue;
+                    if (Math.hypot(spot.x - m.x, spot.y - m.y) > character.ultimateRadius + MONSTER_RADIUS) continue;
+                    m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+            }
+            markMonstersInCircle(roomId, room, spot.x, spot.y, character.ultimateRadius,
+                character.element, ultimateMarkOpts(character));
         } else if (character.ultimateType === 'lightning_strike') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
@@ -2595,15 +2701,13 @@ io.on('connection', (socket) => {
                 let dmg = swing.damage;
 
                 // Element mark: a matching-element attacker deals bonus
-                // damage vs a marked boss and burns down one charge.
-                let markChanged = false;
-                const mark = room.bossElementMark;
-                if (mark && mark.element === character.element && mark.charges > 0) {
-                    dmg = Math.round(dmg * mark.multiplier);
-                    mark.charges -= 1;
-                    markChanged = true;
-                    if (mark.charges <= 0) room.bossElementMark = null;
-                }
+                // damage vs a marked boss. Goes through the shared helper so a
+                // timed mark (폭포 / 마그마 쏟기) behaves the same here.
+                const before = room.bossElementMark;
+                const mult = consumeElementMark(bossMarkTarget(room), character, now);
+                dmg = Math.round(dmg * mult);
+                const markChanged = before !== room.bossElementMark
+                    || (before && room.bossElementMark && before.charges !== room.bossElementMark.charges);
 
                 room.bossHp = Math.max(0, room.bossHp - dmg);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
@@ -2649,7 +2753,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('playerSkill', () => {
+    socket.on('playerSkill', (payload) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.state !== 'fighting') return;
@@ -2663,7 +2767,21 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
+        if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const spot = clampToArena(t.x, t.y, ARENA_RADIUS - PLAYER_RADIUS);
+            if (character.skillType === 'burrow_mark') {
+                p.x = spot.x; p.y = spot.y;
+                io.to(roomId).emit('playerTeleported', { id: socket.id, x: p.x, y: p.y });
+            }
+            io.to(roomId).emit('skillMark', {
+                id: socket.id, x: spot.x, y: spot.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
+                character.element, skillMarkOpts(character), 'bossMarked');
+        } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // A spinning kick hits regardless of facing, unlike the basic attack.
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             const distToEdge = Math.hypot(p.x, p.y) - BOSS_RADIUS;
@@ -2738,6 +2856,22 @@ io.on('connection', (socket) => {
                 endAt: now + character.ultimateDurationMs,
                 lastTickAt: now
             });
+        } else if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
+            const t0 = targetPoint(payload);
+            if (!t0) return;
+            const spot = clampToArena(t0.x, t0.y, ARENA_RADIUS);
+            io.to(roomId).emit('ultimateMark', {
+                id: socket.id, x: spot.x, y: spot.y, radius: character.ultimateRadius,
+                element: character.element, durationMs: character.ultimateMarkDurationMs,
+                damage: character.ultimateDamage || 0
+            });
+            markBossInCircle(roomId, room, spot.x, spot.y, character.ultimateRadius,
+                character.element, ultimateMarkOpts(character), 'bossMarked');
+            if (character.ultimateDamage && Math.hypot(spot.x, spot.y) <= character.ultimateRadius + BOSS_RADIUS) {
+                room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
         } else if (character.ultimateType === 'targeted_aoe') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
@@ -3022,7 +3156,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('guestPlayerSkill', () => {
+    socket.on('guestPlayerSkill', (payload) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
@@ -3072,6 +3206,25 @@ io.on('connection', (socket) => {
                     damageGuestMonster(roomId, room, mid, character.skillDamage);
                 }
             }
+        } else if (character.skillType === 'burrow_mark' || character.skillType === 'mark_burst') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const spot = {
+                x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, t.x)),
+                y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, t.y))
+            };
+            if (character.skillType === 'burrow_mark') {
+                p.x = spot.x; p.y = spot.y;
+                io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            }
+            io.to(roomId).emit('guestSkillMark', {
+                id: socket.id, x: spot.x, y: spot.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markMonstersInCircle(roomId, room, spot.x, spot.y,
+                character.skillRadius, character.element, skillMarkOpts(character));
+            markBossInCircle(roomId, room, spot.x, spot.y, character.skillRadius,
+                character.element, skillMarkOpts(character), 'guestBossMarked');
         }
         // speed_boost is client-side only.
     });
@@ -3088,6 +3241,29 @@ io.on('connection', (socket) => {
         if (now - p.lastUltimateTime < character.ultimateCooldownMs) return;
         p.lastUltimateTime = now;
         socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
+
+        if (character.ultimateType === 'magma_pour' || character.ultimateType === 'mark_flood') {
+            const t0 = targetPoint(payload);
+            if (!t0) return;
+            const spot = {
+                x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, t0.x)),
+                y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, t0.y))
+            };
+            io.to(roomId).emit('guestUltimateMark', {
+                id: socket.id, x: spot.x, y: spot.y, radius: character.ultimateRadius,
+                element: character.element, durationMs: character.ultimateMarkDurationMs,
+                damage: character.ultimateDamage || 0
+            });
+            markMonstersInCircle(roomId, room, spot.x, spot.y, character.ultimateRadius,
+                character.element, ultimateMarkOpts(character));
+            markBossInCircle(roomId, room, spot.x, spot.y, character.ultimateRadius,
+                character.element, ultimateMarkOpts(character), 'guestBossMarked');
+            if (character.ultimateDamage) {
+                const hit = guestCircleTargets(room, spot.x, spot.y, character.ultimateRadius);
+                if (hit.length) damageGuestTargets(roomId, room, hit, character.ultimateDamage, socket.id);
+            }
+            return;
+        }
 
         const aimed = () => {
             const tx = payload && payload.targetX, ty = payload && payload.targetY;

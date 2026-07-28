@@ -53,6 +53,7 @@ let guestStuckSpears = [];
 let guestMagmaZones = [];
 let guestImpacts = [];
 let guestIsTargetingUltimate = false;
+let guestIsTargetingSkill = false; // 때파기 / 물방울 터트리기 aim like an ultimate
 let guestPhaseNo = 1;        // 1차 / 2차
 let guestMonsters = {};      // 부하 소환 (2차)
 let guestProjectiles = {};
@@ -335,6 +336,7 @@ socket.on('guestStarted', (data) => {
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestImpacts = [];
     guestIsTargetingUltimate = false;
+    guestIsTargetingSkill = false;
     guestQuakeUntil = 0;
     guestCollapseOverlay.classList.add('hidden');
     guestFightSettings.classList.add('hidden');
@@ -500,6 +502,15 @@ socket.on('guestUltimateImpact', (d) => {
 socket.on('guestMagmaZonePlaced', (d) => {
     guestMagmaZones.push({ ...d, until: performance.now() + d.durationMs });
 });
+socket.on('guestSkillMark', (d) => {
+    guestImpacts.push({ ...d, until: performance.now() + 500 });
+});
+socket.on('guestUltimateMark', (d) => {
+    guestImpacts.push({ ...d, until: performance.now() + 700 });
+});
+socket.on('guestPlayerTeleported', ({ id, x, y }) => {
+    if (guestLocal && id === socket.id) { guestLocal.x = x; guestLocal.y = y; }
+});
 socket.on('guestEarthquake', () => { guestQuakeUntil = performance.now() + QUAKE_DURATION_MS; });
 
 socket.on('guestFloorCollapse', () => {
@@ -548,12 +559,40 @@ guestCanvas.addEventListener('mousemove', (e) => {
 guestCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (guestIsTargetingUltimate) confirmGuestUltimateTarget();
+        else if (guestIsTargetingSkill) confirmGuestSkillTarget();
         else if (autoAimActive()) fireGuestAutoAimedAttack();
         else tryGuestAttack();
     } else if (e.button === 2) {
-        tryGuestUseSkill();
+        guestHandleSkillTrigger();
     }
 });
+
+// Right-click casts on the spot for most cookies; for a placed skill it arms
+// the reticle and the next left-click commits it.
+function guestHandleSkillTrigger() {
+    if (!guestLocal) return;
+    const stats = guestStats();
+    if (!isTargetedSkill(stats.skillType)) { tryGuestUseSkill(); return; }
+    if (mobileControlsEnabled) {
+        if (!guestCanUseSkill(performance.now())) return;
+        guestLocal.lastSkillClientTime = performance.now();
+        socket.emit('guestPlayerSkill',
+            mobileSkillTarget(guestLocal.x, guestLocal.y, guestLocal.facing, stats));
+        return;
+    }
+    if (guestIsTargetingSkill) { guestIsTargetingSkill = false; return; }
+    if (!guestCanUseSkill(performance.now())) return;
+    guestIsTargetingSkill = true;
+}
+
+function confirmGuestSkillTarget() {
+    guestIsTargetingSkill = false;
+    if (!guestLocal || guestMouseX === null) return;
+    if (!guestCanUseSkill(performance.now())) return;
+    guestLocal.lastSkillClientTime = performance.now();
+    const w = guestWorldFromMouse();
+    socket.emit('guestPlayerSkill', { targetX: w.x, targetY: w.y });
+}
 
 function guestWorldFromMouse() {
     return { x: guestMouseX - guestCanvas.width / 2, y: guestMouseY - guestCanvas.height / 2 };
@@ -601,6 +640,11 @@ function tryGuestUseSkill() {
     if (stats.skillType === 'speed_boost') guestLocal.speedBoostUntil = now + stats.skillSpeedDurationMs;
     if (stats.skillType === 'earthquake') guestQuakeUntil = now + QUAKE_DURATION_MS;
     socket.emit('guestPlayerSkill');
+}
+
+function guestCanUseSkill(now) {
+    const stats = guestStats();
+    return !!stats.skillType && now - guestLocal.lastSkillClientTime >= stats.skillCooldown;
 }
 
 function guestCanUseUltimate(now) {
@@ -657,7 +701,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     if (e.key === 'f' || e.key === 'F') guestHandleUltimateKey();
-    if (e.key === 'q' || e.key === 'Q') tryGuestUseSkill();
+    if (e.key === 'q' || e.key === 'Q') guestHandleSkillTrigger();
 });
 
 // ---------------- loop + rendering ----------------
@@ -1054,6 +1098,17 @@ function guestRender(now) {
         guestCtx.fillRect(px - barW / 2, py - R - 13, barW * Math.max(0, p.hp / p.maxHp), barH);
     });
 
+    // Placed-skill aiming reticle (때파기 / 물방울 터트리기).
+    if (guestIsTargetingSkill && guestMouseX !== null) {
+        const stats = guestStats();
+        const w = guestWorldFromMouse();
+        guestCtx.beginPath();
+        guestCtx.arc(w.x, w.y, stats.skillRadius || 80, 0, Math.PI * 2);
+        guestCtx.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+        guestCtx.lineWidth = 3;
+        guestCtx.stroke();
+    }
+
     // Ultimate aiming reticle.
     if (guestIsTargetingUltimate && guestMouseX !== null) {
         const stats = guestStats();
@@ -1082,7 +1137,7 @@ const mcUltimateThumbGuestEl = mcUltimateGuestEl.querySelector('.mc-aim-thumb');
 
 setupJoystick(mcJoystickGuestEl, false);
 mcTap(mcAttackGuestEl, () => fireGuestAutoAimedAttack());
-mcTap(mcSkillGuestEl, () => tryGuestUseSkill());
+mcTap(mcSkillGuestEl, () => guestHandleSkillTrigger());
 mcTap(mcUltimateGuestEl, () => guestHandleUltimateKey());
 
 function syncGuestMobileIcons(charType) {

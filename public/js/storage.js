@@ -13,7 +13,7 @@ const defaultCurrencies = {
     // 레전더리 뽑기 티켓. One per featured cookie, earned by clearing that
     // element's 레전더리 이벤트 stages; they are NOT interchangeable.
     ticketWaterdrop: 0,
-    ticketFlame: 0,
+    ticketMagma: 0,
     ticketLightning: 0
 };
 
@@ -66,6 +66,11 @@ function loadGameData() {
                 data.currencies.ticketWaterdrop += data.currencies.seasonTicket;
                 delete data.currencies.seasonTicket;
             }
+            // 불 갈래의 티켓은 화염맛 자리에 마그마맛이 들어오면서 이름만 바뀜다.
+            if (data.currencies.ticketFlame) {
+                data.currencies.ticketMagma += data.currencies.ticketFlame;
+            }
+            delete data.currencies.ticketFlame;
             data.eventCleared = data.eventCleared || [];
             data.eventClaimed = data.eventClaimed || [];
             return data;

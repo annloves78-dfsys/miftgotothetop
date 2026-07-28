@@ -291,7 +291,7 @@ const CURRENCY_LABELS = {
     potion: '강화포션',
     potionRare: '고급 강화포션',
     ticketWaterdrop: '물방울맛 뽑기 티켓',
-    ticketFlame: '화염맛 뽑기 티켓',
+    ticketMagma: '마그마맛 뽑기 티켓',
     ticketLightning: '번개전사맛 뽑기 티켓'
 };
 
@@ -1511,17 +1511,13 @@ function doLegendaryPull(count) {
     renderLegendaryScreen(gachaResultsHtml(results));
 }
 
+// Only the one number anybody is actually pulling for. The rest of the table is
+// the normal banner's and would just crowd the screen out.
 function legendaryOddsHtml(banner) {
-    const table = SHARED.legendaryGachaTable(banner.charType);
-    const cookie = bannerCookie(banner);
-    return Object.entries(table).map(([key, pct]) => {
-        let label;
-        if (key === 'featured') label = `<span class="grade-legendary">★ ${cookie.name}</span>`;
-        else if (key === SHARED.GACHA_SOUL_STONE_KEY) label = `💎 ${cookie.name}의 영혼석 (${SHARED.LEGENDARY_BANNER_SOUL_STONES}개)`;
-        else label = `<span class="${gradeClass(key)}">${key}</span>`;
-        return `<div class="gacha-odds-row"><span class="gacha-odds-label">${label}</span>`
-            + `<span class="gacha-odds-pct">${pct}%</span></div>`;
-    }).join('');
+    const pct = SHARED.legendaryGachaTable(banner.charType).featured;
+    return `<div class="gacha-odds-row lg-featured-odds">`
+        + `<span class="gacha-odds-label"><span class="grade-legendary">★ ${bannerCookie(banner).name}</span></span>`
+        + `<span class="gacha-odds-pct">${pct}%</span></div>`;
 }
 
 function renderLegendaryScreen(resultHtml) {
@@ -1558,13 +1554,19 @@ function renderLegendaryScreen(resultHtml) {
         + `<b>${isAdmin() ? '∞' : tickets}</b>장 · 1회당 1장</div>`
         + `<div class="ev-mission-bar big"><div class="ev-mission-fill" style="width:${Math.min(100, (stones / need) * 100)}%"></div>`
         + `<span class="ev-mission-count">영혼석 ${stones}/${need}</span></div></div></div>`
+        // Results scroll inside their own box and the buttons live in a column
+        // beside them, so a 10-pull can't shove the buttons off the screen.
+        + `<div class="lg-body">`
+        + `<div class="lg-main">`
         + `<div class="gacha-odds-list lg-odds">${legendaryOddsHtml(banner)}</div>`
-        + `<div id="legendary-result" class="gacha-result">${resultHtml
+        + `<div id="legendary-result" class="gacha-result lg-result">${resultHtml
             || '<p class="gacha-result-empty">티켓을 써서 뽑아보세요.</p>'}</div>`
-        + `<div class="gacha-pull-actions">`
-        + `<button class="play-btn lg-pull" data-count="1"${tickets < 1 ? ' disabled' : ''}>1회 뽑기 (🎫1)</button>`
-        + `<button class="play-btn lg-pull" data-count="10"${tickets < 10 ? ' disabled' : ''}>10회 뽑기 (🎫10)</button>`
-        + `<button class="secondary-btn lg-claim"${stones < need ? ' disabled' : ''}>영혼석으로 획득 (${stones}/${need})</button>`
+        + `</div>`
+        + `<div class="lg-side">`
+        + `<button class="play-btn lg-pull" data-count="1"${tickets < 1 ? ' disabled' : ''}>1회 뽑기<br><small>🎫1</small></button>`
+        + `<button class="play-btn lg-pull" data-count="10"${tickets < 10 ? ' disabled' : ''}>10회 뽑기<br><small>🎫10</small></button>`
+        + `<button class="secondary-btn lg-claim"${stones < need ? ' disabled' : ''}>영혼석으로 획득<br><small>${stones}/${need}</small></button>`
+        + `</div>`
         + `</div>`;
 }
 
@@ -1693,6 +1695,7 @@ let storyMouseY = null;
 let storyLoopHandle = null;
 let storyLastMoveEmit = 0;
 let isStoryTargetingUltimate = false;
+let isStoryTargetingSkill = false;
 let storyImpactEffects = []; // [{x, y, radius, until}]
 // Arrows in flight (ranged monsters). Held as id -> {x,y,vx,vy,angle,at} where
 // `at` is when that position was received, so the render can dead-reckon
@@ -1714,6 +1717,7 @@ socket.on('storyFloorStarted', (data) => {
         comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0
     };
     isStoryTargetingUltimate = false;
+    isStoryTargetingSkill = false;
     storyImpactEffects = [];
     storyMagmaZones = [];
     storyProjectiles = {};
@@ -1788,6 +1792,20 @@ socket.on('storyPlayerHealed', ({ hp }) => {
 
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+// 때파기 / 물방울 터트리기 / 마그마 쏟기 / 폭포 all land as a circle at a
+// chosen spot; the only visible difference is how long the ring lingers.
+socket.on('storySkillMark', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 500 });
+});
+socket.on('storyUltimateMark', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 700 });
+});
+socket.on('storyPlayerTeleported', ({ id, x, y }) => {
+    if (!storyPlayer || id !== socket.id) return;
+    storyPlayer.x = x;
+    storyPlayer.y = y;
 });
 
 socket.on('storyLightningStrike', ({ x, y, radius }) => {
@@ -1884,12 +1902,13 @@ storyCanvas.addEventListener('mousemove', (e) => {
 storyCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
+        else if (isStoryTargetingSkill) confirmStorySkillTarget();
         // With 자동조준 on, a click doesn't aim -- it snaps onto the nearest
         // enemy and swings there (the same path the mobile button uses).
         else if (autoAimActive()) fireAutoAimedAttack(true);
         else tryStoryAttack();
     } else if (e.button === 2) {
-        tryStoryUseSkill();
+        storyHandleSkillTrigger();
     }
 });
 
@@ -1965,6 +1984,32 @@ function storyHandleUltimateKey() {
     } else {
         tryStoryUseUltimate();
     }
+}
+
+function storyHandleSkillTrigger() {
+    if (!storyPlayer) return;
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    if (!isTargetedSkill(stats.skillType)) { tryStoryUseSkill(); return; }
+    if (mobileControlsEnabled) {
+        if (!storyCanUseSkill(performance.now())) return;
+        storyPlayer.lastSkillClientTime = performance.now();
+        socket.emit('storyPlayerSkill',
+            mobileSkillTarget(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats));
+        return;
+    }
+    if (isStoryTargetingSkill) { isStoryTargetingSkill = false; return; }
+    if (!storyCanUseSkill(performance.now())) return;
+    isStoryTargetingSkill = true;
+}
+
+function confirmStorySkillTarget() {
+    isStoryTargetingSkill = false;
+    if (!storyPlayer || storyMouseX === null) return;
+    if (!storyCanUseSkill(performance.now())) return;
+    storyPlayer.lastSkillClientTime = performance.now();
+    storyPlayer.skillEffectUntil = performance.now() + 300;
+    const world = storyWorldFromMouse();
+    socket.emit('storyPlayerSkill', { targetX: world.x, targetY: world.y });
 }
 
 function confirmStoryUltimateTarget() {
@@ -2392,6 +2437,11 @@ function storyRender(now) {
         storyCtx.fillRect(storyPlayer.x - barW / 2, storyPlayer.y - R - 8 - barH, barW * (storyPlayer.hp / storyPlayer.maxHp), barH);
     }
 
+    if (isStoryTargetingSkill && storyMouseX !== null && storyPlayer) {
+        const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+        const world = storyWorldFromMouse();
+        drawUltimatePreview(storyCtx, world.x, world.y, stats.skillRadius || 90);
+    }
     if (isStoryTargetingUltimate && storyMouseX !== null && storyPlayer) {
         const world = storyWorldFromMouse();
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
@@ -2577,6 +2627,7 @@ let lastMoveEmit = 0;
 let mouseX = null;
 let mouseY = null; // canvas-space; null until the mouse first moves over it
 let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired by left-click
+let isTargetingSkill = false; // same idea for a placed skill (see isTargetedSkill)
 let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
@@ -2629,6 +2680,19 @@ socket.on('playerUltimateUsed', ({ id }) => {
 
 socket.on('ultimateImpact', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+socket.on('skillMark', ({ x, y, radius }) => {
+    impactEffects.push({ x, y, radius, until: performance.now() + 500 });
+});
+socket.on('ultimateMark', ({ x, y, radius }) => {
+    impactEffects.push({ x, y, radius, until: performance.now() + 700 });
+});
+socket.on('playerTeleported', ({ id, x, y }) => {
+    const p = players[id];
+    if (!p) return;
+    p.x = x;
+    p.y = y;
 });
 
 socket.on('lightningStrike', ({ x, y, radius }) => {
@@ -2805,6 +2869,8 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         isTargetingUltimate = false;
         isStoryTargetingUltimate = false;
+        isTargetingSkill = false;
+        isStoryTargetingSkill = false;
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.key] = false; });
@@ -2813,10 +2879,11 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isTargetingUltimate) confirmUltimateTarget();
+        else if (isTargetingSkill) confirmSkillTarget();
         else if (autoAimActive()) fireAutoAimedAttack(false);
         else tryAttack();
     } else if (e.button === 2) {
-        tryUseSkill();
+        handleSkillTrigger();
     }
 });
 canvas.addEventListener('mousemove', (e) => {
@@ -2871,8 +2938,47 @@ function tryUseUltimate() {
     socket.emit('playerUltimate');
 }
 
+// Right-click: cast on the spot for most cookies, arm targeting for a placed one.
+function handleSkillTrigger() {
+    const me = players[socket.id];
+    if (!me) return;
+    if (!isTargetedSkill(me.stats.skillType)) { tryUseSkill(); return; }
+    if (mobileControlsEnabled) {
+        if (!me.canUseSkill(performance.now())) return;
+        me.triggerSkillEffect();
+        socket.emit('playerSkill', mobileSkillTarget(me.x, me.y, me.facing, me.stats));
+        return;
+    }
+    if (isTargetingSkill) { isTargetingSkill = false; return; }
+    if (!me.canUseSkill(performance.now())) return;
+    isTargetingSkill = true;
+}
+
+function confirmSkillTarget() {
+    isTargetingSkill = false;
+    const me = players[socket.id];
+    if (!me || mouseX === null) return;
+    if (!me.canUseSkill(performance.now())) return;
+    me.triggerSkillEffect();
+    const world = screenToWorld(mouseX, mouseY);
+    socket.emit('playerSkill', { targetX: world.x, targetY: world.y });
+}
+
 function isTargetedUltimate(type) {
-    return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike';
+    return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike'
+        || type === 'magma_pour' || type === 'mark_flood';
+}
+
+// 때파기 / 물방울 터트리기 are the first SKILLS that are placed on a spot
+// rather than fired from the body, so they arm the same way an ultimate does:
+// trigger once to aim, left-click to commit, trigger again to cancel.
+function isTargetedSkill(type) {
+    return type === 'burrow_mark' || type === 'mark_burst';
+}
+// Where a placed skill lands with no mouse (mobile): just ahead of the player.
+function mobileSkillTarget(x, y, facing, stats) {
+    const dist = stats.skillRadius || 90;
+    return { targetX: x + Math.cos(facing) * dist, targetY: y + Math.sin(facing) * dist };
 }
 
 // Touch has no mouse to place a zone with, so instead of arming a targeting
@@ -3025,6 +3131,11 @@ function render(now) {
         const me = players[socket.id];
         const world = screenToWorld(mouseX, mouseY);
         drawUltimatePreview(ctx, world.x, world.y, me ? me.stats.ultimateRadius : 90);
+    }
+    if (isTargetingSkill && mouseX !== null) {
+        const me = players[socket.id];
+        const world = screenToWorld(mouseX, mouseY);
+        drawUltimatePreview(ctx, world.x, world.y, (me && me.stats.skillRadius) || 90);
     }
 
     // Live preview while the ultimate stick is being pushed on touch.

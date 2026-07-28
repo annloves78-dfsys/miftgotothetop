@@ -329,6 +329,50 @@ const CHARACTERS = {
         ultimateMarkMultiplier: 1.3,
         ultimateCooldownMs: 30000
     },
+    // 레전더리 이벤트 한정, 불 갈래. Hits for very little up front and lets the
+    // burn do the work; both of its abilities exist to hand out 불 속성부여.
+    magma: {
+        name: '마그마맛 쿠키',
+        shortName: '마그마', // shown on the lobby's character-select button
+        // 빨강 + 핑크. Deliberately a darker red and a hotter pink than
+        // 자두맛's soft pink/red, which is the same pair of colours.
+        color: '#c0392b',
+        colorLeft: '#a93226', // deep red
+        colorRight: '#ff2d78', // hot pink
+        grade: '레전더리',
+        element: '불',
+        role: '대미지 딜러',
+        seasonLimited: true,
+        health: 90,
+        speed: 2,
+        // 용암창: a straight thrust in front, same corridor mechanic as the
+        // other melee cookies -- just long and thin.
+        attackType: 'melee_kick',
+        attackRange: 140,
+        attackWidth: 32,
+        attackDamage: 2,
+        attackCooldown: 500,
+        // 불 데미지 5: 1 a second, five times. Like 화산맛's burn, this is
+        // deliberately NOT part of the damage number the hit displays.
+        attackBurnDamage: 1,
+        attackBurnTicks: 5,
+        attackBurnIntervalMs: 1000,
+        // 땅파기: pick a spot and come up there. Anything within skillRadius of
+        // where it surfaces takes 불 속성부여 x3. No damage of its own.
+        skillType: 'burrow_mark',
+        skillRadius: 150,
+        skillMarkUses: 3,
+        skillMarkMultiplier: 1.3,
+        skillCooldown: 10000,
+        // 마그마 쏟기: pick a spot, 10 damage, and a 15-second 불 mark with no
+        // charge limit.
+        ultimateType: 'magma_pour',
+        ultimateRadius: 90,
+        ultimateDamage: 10,
+        ultimateMarkDurationMs: 15000,
+        ultimateMarkMultiplier: 1.3,
+        ultimateCooldownMs: 30000
+    },
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
@@ -600,7 +644,7 @@ const EVENT = {
         fire: {
             label: '🔥 불',
             icon: '🔥',
-            ticketKey: 'ticketFlame',
+            ticketKey: 'ticketMagma',
             stages: [
                 {
                     id: 'ev_f1', name: '불씨', reward: 1,
@@ -1331,21 +1375,23 @@ const SOUL_STONES_PER_CHARACTER = 30;
 // LEGENDARY_BANNER_RATE, and the 영혼석 slot always pays that cookie's stones
 // instead of a random cookie's. Collecting SOUL_STONES_PER_CHARACTER of them is
 // the guaranteed route, so a run of bad luck still gets you there.
-const LEGENDARY_BANNER_RATE = 2; // %
+const LEGENDARY_BANNER_RATE = 1.5; // %
 const LEGENDARY_BANNER_SOUL_STONES = 3; // stones per 영혼석 hit on this banner
+// Where the featured cookie's share is taken from. 영혼석 deliberately keeps its
+// full normal-banner rate, so the room is made in the commonest cookie grade
+// instead -- that keeps the table at exactly 100 without touching what matters.
+const LEGENDARY_BANNER_TAKEN_FROM = '일반';
 const LEGENDARY_BANNERS = [
     { id: 'waterdrop', charType: 'waterdrop', icon: '💧', ticketKey: 'ticketWaterdrop', side: 'water' },
-    { id: 'lightning', charType: 'lightning', icon: '⚡', ticketKey: 'ticketLightning', side: 'lightning' },
-    // 화염맛 쿠키 has no stats yet, so its banner shows as 준비중 -- but its
-    // tickets still bank up from the 불 stages, ready for when it lands.
-    { id: 'flame', charType: 'flame', icon: '🔥', ticketKey: 'ticketFlame', side: 'fire', name: '화염맛 쿠키' }
+    { id: 'magma', charType: 'magma', icon: '🔥', ticketKey: 'ticketMagma', side: 'fire' },
+    { id: 'lightning', charType: 'lightning', icon: '⚡', ticketKey: 'ticketLightning', side: 'lightning' }
 ];
 
 // The banner's own table: the normal one with the featured cookie carved out of
 // the 영혼석 share, so the listed numbers still add to 100.
 function legendaryGachaTable(charType) {
     const base = { ...GACHA_TABLE };
-    base[GACHA_SOUL_STONE_KEY] -= LEGENDARY_BANNER_RATE;
+    base[LEGENDARY_BANNER_TAKEN_FROM] -= LEGENDARY_BANNER_RATE;
     return { featured: LEGENDARY_BANNER_RATE, ...base };
 }
 function legendaryBannerFor(id) {
@@ -1353,7 +1399,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_SOUL_STONES, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
 }
