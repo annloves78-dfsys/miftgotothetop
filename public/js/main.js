@@ -2403,6 +2403,11 @@ socket.on('storyFloorStarted', (data) => {
     startStoryLoop();
 });
 
+// 사탕 폭탄병이 터진 자리. 기존 충격 효과(storyImpactEffects)를 그대로 쓴다.
+socket.on('monsterExploded', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 320 });
+});
+
 socket.on('storyTick', ({ monsters, projectiles, players }) => {
     if (players) {
         const next = {};
@@ -2631,6 +2636,8 @@ storyCanvas.addEventListener('mousedown', (e) => {
 // read it from here so they can't disagree.
 function storyCamera() {
     if (!storyPlayer) return { x: 0, y: 0 };
+    // 꺾은선 다리는 길이 좌우로도 위아래로도 가므로 둘 다 따라간다.
+    if (storyFloorDef && storyFloorDef.path) return { x: storyPlayer.x, y: storyPlayer.y };
     return SHARED.floorAxis(storyFloorDef) === 'y'
         ? { x: 0, y: storyPlayer.y }
         : { x: storyPlayer.x, y: 0 };
@@ -2892,19 +2899,45 @@ function storyRender(now) {
 
     if (storyFloorDef) {
         const halfW = storyFloorDef.laneHalfWidth;
+        const winding = !!storyFloorDef.path;
         const vertical = SHARED.floorAxis(storyFloorDef) === 'y';
-        // The bridge runs along the level axis; on a vertical floor the same
-        // rectangle is simply turned on its side.
-        const deckAlong = -storyFloorDef.levelLength - 200;
-        const deckLen = storyFloorDef.levelLength + 400;
-        const deck = vertical
-            ? [-halfW, deckAlong, halfW * 2, deckLen]
-            : [deckAlong, -halfW, deckLen, halfW * 2];
-        storyCtx.fillStyle = '#4a3c2f';
-        storyCtx.fillRect(...deck);
-        storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
-        storyCtx.lineWidth = 2;
-        storyCtx.strokeRect(...deck);
+        if (winding) {
+            // 꺾은선 다리: 길을 그대로 굵게 그으면 모퉁이까지 알아서 이어진다.
+            // 모서리를 둥글게 이어야 꺾이는 자리에 구멍이 안 생긴다.
+            storyCtx.save();
+            storyCtx.lineJoin = 'round';
+            storyCtx.lineCap = 'round';
+            storyCtx.beginPath();
+            storyFloorDef.path.forEach(([px, py], i) => {
+                if (i === 0) storyCtx.moveTo(px, py);
+                else storyCtx.lineTo(px, py);
+            });
+            storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+            storyCtx.lineWidth = halfW * 2 + 4;
+            storyCtx.stroke();
+            storyCtx.strokeStyle = '#4a3c2f';
+            storyCtx.lineWidth = halfW * 2;
+            storyCtx.stroke();
+            // 가운데 점선: 어느 쪽이 길인지 한눈에 보이게.
+            storyCtx.setLineDash([26, 26]);
+            storyCtx.strokeStyle = 'rgba(255,255,255,0.10)';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+            storyCtx.restore();
+        } else {
+            // The bridge runs along the level axis; on a vertical floor the same
+            // rectangle is simply turned on its side.
+            const deckAlong = -storyFloorDef.levelLength - 200;
+            const deckLen = storyFloorDef.levelLength + 400;
+            const deck = vertical
+                ? [-halfW, deckAlong, halfW * 2, deckLen]
+                : [deckAlong, -halfW, deckLen, halfW * 2];
+            storyCtx.fillStyle = '#4a3c2f';
+            storyCtx.fillRect(...deck);
+            storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+            storyCtx.lineWidth = 2;
+            storyCtx.strokeRect(...deck);
+        }
 
         if (storyFloorDef.star) {
             const sx = storyFloorDef.star.x, sy = storyFloorDef.star.y;
@@ -2925,6 +2958,21 @@ function storyRender(now) {
             storyFloorDef.gates.forEach(gate => {
                 if (!storyAnyMonsterAliveInRoom(gate.room)) return;
                 [gate.entrance, gate.exit].forEach(at => {
+                    if (winding) {
+                        // 길이 휘어 있으니 그 자리의 길 방향을 구해서 가로로 세운다.
+                        const a = SHARED.pointOnPath(storyFloorDef, at, 0);
+                        const b = SHARED.pointOnPath(storyFloorDef, at - 1, 0);
+                        storyCtx.save();
+                        storyCtx.translate(a.x, a.y);
+                        storyCtx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+                        storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
+                        storyCtx.fillRect(-6, -halfW, 12, halfW * 2);
+                        storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
+                        storyCtx.lineWidth = 2;
+                        storyCtx.strokeRect(-6, -halfW, 12, halfW * 2);
+                        storyCtx.restore();
+                        return;
+                    }
                     // The shield spans the lane, so it lies across the axis the
                     // bridge runs along.
                     const bar = vertical ? [-halfW, at - 6, halfW * 2, 12] : [at - 6, -halfW, 12, halfW * 2];

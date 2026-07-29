@@ -856,6 +856,7 @@ function storyMonsterCtx(roomId, room) {
             || Math.abs(pr.y) > floorDef.laneHalfWidth + 200),
         ev: {
             telegraph: 'monsterTelegraph', attack: 'monsterAttack',
+            defeated: 'monsterDefeated', exploded: 'monsterExploded',
             projectileFired: 'storyProjectileFired', projectileGone: 'storyProjectileGone'
         }
     };
@@ -994,13 +995,12 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
         const floorDef = opts.floorDef;
         const dx = m.x - opts.fromX, dy = m.y - opts.fromY;
         const kdist = Math.hypot(dx, dy) || 1;
-        let nx = m.x + (dx / kdist) * character.attackKnockback;
-        let ny = m.y + (dy / kdist) * character.attackKnockback;
-        if (nx > 40) nx = 40;
-        if (nx < -floorDef.levelLength) nx = -floorDef.levelLength;
-        if (ny > floorDef.laneHalfWidth) ny = floorDef.laneHalfWidth;
-        if (ny < -floorDef.laneHalfWidth) ny = -floorDef.laneHalfWidth;
-        m.x = nx; m.y = ny;
+        // 길 밖으로 밀려나지 않게 한 번에 클램프한다. 꺾은선 다리에서도
+        // 같은 계산이 그대로 돌아간다 (clampToLane이 길을 따라 접어 준다).
+        const knocked = clampToLane(floorDef,
+            m.x + (dx / kdist) * character.attackKnockback,
+            m.y + (dy / kdist) * character.attackKnockback);
+        m.x = knocked.x; m.y = knocked.y;
     }
 
     // While the ultimate window is open, a landed attack marks the target --
@@ -1136,6 +1136,9 @@ function startStoryFight(roomId) {
                 axis: floorDef.axis,
                 levelLength: floorDef.levelLength,
                 laneHalfWidth: floorDef.laneHalfWidth,
+                // 꺾은선 다리(4층부터)는 꺾이는 지점까지 넘겨야 클라이언트가
+                // 같은 길을 그리고 같은 자리로 클램프한다.
+                path: floorDef.path,
                 gates: floorDef.gates,
                 star: floorDef.star
             },
@@ -1434,6 +1437,24 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                 m.state = 'idle';
                 m.nextAttackAt = now + def.attackCooldown;
                 const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
+                // 자폭: 예열이 끝나면 제자리에서 터진다. 반경 안에 있는 사람은
+                // 전부 맞고, 터진 본인은 죽는다. 예열이 길어서 보고 빠지면 된다.
+                if (def.explode) {
+                    m.alive = false;
+                    io.to(roomId).emit(ctx.ev.attack, { id: mid });
+                    io.to(roomId).emit(ctx.ev.defeated, { id: mid });
+                    io.to(roomId).emit(ctx.ev.exploded, {
+                        id: mid, x: m.x, y: m.y, radius: def.explodeRadius
+                    });
+                    const dmg = def.attackDamage * outgoingDamageMultiplier(m, now);
+                    for (const p of alivePlayers) {
+                        if (Math.hypot(p.x - m.x, p.y - m.y) > def.explodeRadius + PLAYER_RADIUS) continue;
+                        const pid = Object.keys(room.players).find(id => room.players[id] === p);
+                        ctx.damagePlayer(pid, dmg, m.elementMark);
+                        if (!rooms[roomId]) return;
+                    }
+                    continue;
+                }
                 if (def.projectileSpeed) {
                     // Archers release an arrow regardless of current range: it
                     // flies to where the player was and can be sidestepped.
@@ -2074,6 +2095,7 @@ function guestMonsterCtx(roomId, room) {
             || Math.abs(pr.y) > GUEST_ARENA_HALF_H + 200,
         ev: {
             telegraph: 'guestMonsterTelegraph', attack: 'guestMonsterAttack',
+            defeated: 'guestMonsterDefeated', exploded: 'guestMonsterExploded',
             projectileFired: 'guestProjectileFired', projectileGone: 'guestProjectileGone'
         }
     };

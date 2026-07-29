@@ -1370,6 +1370,96 @@ const MONSTERS = {
         laserWidth: 30,
         laserTrackSpeed: 100
     },
+    // ---- 4~9층에서 처음 나오는 것들 ----
+    // 4층: 느리고 단단한 앞줄. 케이크 조각보다 두 배 가까이 질기다.
+    jelly_blob: {
+        name: '젤리 덩어리',
+        color: '#9b59b6',
+        health: 90,
+        speed: 2,
+        aggroRange: 480,
+        preferredDistance: 85,
+        attackRange: 120,
+        attackDamage: 8,
+        attackCooldown: 3200,
+        telegraphMs: 500
+    },
+    // 5층: 아주 빠르게 자주 쏘는 뒷줄. 대신 종잇장이다.
+    mint_dart: {
+        name: '민트 다트',
+        color: '#1abc9c',
+        health: 18,
+        speed: 3,
+        aggroRange: 560,
+        preferredDistance: 240,
+        projectileSpeed: 520,
+        attackRange: 320,
+        attackDamage: 3,
+        attackCooldown: 1500,
+        telegraphMs: 300
+    },
+    // 6층: 달려와서 터진다. 터지면 반경 안을 통째로 때리고 자기도 죽는다.
+    // 텔레그래프가 길어서 보고 피할 수 있지만, 붙으면 아프다.
+    candy_bomber: {
+        name: '사탕 폭탄병',
+        color: '#e84393',
+        health: 30,
+        speed: 5,
+        aggroRange: 620,
+        preferredDistance: 40,
+        attackRange: 90,
+        attackDamage: 18,
+        attackCooldown: 2000,
+        telegraphMs: 700,
+        explode: true,
+        explodeRadius: 130
+    },
+    // 7층: 앞줄의 상위 버전. 세게 때리고 잘 안 죽는다.
+    cream_knight: {
+        name: '크림 기사',
+        color: '#f5cba7',
+        health: 140,
+        speed: 3,
+        aggroRange: 520,
+        preferredDistance: 80,
+        attackRange: 130,
+        attackDamage: 12,
+        attackCooldown: 2800,
+        telegraphMs: 550
+    },
+    // 8층: 짧고 굵은 빔을 오래 쏘는 포탑. 사거리는 짧아서 파고들면 된다.
+    frost_turret: {
+        name: '서리 포탑',
+        color: '#7fb3d5',
+        health: 110,
+        speed: 0,
+        aggroRange: 460,
+        preferredDistance: 0,
+        attackRange: 460,
+        attackCooldown: 2400,
+        telegraphMs: 400,
+        laser: true,
+        laserDurationMs: 1000,
+        laserDamage: 2,
+        laserTickMs: 100,
+        laserRange: 460,
+        laserWidth: 40,
+        laserTrackSpeed: 70
+    },
+    // 9층: 마지막 층을 지키는 정예. 멀리서 세게 쏘고 발도 빠르다.
+    dark_cookie: {
+        name: '어둠의 쿠키',
+        color: '#4a1d7a',
+        health: 160,
+        speed: 4,
+        aggroRange: 640,
+        preferredDistance: 200,
+        projectileSpeed: 480,
+        attackRange: 340,
+        attackDamage: 10,
+        attackCooldown: 2200,
+        telegraphMs: 450
+    },
     flame_turret: {
         name: '화염 포탑',
         color: '#c0392b',
@@ -1401,13 +1491,107 @@ const LEVEL_START_SLACK = 40; // how far back behind the start line you may stan
 function floorAxis(floorDef) {
     return floorDef && floorDef.axis === 'y' ? 'y' : 'x';
 }
+
+// ---- 꼬불꼬불한 다리 ----
+// 4층부터는 다리가 한 방향으로만 뻗지 않는다. `path`에 꺾이는 지점을 순서대로
+// 적어 두면(시작점 [0,0]부터), along/across의 뜻은 그대로 둔 채 길만 휘어진다:
+// along은 시작점에서 길을 따라 걸어온 거리(음수), across는 길 한가운데에서
+// 옆으로 벗어난 거리. 덕분에 게이트·몬스터·클램프 같은 기존 계산이 전부
+// 그대로 돌아간다.
+function pathSegs(floorDef) {
+    if (!floorDef || !floorDef.path) return null;
+    if (floorDef.__segs) return floorDef.__segs;
+    const segs = [];
+    let acc = 0;
+    for (let i = 0; i + 1 < floorDef.path.length; i++) {
+        const [x0, y0] = floorDef.path[i];
+        const [x1, y1] = floorDef.path[i + 1];
+        const dx = x1 - x0, dy = y1 - y0;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-6) continue;
+        segs.push({ x0, y0, ux: dx / len, uy: dy / len, len, start: acc });
+        acc += len;
+    }
+    floorDef.__segs = segs;
+    floorDef.__pathLength = acc;
+    return segs;
+}
+
+function pathLength(floorDef) {
+    pathSegs(floorDef);
+    return (floorDef && floorDef.__pathLength) || 0;
+}
+
+// 가장 가까운 구간에 붙여서 (along, across)를 뽑는다. 모퉁이에서는 두 구간이
+// 다 후보가 되는데, 실제로 더 가까운 쪽을 고른다.
+function projectOnPath(floorDef, x, y) {
+    const segs = pathSegs(floorDef);
+    let best = null;
+    for (const s of segs) {
+        let t = (x - s.x0) * s.ux + (y - s.y0) * s.uy;
+        t = Math.max(0, Math.min(s.len, t));
+        const px = s.x0 + s.ux * t, py = s.y0 + s.uy * t;
+        const d = Math.hypot(x - px, y - py);
+        if (!best || d < best.d) {
+            best = {
+                d,
+                along: -(s.start + t),
+                across: -s.uy * (x - s.x0) + s.ux * (y - s.y0)
+            };
+        }
+    }
+    return best || { d: 0, along: 0, across: 0 };
+}
+
+function pointOnPath(floorDef, along, across) {
+    const segs = pathSegs(floorDef);
+    const total = pathLength(floorDef);
+    const d = Math.max(0, Math.min(total, -along));
+    let s = segs[segs.length - 1];
+    for (const seg of segs) {
+        if (d <= seg.start + seg.len) { s = seg; break; }
+    }
+    const t = Math.max(0, Math.min(s.len, d - s.start));
+    return {
+        x: s.x0 + s.ux * t - s.uy * (across || 0),
+        y: s.y0 + s.uy * t + s.ux * (across || 0)
+    };
+}
+
+// 층 데이터를 사람이 적기 쉬운 형태(길을 따라 얼마나 갔는지 + 옆으로 얼마)로
+// 적어 두고, 실제 좌표는 여기서 한 번에 계산한다. 꺾인 길의 x,y를 손으로
+// 세는 것은 사람이 할 짓이 아니다.
+function makePathFloor(spec) {
+    const def = {
+        levelType: 'bridge',
+        path: spec.path,
+        laneHalfWidth: spec.laneHalfWidth || 70,
+        gates: spec.gates || [],
+        monsters: [],
+        star: null
+    };
+    def.levelLength = Math.round(pathLength(def));
+    def.monsters = (spec.monsters || []).map(m => {
+        const pt = pointOnPath(def, m.at, m.off || 0);
+        return { type: m.type, x: Math.round(pt.x), y: Math.round(pt.y), room: m.room || 0 };
+    });
+    if (spec.star != null) {
+        const pt = pointOnPath(def, spec.star.at, spec.star.off || 0);
+        def.star = { x: Math.round(pt.x), y: Math.round(pt.y) };
+    }
+    return def;
+}
+
 function alongOf(floorDef, x, y) {
+    if (floorDef && floorDef.path) return projectOnPath(floorDef, x, y).along;
     return floorAxis(floorDef) === 'y' ? y : x;
 }
 function acrossOf(floorDef, x, y) {
+    if (floorDef && floorDef.path) return projectOnPath(floorDef, x, y).across;
     return floorAxis(floorDef) === 'y' ? x : y;
 }
 function fromAlongAcross(floorDef, along, across) {
+    if (floorDef && floorDef.path) return pointOnPath(floorDef, along, across);
     return floorAxis(floorDef) === 'y' ? { x: across, y: along } : { x: along, y: across };
 }
 function clampToLane(floorDef, x, y) {
@@ -1503,7 +1687,205 @@ const STORY_FLOOR_DEFS = {
             { type: 'laser_robot', x: 0, y: -2050, room: 1 }
         ],
         star: { x: 0, y: -2500 }
-    }
+    },
+    // ---- 4층부터는 다리가 꺾인다 (makePathFloor / path 참고) ----
+    // 4층: 위로 900 올라갔다가 오른쪽으로 800. 첫 꺾임이라 딱 한 번만 꺾는다.
+    4: makePathFloor({
+        path: [[0, 0], [0, -900], [800, -900]],
+        gates: [
+            { entrance: -500, exit: -1050, room: 0 },
+            { entrance: -1050, exit: -1600, room: 1 }
+        ],
+        monsters: [
+            // 방 0: 젤리 덩어리가 처음 나온다. 느리지만 아주 질기다.
+            { type: 'jelly_blob', at: -650, off: -35, room: 0 },
+            { type: 'jelly_blob', at: -650, off: 35, room: 0 },
+            { type: 'cake_slice', at: -800, off: 0, room: 0 },
+            { type: 'chocolate_cake_slice', at: -950, off: -40, room: 0 },
+            { type: 'chocolate_cake_slice', at: -950, off: 40, room: 0 },
+            // 방 1: 꺾어진 뒤쪽. 젤리 벽 + 뒤에서 쏘는 초코.
+            { type: 'jelly_blob', at: -1200, off: -40, room: 1 },
+            { type: 'jelly_blob', at: -1200, off: 0, room: 1 },
+            { type: 'jelly_blob', at: -1200, off: 40, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1400, off: -45, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1400, off: 45, room: 1 },
+            { type: 'cake_slice', at: -1500, off: 0, room: 1 }
+        ],
+        star: { at: -1660 }
+    }),
+    // 5층: 왼쪽 -> 위 -> 왼쪽. 민트 다트가 처음 나온다.
+    5: makePathFloor({
+        path: [[0, 0], [-700, 0], [-700, -800], [-1500, -800]],
+        gates: [
+            { entrance: -450, exit: -1000, room: 0 },
+            { entrance: -1000, exit: -1750, room: 1 },
+            { entrance: -1750, exit: -2250, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 앞줄 젤리 + 민트 다트 둘.
+            { type: 'jelly_blob', at: -600, off: -30, room: 0 },
+            { type: 'jelly_blob', at: -600, off: 30, room: 0 },
+            { type: 'mint_dart', at: -850, off: -45, room: 0 },
+            { type: 'mint_dart', at: -850, off: 45, room: 0 },
+            // 방 1: 첫 꺾임 뒤. 다트가 여섯이라 계속 날아온다.
+            { type: 'mint_dart', at: -1150, off: -50, room: 1 },
+            { type: 'mint_dart', at: -1150, off: 0, room: 1 },
+            { type: 'mint_dart', at: -1150, off: 50, room: 1 },
+            { type: 'cake_slice', at: -1350, off: -35, room: 1 },
+            { type: 'cake_slice', at: -1350, off: 35, room: 1 },
+            { type: 'mint_dart', at: -1550, off: -40, room: 1 },
+            { type: 'mint_dart', at: -1550, off: 40, room: 1 },
+            { type: 'mint_dart', at: -1650, off: 0, room: 1 },
+            // 방 2: 두 번째 꺾임 뒤. 젤리 벽으로 마무리.
+            { type: 'jelly_blob', at: -1900, off: -40, room: 2 },
+            { type: 'jelly_blob', at: -1900, off: 40, room: 2 },
+            { type: 'jelly_blob', at: -2050, off: 0, room: 2 },
+            { type: 'chocolate_cake_slice', at: -2150, off: -45, room: 2 },
+            { type: 'chocolate_cake_slice', at: -2150, off: 45, room: 2 }
+        ],
+        star: { at: -2290 }
+    }),
+    // 6층: 계단처럼 위-오른쪽-위-오른쪽. 사탕 폭탄병이 처음 나온다.
+    6: makePathFloor({
+        path: [[0, 0], [0, -600], [600, -600], [600, -1200], [1200, -1200]],
+        gates: [
+            { entrance: -400, exit: -1000, room: 0 },
+            { entrance: -1000, exit: -1750, room: 1 },
+            { entrance: -1750, exit: -2300, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 폭탄병을 처음 만나는 자리. 수는 적게.
+            { type: 'candy_bomber', at: -550, off: -30, room: 0 },
+            { type: 'candy_bomber', at: -550, off: 30, room: 0 },
+            { type: 'jelly_blob', at: -800, off: 0, room: 0 },
+            { type: 'mint_dart', at: -900, off: -45, room: 0 },
+            // 방 1: 폭탄병이 달려오는 사이 다트가 뒤에서 쏜다.
+            { type: 'candy_bomber', at: -1150, off: -40, room: 1 },
+            { type: 'candy_bomber', at: -1150, off: 0, room: 1 },
+            { type: 'candy_bomber', at: -1150, off: 40, room: 1 },
+            { type: 'mint_dart', at: -1400, off: -50, room: 1 },
+            { type: 'mint_dart', at: -1400, off: 50, room: 1 },
+            { type: 'jelly_blob', at: -1600, off: -30, room: 1 },
+            { type: 'jelly_blob', at: -1600, off: 30, room: 1 },
+            // 방 2: 레이저 로봇 사이로 폭탄병이 섞여 온다.
+            { type: 'laser_robot', at: -1950, off: -45, room: 2 },
+            { type: 'laser_robot', at: -2050, off: 45, room: 2 },
+            { type: 'candy_bomber', at: -2150, off: -30, room: 2 },
+            { type: 'candy_bomber', at: -2150, off: 30, room: 2 }
+        ],
+        star: { at: -2360 }
+    }),
+    // 7층: 좌우로 접히는 지그재그. 크림 기사가 처음 나온다.
+    7: makePathFloor({
+        path: [[0, 0], [-800, 0], [-800, -600], [-200, -600], [-200, -1200], [-1000, -1200]],
+        gates: [
+            { entrance: -500, exit: -1200, room: 0 },
+            { entrance: -1200, exit: -2000, room: 1 },
+            { entrance: -2000, exit: -3200, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 크림 기사 둘. 여기서부터 앞줄이 확 단단해진다.
+            { type: 'cream_knight', at: -700, off: -35, room: 0 },
+            { type: 'cream_knight', at: -700, off: 35, room: 0 },
+            { type: 'mint_dart', at: -950, off: -45, room: 0 },
+            { type: 'mint_dart', at: -950, off: 45, room: 0 },
+            { type: 'candy_bomber', at: -1100, off: 0, room: 0 },
+            // 방 1: 지그재그 안쪽. 기사 뒤로 폭탄병이 돌아 나온다.
+            { type: 'cream_knight', at: -1400, off: -40, room: 1 },
+            { type: 'cream_knight', at: -1400, off: 40, room: 1 },
+            { type: 'candy_bomber', at: -1600, off: -30, room: 1 },
+            { type: 'candy_bomber', at: -1600, off: 30, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1800, off: -50, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1800, off: 0, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1800, off: 50, room: 1 },
+            // 방 2: 마지막 직선. 기사 셋에 레이저까지.
+            { type: 'laser_robot', at: -2300, off: -45, room: 2 },
+            { type: 'laser_robot', at: -2300, off: 45, room: 2 },
+            { type: 'cream_knight', at: -2600, off: -40, room: 2 },
+            { type: 'cream_knight', at: -2600, off: 0, room: 2 },
+            { type: 'cream_knight', at: -2600, off: 40, room: 2 },
+            { type: 'mint_dart', at: -2900, off: -50, room: 2 },
+            { type: 'mint_dart', at: -2900, off: 50, room: 2 }
+        ],
+        star: { at: -3330 }
+    }),
+    // 8층: 길게 올라갔다가 오른쪽 -> 아래 -> 오른쪽. 내려가는 구간이 처음 나온다.
+    // 서리 포탑이 처음 나오는데, 사거리가 짧아서 파고들면 된다.
+    8: makePathFloor({
+        path: [[0, 0], [0, -1000], [700, -1000], [700, -400], [1400, -400]],
+        gates: [
+            { entrance: -600, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2100, room: 1 },
+            { entrance: -2100, exit: -2850, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 서리 포탑 둘을 기사들이 지킨다.
+            { type: 'frost_turret', at: -800, off: -45, room: 0 },
+            { type: 'frost_turret', at: -900, off: 45, room: 0 },
+            { type: 'cream_knight', at: -1100, off: -35, room: 0 },
+            { type: 'cream_knight', at: -1100, off: 35, room: 0 },
+            // 방 1: 꺾이고 내려가는 구간. 포탑이 길목을 막는다.
+            { type: 'frost_turret', at: -1500, off: 0, room: 1 },
+            { type: 'candy_bomber', at: -1650, off: -40, room: 1 },
+            { type: 'candy_bomber', at: -1650, off: 40, room: 1 },
+            { type: 'frost_turret', at: -1850, off: -45, room: 1 },
+            { type: 'frost_turret', at: -1850, off: 45, room: 1 },
+            { type: 'mint_dart', at: -2000, off: 0, room: 1 },
+            // 방 2: 마지막. 기사 벽 뒤에 포탑 셋.
+            { type: 'cream_knight', at: -2300, off: -40, room: 2 },
+            { type: 'cream_knight', at: -2300, off: 0, room: 2 },
+            { type: 'cream_knight', at: -2300, off: 40, room: 2 },
+            { type: 'frost_turret', at: -2550, off: -45, room: 2 },
+            { type: 'frost_turret', at: -2550, off: 45, room: 2 },
+            { type: 'frost_turret', at: -2700, off: 0, room: 2 },
+            { type: 'jelly_blob', at: -2800, off: -30, room: 2 },
+            { type: 'jelly_blob', at: -2800, off: 30, room: 2 }
+        ],
+        star: { at: -2960 }
+    }),
+    // 9층: 가장 꼬불꼬불한 길 (여섯 구간). 어둠의 쿠키가 지킨다. 10층 보스로
+    // 올라가기 직전이라 지금까지 나온 것들이 전부 섞여 나온다.
+    9: makePathFloor({
+        path: [[0, 0], [-600, 0], [-600, -700], [100, -700], [100, -1400], [-700, -1400], [-700, -2000]],
+        gates: [
+            { entrance: -400, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2100, room: 1 },
+            { entrance: -2100, exit: -3000, room: 2 },
+            { entrance: -3000, exit: -3900, room: 3 }
+        ],
+        monsters: [
+            // 방 0
+            { type: 'cream_knight', at: -600, off: -35, room: 0 },
+            { type: 'cream_knight', at: -600, off: 35, room: 0 },
+            { type: 'mint_dart', at: -850, off: -45, room: 0 },
+            { type: 'mint_dart', at: -850, off: 45, room: 0 },
+            { type: 'candy_bomber', at: -1100, off: 0, room: 0 },
+            { type: 'jelly_blob', at: -1200, off: -30, room: 0 },
+            // 방 1: 어둠의 쿠키가 처음 나온다. 하나만.
+            { type: 'dark_cookie', at: -1600, off: 0, room: 1 },
+            { type: 'cream_knight', at: -1800, off: -40, room: 1 },
+            { type: 'cream_knight', at: -1800, off: 40, room: 1 },
+            { type: 'candy_bomber', at: -1950, off: -30, room: 1 },
+            { type: 'candy_bomber', at: -1950, off: 30, room: 1 },
+            // 방 2: 포탑이 길목을 막고 어둠의 쿠키가 둘.
+            { type: 'frost_turret', at: -2300, off: -45, room: 2 },
+            { type: 'frost_turret', at: -2300, off: 45, room: 2 },
+            { type: 'dark_cookie', at: -2600, off: -35, room: 2 },
+            { type: 'dark_cookie', at: -2600, off: 35, room: 2 },
+            { type: 'mint_dart', at: -2850, off: 0, room: 2 },
+            // 방 3: 마지막 방. 어둠의 쿠키 셋에 전부 섞였다.
+            { type: 'laser_robot', at: -3200, off: -45, room: 3 },
+            { type: 'laser_robot', at: -3200, off: 45, room: 3 },
+            { type: 'cream_knight', at: -3450, off: -40, room: 3 },
+            { type: 'cream_knight', at: -3450, off: 40, room: 3 },
+            { type: 'dark_cookie', at: -3650, off: -35, room: 3 },
+            { type: 'dark_cookie', at: -3650, off: 0, room: 3 },
+            { type: 'dark_cookie', at: -3650, off: 35, room: 3 },
+            { type: 'candy_bomber', at: -3800, off: -30, room: 3 },
+            { type: 'candy_bomber', at: -3800, off: 30, room: 3 }
+        ],
+        star: { at: -4060 }
+    })
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
@@ -1533,6 +1915,15 @@ const GACHA_TABLE = {
 const CLEAR_REWARDS = {
     story1: { material: 1, potion: 1, coins: 100, diamonds: 10, ticketNormal: 1 },
     story2: { material: 3, potion: 5, coins: 300, diamonds: 10, ticketNormal: 1 },
+    // 위로 갈수록 재료가 굵어진다. 5층부터 고급 재료가, 7층부터 고급 포션이
+    // 섞여 나오므로 희귀 이상 장비를 강화하려면 그쯤은 올라와야 한다.
+    story3: { material: 5, potion: 6, coins: 500, diamonds: 10, ticketNormal: 1 },
+    story4: { material: 8, potion: 8, coins: 700, diamonds: 15, ticketNormal: 1 },
+    story5: { material: 10, materialRare: 1, potion: 10, coins: 900, diamonds: 15, ticketNormal: 1 },
+    story6: { material: 12, materialRare: 2, potion: 12, coins: 1100, diamonds: 20, ticketNormal: 1 },
+    story7: { material: 15, materialRare: 3, potion: 14, potionRare: 2, coins: 1300, diamonds: 20, ticketNormal: 1 },
+    story8: { material: 18, materialRare: 5, potion: 16, potionRare: 3, coins: 1600, diamonds: 25, ticketNormal: 1 },
+    story9: { material: 20, materialRare: 8, potion: 20, potionRare: 5, coins: 2000, diamonds: 30, ticketNormal: 2 },
     boss1: { material: 10, coins: 1000, potion: 15 },   // 스톤 골렘
     boss2: { materialRare: 10, coins: 1100, potionRare: 10 } // 시하라얼
 };
@@ -1541,6 +1932,13 @@ const CLEAR_REWARDS = {
 const CLEAR_DROPS = {
     story1: ['wood_stick', 'cloth_cap'],
     story2: ['leather_vest', 'runner_boots'],
+    story3: ['wood_stick', 'cloth_cap', 'leather_vest'],
+    story4: ['runner_boots', 'jelly_guard'],
+    story5: ['jelly_guard', 'mint_blade'],
+    story6: ['mint_blade', 'bomber_helm'],
+    story7: ['cream_plate', 'cream_greaves'],
+    story8: ['cream_greaves', 'frost_boots'],
+    story9: ['dark_blade', 'dark_crown'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
 };
@@ -1626,6 +2024,45 @@ const EQUIPMENT = {
     golem_greaves: {
         name: '골렘의 돌다리', slot: 'leggings', grade: '희귀', icon: '🦵',
         bonusHealth: 12, bonusDamageTaken: 0.97
+    },
+    // ---- 스토리 4~9층 ----
+    jelly_guard: {
+        name: '젤리 방패갑옷', slot: 'armor', grade: '희귀', icon: '🟣',
+        bonusHealth: 22, bonusDamageTaken: 0.96,
+        ownerChar: 'board',
+        ownerBonus: { bonusHealth: 10 },
+        ownerText: '보드맛 쿠키가 착용하면 체력이 10 더 오릅니다.'
+    },
+    mint_blade: {
+        name: '민트 단검', slot: 'weapon', grade: '희귀', icon: '🗡',
+        bonusAttack: 2, bonusCooldown: 0.95
+    },
+    bomber_helm: {
+        name: '폭탄병 투구', slot: 'helmet', grade: '희귀', icon: '🪖',
+        bonusHealth: 14, bonusAttack: 1
+    },
+    cream_plate: {
+        name: '크림 기사 갑옷', slot: 'armor', grade: '에픽', icon: '🛡',
+        bonusHealth: 30, bonusDamageTaken: 0.93
+    },
+    cream_greaves: {
+        name: '크림 기사 레깅스', slot: 'leggings', grade: '에픽', icon: '👖',
+        bonusHealth: 20, bonusCooldown: 0.96
+    },
+    frost_boots: {
+        name: '서리 부츠', slot: 'boots', grade: '에픽', icon: '🥾',
+        bonusHealth: 18, bonusDamageTaken: 0.95
+    },
+    dark_blade: {
+        name: '어둠의 대검', slot: 'weapon', grade: '레전더리', icon: '⚔',
+        bonusAttack: 5, bonusCooldown: 0.9,
+        ownerChar: 'lightningdevil',
+        ownerBonus: { bonusAttack: 3 },
+        ownerText: '번개악마맛 쿠키가 착용하면 공격력이 3 더 오릅니다.'
+    },
+    dark_crown: {
+        name: '어둠의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑',
+        bonusHealth: 26, bonusAttack: 2, bonusCooldown: 0.94
     },
     // ---- 시하라얼 ----
     shihara_spear: {
@@ -1809,7 +2246,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }
