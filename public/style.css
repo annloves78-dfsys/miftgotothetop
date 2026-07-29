@@ -2920,8 +2920,14 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 #awaken-boss-list {
     flex-wrap: wrap;
     justify-content: center;
-    max-width: min(940px, 94vw);
+    gap: 12px;
+    margin: 16px 0;
+    max-width: min(880px, 94vw);
+    max-height: 66vh;
+    overflow-y: auto;
 }
+
+#awaken-boss-list .boss-card { transform: scale(0.88); }
 
 .awaken-card-gear {
     margin-top: 4px;
@@ -2931,11 +2937,12 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-layout {
     display: flex;
-    gap: 18px;
+    gap: 16px;
     align-items: flex-start;
     justify-content: center;
     width: min(980px, 96vw);
-    margin-bottom: 14px;
+    margin-bottom: 10px;
+    max-height: 74vh;
 }
 
 /* 왼쪽 레벨 / 가운데 파티 / 오른쪽 보스 정보. */
@@ -2956,11 +2963,11 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     font-weight: bold;
 }
 
-.awaken-boss-name { color: #ecf0f1; font-size: 20px; font-weight: bold; }
+.awaken-boss-name { color: #ecf0f1; font-size: 17px; font-weight: bold; }
 
 .awaken-boss-icon {
-    width: 70px;
-    height: 70px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     border: 3px solid rgba(255, 255, 255, 0.35);
 }
@@ -2971,14 +2978,14 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .awaken-level-chips {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
-    max-height: 58vh;
+    max-height: 52vh;
     overflow-y: auto;
 }
 
 .awaken-level-chip {
-    padding: 10px 0;
+    padding: 7px 0;
     border-radius: 8px;
     border: 1px solid #34495e;
     background: #22303f;
@@ -2996,7 +3003,7 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-level-info {
     width: 100%;
-    padding: 12px 14px;
+    padding: 10px 12px;
     border-radius: 10px;
     background: #22303f;
     border: 1px solid #34495e;
@@ -3006,11 +3013,13 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .awaken-level-title { color: #f1c40f; font-weight: bold; margin-bottom: 6px; }
 
 .awaken-stat-list {
-    margin: 0 0 8px;
-    padding-left: 18px;
+    margin: 0 0 6px;
+    padding-left: 16px;
     color: #cfd9e3;
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 30vh;
+    overflow-y: auto;
 }
 
 .awaken-drop {
@@ -3030,7 +3039,7 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-party-slot {
     width: 100%;
-    padding: 10px 6px;
+    padding: 7px 6px;
     border-radius: 10px;
     background: #22303f;
     border: 1px dashed #34495e;
@@ -3041,12 +3050,12 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .awaken-party-slot.filled { border-style: solid; border-color: #f1c40f; }
 
 .awaken-party-slot .icon {
-    width: 42px;
-    height: 42px;
-    margin: 0 auto 5px;
+    width: 34px;
+    height: 34px;
+    margin: 0 auto 4px;
     border-radius: 50%;
-    font-size: 24px;
-    line-height: 42px;
+    font-size: 20px;
+    line-height: 34px;
     color: #7f8c8d;
 }
 

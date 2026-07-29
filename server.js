@@ -1515,8 +1515,50 @@ function spawnAwakenBossMinions(roomId, room, boss, info, now) {
     io.to(roomId).emit('bossMinions', { monsters: publicMonsters(room) });
 }
 
+// 보스도 그 쿠키의 부활 패시브를 그대로 쓴다. 번개악마맛은 체력 절반으로,
+// 번개지옥맛은 가득 채워 일어나면서 주위를 쓸어버린다.
+// 죽는 길이 여럿(기본공격·스킬·부하·화염·마그마…)이라 한 군데에서 잡지 않고,
+// 틱마다 "쓰러졌는데 아직 일어날 수 있는 보스"를 찾아 세운다.
+function tryReviveAwakenBoss(roomId, room, mid, m) {
+    const info = awakenBossSpecOf(m);
+    if (!info) return false;
+    const base = CHARACTERS[info.charType];
+    const count = base.passiveReviveCount || 0;
+    if (!count || (m.revivesUsed || 0) >= count) return false;
+
+    m.revivesUsed = (m.revivesUsed || 0) + 1;
+    m.alive = true;
+    m.hp = Math.max(1, Math.round(m.maxHp * (base.passiveReviveHpRatio || 0.5)));
+    m.shieldHp = 0;
+    io.to(roomId).emit('bossRevived', {
+        id: mid, hp: m.hp, maxHp: m.maxHp,
+        left: count - m.revivesUsed,
+        x: m.x, y: m.y,
+        monsters: publicMonsters(room)
+    });
+
+    // 일어나면서 터지는 충격파 (번개지옥맛). 사람 수로 단독/다수를 고른다.
+    const targets = Object.entries(room.players).filter(([, p]) => p.alive);
+    const ratio = reviveBlastRatio(base, targets.length);
+    if (ratio) {
+        io.to(roomId).emit('bossReviveBlast', { id: mid, x: m.x, y: m.y, ratio });
+        for (const [id, p] of targets) {
+            applyDamageToStoryPlayer(roomId, id, Math.max(1, Math.round(p.hp * ratio)));
+            if (!rooms[roomId]) return true;
+        }
+    }
+    return true;
+}
+
 // 보스가 스스로 스킬과 궁극기를 쓴다. 쿨타임은 그 쿠키의 것을 그대로 쓴다.
 function tickAwakenBoss(roomId, room, now) {
+    // 먼저 부활부터 본다 -- 안 그러면 쓰러진 그 틱에 이긴 것으로 끝나 버린다.
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (m.alive || m.summonedBy) continue;
+        if (tryReviveAwakenBoss(roomId, room, mid, m)) {
+            if (!rooms[roomId]) return;
+        }
+    }
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive || m.summonedBy) continue;
         const info = awakenBossSpecOf(m);
@@ -1938,8 +1980,9 @@ function tickStoryRoom(roomId) {
         }
         tickAwakenBoss(roomId, room, now);
         if (!rooms[roomId]) return;
-        // 부하는 세지 않는다 -- 보스만 잡으면 이긴다.
-        if (!Object.values(room.monsters).some(m => m.alive && !m.summonedBy)) {
+        // 마당에 서 있는 것을 하나도 남기지 않아야 끝난다 -- 보스가 부른
+        // 부하까지 전부 정리해야 이긴다.
+        if (!Object.values(room.monsters).some(m => m.alive)) {
             endStoryRoom(roomId, 'win');
             return;
         }

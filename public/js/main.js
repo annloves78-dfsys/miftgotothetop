@@ -1820,7 +1820,7 @@ function awakenBossStatLines(charType, level) {
     const base = SHARED.CHARACTERS[charType];
     const stats = SHARED.awakenLevelStats(level) || {};
     const lines = [];
-    lines.push(`체력 ${base.health + (stats.health || 0)} (+${stats.health || 0})`);
+    lines.push(`체력 ${SHARED.awakenBossMaxHp(charType, level)} (+${SHARED.awakenLevelHealthBonus(level)})`);
     const atk = SHARED.awakenBossAttackDamage(charType, level);
     if (atk != null) lines.push(`공격력 ${atk} (+${stats.attack || 0})`);
     if (stats.speed) lines.push(`이동 속도 +${stats.speed}`);
@@ -2980,6 +2980,17 @@ socket.on('bossMinions', ({ monsters }) => {
 });
 socket.on('monsterShield', ({ id, shieldHp }) => {
     if (storyMonsters && storyMonsters[id]) storyMonsters[id].shieldHp = shieldHp;
+});
+// 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌린다.
+socket.on('bossRevived', ({ x, y, monsters }) => {
+    if (monsters) storyMonsters = monsters;
+    storyImpactEffects.push({ x, y, radius: 110, until: performance.now() + 600 });
+    storyQuakeUntil = performance.now() + 450;
+    updateStoryMonstersLeft();
+});
+// 일어나면서 터지는 충격파 (번개지옥맛).
+socket.on('bossReviveBlast', ({ x, y }) => {
+    storyImpactEffects.push({ x, y, radius: 260, until: performance.now() + 700 });
 });
 
 // 사탕 폭탄병이 터진 자리. 기존 충격 효과(storyImpactEffects)를 그대로 쓴다.
