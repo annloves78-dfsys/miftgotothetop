@@ -284,16 +284,22 @@
     <!-- 각성모드: 레벨과 파티 3명 -->
     <div id="awaken-detail-screen" class="screen hidden">
         <div class="awaken-layout">
-            <div class="awaken-left">
+            <!-- 왼쪽: 레벨 1~10을 세로로 -->
+            <div class="awaken-levels">
+                <div class="awaken-col-title">레벨</div>
+                <div id="awaken-level-chips" class="awaken-level-chips"></div>
+            </div>
+            <!-- 가운데: 데리고 갈 쿠키 3명 -->
+            <div class="awaken-party-col">
+                <div class="awaken-col-title">파티 3명</div>
+                <div id="awaken-party" class="awaken-party"></div>
+            </div>
+            <!-- 오른쪽: 보스 정보와 보상, 그리고 시작 -->
+            <div class="awaken-info-col">
                 <div id="awaken-boss-name" class="awaken-boss-name"></div>
                 <div id="awaken-boss-icon" class="awaken-boss-icon"></div>
                 <div id="awaken-boss-gear" class="awaken-boss-gear"></div>
-                <div id="awaken-level-chips" class="awaken-level-chips"></div>
-            </div>
-            <div class="awaken-right">
                 <div id="awaken-level-info" class="awaken-level-info"></div>
-                <div class="awaken-party-title">파티 3명</div>
-                <div id="awaken-party" class="awaken-party"></div>
                 <button id="awaken-play-btn" class="play-btn">▶ 시작</button>
                 <div id="awaken-msg" class="equip-picker-msg hidden"></div>
             </div>

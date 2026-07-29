@@ -1865,7 +1865,7 @@ function renderAwakenLevelChips() {
     for (let lv = 1; lv <= SHARED.AWAKEN_MAX_LEVEL; lv++) {
         const chip = document.createElement('button');
         chip.className = 'awaken-level-chip' + (lv === awakenLevel ? ' selected' : '');
-        chip.textContent = String(lv);
+        chip.textContent = `${lv}레벨`;
         chip.addEventListener('click', () => { awakenLevel = lv; renderAwakenDetail(); });
         awakenLevelChipsEl.appendChild(chip);
     }

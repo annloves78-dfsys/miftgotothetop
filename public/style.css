@@ -2931,48 +2931,60 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-layout {
     display: flex;
-    gap: 22px;
+    gap: 18px;
     align-items: flex-start;
-    width: min(880px, 94vw);
+    justify-content: center;
+    width: min(980px, 96vw);
     margin-bottom: 14px;
 }
 
-.awaken-left, .awaken-right {
-    flex: 1 1 0;
-    min-width: 0;
+/* 왼쪽 레벨 / 가운데 파티 / 오른쪽 보스 정보. */
+.awaken-levels { flex: 0 0 116px; }
+.awaken-party-col { flex: 0 0 130px; }
+.awaken-info-col { flex: 1 1 0; min-width: 0; }
+
+.awaken-levels, .awaken-party-col, .awaken-info-col {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+}
+
+.awaken-col-title {
+    color: #9fb1c1;
+    font-size: 13px;
+    font-weight: bold;
 }
 
 .awaken-boss-name { color: #ecf0f1; font-size: 20px; font-weight: bold; }
 
 .awaken-boss-icon {
-    width: 78px;
-    height: 78px;
+    width: 70px;
+    height: 70px;
     border-radius: 50%;
     border: 3px solid rgba(255, 255, 255, 0.35);
 }
 
 .awaken-boss-gear { color: #9fb1c1; font-size: 13px; }
 
-/* 레벨 1~10. 순서 잠금이 없으므로 전부 그냥 누를 수 있다. */
+/* 레벨 1~10을 세로로. 순서 잠금이 없으므로 전부 그냥 누를 수 있다. */
 .awaken-level-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 6px;
-    justify-content: center;
+    width: 100%;
+    max-height: 58vh;
+    overflow-y: auto;
 }
 
 .awaken-level-chip {
-    width: 38px;
-    height: 38px;
+    padding: 10px 0;
     border-radius: 8px;
     border: 1px solid #34495e;
     background: #22303f;
     color: #ecf0f1;
     font-weight: bold;
+    font-size: 14px;
     cursor: pointer;
 }
 
@@ -3009,10 +3021,15 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-party-title { color: #9fb1c1; font-size: 13px; }
 
-.awaken-party { display: flex; gap: 10px; }
+.awaken-party {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
 
 .awaken-party-slot {
-    width: 84px;
+    width: 100%;
     padding: 10px 6px;
     border-radius: 10px;
     background: #22303f;
