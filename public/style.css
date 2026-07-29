@@ -2916,6 +2916,13 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     text-align: center;
 }
 
+/* 쿠키가 다섯이라 한 줄에 다 넣으면 화면 밖으로 잘린다. */
+#awaken-boss-list {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: min(940px, 94vw);
+}
+
 .awaken-card-gear {
     margin-top: 4px;
     font-size: 12px;

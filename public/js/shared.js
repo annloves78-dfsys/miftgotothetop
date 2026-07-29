@@ -2039,7 +2039,9 @@ const EQUIPMENT = {
     // 이 모자가 각성의 전제 조건이다.
     red_lightning_cap: {
         name: '붉은 번개 모자', slot: 'awaken', grade: '비스트', icon: '⚡',
-        bonusRevive: 1
+        ownerChar: 'lightningdevil',
+        ownerBonus: { bonusRevive: 1 },
+        ownerText: '번개악마맛 쿠키 전용 — 부활 1회 추가. 번개악마맛은 그 2번째 부활에서 각성합니다.'
     },
     // 아래 넷은 쿠키 전용이다. 다른 쿠키가 껴도 아무 것도 붙지 않는다
     // (능력치를 전부 ownerBonus에 넣었고, awakenForm도 주인만 읽는다).
