@@ -611,7 +611,16 @@ function tickRoom(roomId) {
                     if (distToBoss <= buff.radius + BOSS_RADIUS) {
                         room.bossHp = Math.max(0, room.bossHp - buff.damage);
                         io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: buff.casterId });
-                        if (room.bossHp <= 0) endRoom(roomId, 'win');
+                        if (room.bossHp <= 0) { endRoom(roomId, 'win'); continue; }
+                        // 치즈만두 덩어리는 깎으면서 표식도 같이 박는다.
+                        if (buff.markCharges && applyElementMark(bossMarkTarget(room), buff.markElement,
+                            { charges: buff.markCharges, multiplier: buff.markMultiplier }, now)) {
+                            io.to(roomId).emit('bossMarked', {
+                                element: room.bossElementMark.element,
+                                charges: room.bossElementMark.charges,
+                                until: room.bossElementMark.until
+                            });
+                        }
                     }
                 }
             }
@@ -1390,6 +1399,18 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
             });
         }
     }
+
+    // 치즈만두맛 패시브: 궁극기와 상관없이 주먹 자체가 표식을 남긴다. 다른
+    // 속성이 이미 붙어 있으면 여기서도 거절된다 -- 표식 규칙은 하나뿐이다.
+    if (opts.attackMarks) {
+        const marked = applyElementMark(m, character.element,
+            attackMarkOpts(character, opts.attackMarks), now);
+        if (marked) {
+            io.to(roomId).emit('monsterMarked', {
+                id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+            });
+        }
+    }
 }
 
 // The same thing for the raid boss, which keeps its mark on the room rather
@@ -1449,6 +1470,14 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
                 multiplier: character.ultimateMarkMultiplier
             };
         }
+        markChanged = true;
+    }
+
+    // 치즈만두맛 패시브: 궁극기와 상관없이 주먹 자체가 표식을 남긴다. swing이
+    // 없는 호출(날아간 물방울)은 기본공격이 아니므로 제외된다.
+    const attackMarks = swing && !killedBoss ? attackMarkChargesOf(character, p) : 0;
+    if (attackMarks && applyElementMark(bossMarkTarget(room), character.element,
+        attackMarkOpts(character, attackMarks), now)) {
         markChanged = true;
     }
 
@@ -1964,6 +1993,29 @@ function ultimateMarkOpts(character) {
     return { durationMs: character.ultimateMarkDurationMs, multiplier: character.ultimateMarkMultiplier };
 }
 
+// 치즈만두맛 패시브: 기본공격이 적중할 때마다 스스로 표식을 남긴다. 각성하면
+// awakenedForm이 attackMarkUses를 0으로 덮어써서 더 이상 남기지 않는다.
+function attackMarkChargesOf(character, p) {
+    return stat(character, p, 'attackMarkUses') || 0;
+}
+function attackMarkOpts(character, charges) {
+    return { charges, multiplier: character.attackMarkMultiplier || 1.3 };
+}
+
+// 지대 궁극기(화산맛 마그마 지대 · 치즈만두맛 덩어리)는 같은 buff 하나로
+// 돌아간다. 표식을 같이 박는지, 화면에 무엇으로 그리는지만 다르다.
+function zoneMarkFields(character) {
+    if (!character.ultimateZoneMarkUses) return {};
+    return {
+        markElement: character.element,
+        markCharges: character.ultimateZoneMarkUses,
+        markMultiplier: character.ultimateZoneMarkMultiplier || 1.3
+    };
+}
+function zoneLookOf(character) {
+    return character.ultimateType === 'dumpling_zone' ? 'dumpling' : 'magma';
+}
+
 // 레몬갑옷: 궁극기를 쓰면 주변의 모든 적이 그 쿠키의 속성 표식을 여러 번
 // 받는다. 표식 규칙은 마그마맛/물방울맛의 것과 똑같다 -- 다른 속성이 이미
 // 붙어 있으면 거절되고, 같은 속성이면 횟수가 쌓인다.
@@ -2239,8 +2291,15 @@ function tickStoryRoom(roomId) {
                     if (!m.alive) continue;
                     if (Math.hypot(buff.x - m.x, buff.y - m.y) <= buff.radius + mR(m)) {
                         m.hp = Math.max(0, m.hp - buff.damage);
-                        if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
-                        else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                        if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); continue; }
+                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                        // 치즈만두 덩어리는 깎으면서 표식도 같이 박는다.
+                        if (buff.markCharges && applyElementMark(m, buff.markElement,
+                            { charges: buff.markCharges, multiplier: buff.markMultiplier }, now)) {
+                            io.to(roomId).emit('monsterMarked', {
+                                id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+                            });
+                        }
                     }
                 }
             }
@@ -2953,6 +3012,30 @@ function guestLineTargets(room, originX, originY, facing, range, width) {
     return out;
 }
 
+// 게스트 레이드는 보스와 부하가 한 판에 같이 있어서, 표식도 둘 다에게 같은
+// 규칙으로 붙는다 (보스 것만 방 쪽에 얹혀 있다).
+function markGuestTargets(roomId, room, targets, element, opts) {
+    const now = Date.now();
+    for (const t of targets) {
+        if (t.boss) {
+            if (!applyElementMark(bossMarkTarget(room), element, opts, now)) continue;
+            io.to(roomId).emit('guestBossMarked', {
+                element: room.bossElementMark.element,
+                charges: room.bossElementMark.charges,
+                until: room.bossElementMark.until
+            });
+        } else {
+            const m = room.monsters[t.mid];
+            if (!m || !m.alive) continue;
+            if (!applyElementMark(m, element, opts, now)) continue;
+            io.to(roomId).emit('monsterMarked', {
+                id: t.mid, element: m.elementMark.element,
+                charges: m.elementMark.charges, until: m.elementMark.until
+            });
+        }
+    }
+}
+
 function guestCircleTargets(room, x, y, radius) {
     const out = [];
     const def = guestDefFor(room);
@@ -3221,9 +3304,14 @@ function tickGuestRoom(roomId) {
             buff.lastTickAt += buff.tickMs;
             if (buff.type === 'team_heal_over_time') healGuestTeam(room, roomId, buff.healPerTick);
             else if (buff.type === 'magma_zone') {
-                damageGuestTargets(roomId, room,
-                    guestCircleTargets(room, buff.x, buff.y, buff.radius), buff.damage, buff.casterId);
+                const inside = guestCircleTargets(room, buff.x, buff.y, buff.radius);
+                damageGuestTargets(roomId, room, inside, buff.damage, buff.casterId);
                 if (!rooms[roomId]) return;
+                // 치즈만두 덩어리는 깎으면서 표식도 같이 박는다.
+                if (buff.markCharges) {
+                    markGuestTargets(roomId, room, inside, buff.markElement,
+                        { charges: buff.markCharges, multiplier: buff.markMultiplier });
+                }
             }
         }
     }
@@ -3820,7 +3908,8 @@ io.on('connection', (socket) => {
                 anyHit = true;
                 if (landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
                     knockback: true, floorDef, fromX: p.x, fromY: p.y,
-                    marks: !!(p.elementMarkUntil && now < p.elementMarkUntil)
+                    marks: !!(p.elementMarkUntil && now < p.elementMarkUntil),
+                    attackMarks: attackMarkChargesOf(character, p)
                 })) anyKill = true;
             }
         }
@@ -3977,6 +4066,25 @@ io.on('connection', (socket) => {
                 else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
             }
             if (hitAny) healStoryPlayer(room, roomId, character.skillHealOnHit);
+        }
+        // 치즈만두맛 만두 주먹: 앞을 한 대 치면서 표식을 한 번에 크게 박는다.
+        // 피해는 주먹과 같은 1이고, 값어치는 전부 표식 쪽에 있다.
+        else if (character.skillType === 'mark_punch') {
+            io.to(roomId).emit('storySkillMark', {
+                id: socket.id,
+                x: p.x + Math.cos(p.facing) * character.skillRange * 0.5,
+                y: p.y + Math.sin(p.facing) * character.skillRange * 0.5,
+                radius: character.skillWidth, element: character.element
+            });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) continue;
+                if (hurtStoryMonster(roomId, room, mid, m, character.skillDamage)) continue;
+                if (!applyElementMark(m, character.element, skillMarkOpts(character), now)) continue;
+                io.to(roomId).emit('monsterMarked', {
+                    id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+                });
+            }
         }
         // 슈가 플라이맛 돌진: rush forward, hit the first thing in the lane,
         // and end up standing next to it.
@@ -4214,7 +4322,7 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
                 }
             }
-        } else if (character.ultimateType === 'magma_zone') {
+        } else if (character.ultimateType === 'magma_zone' || character.ultimateType === 'dumpling_zone') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
@@ -4222,9 +4330,12 @@ io.on('connection', (socket) => {
             const t = clampToLane(floorDef, targetX, targetY);
             const tx = t.x, ty = t.y;
 
-            io.to(roomId).emit('storyMagmaZonePlaced', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius, durationMs: character.ultimateZoneDurationMs });
+            io.to(roomId).emit('storyMagmaZonePlaced', {
+                id: socket.id, x: tx, y: ty, radius: character.ultimateRadius,
+                durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
+            });
 
-            room.activeBuffs.push({
+            room.activeBuffs.push(Object.assign({
                 type: 'magma_zone',
                 casterId: socket.id,
                 x: tx, y: ty,
@@ -4233,7 +4344,7 @@ io.on('connection', (socket) => {
                 tickMs: character.ultimateZoneTickMs,
                 endAt: now + character.ultimateZoneDurationMs,
                 lastTickAt: now
-            });
+            }, zoneMarkFields(character)));
         } else if (character.ultimateType === 'element_mark') {
             // No immediate effect -- read by the storyPlayerAttack handler,
             // which marks whatever it hits for the rest of this window.
@@ -4446,6 +4557,21 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        }
+        // 치즈만두맛 만두 주먹: 보스를 한 대 치면서 표식을 크게 박는다.
+        else if (character.skillType === 'mark_punch') {
+            if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                if (applyElementMark(bossMarkTarget(room), character.element, skillMarkOpts(character), now)) {
+                    io.to(roomId).emit('bossMarked', {
+                        element: room.bossElementMark.element,
+                        charges: room.bossElementMark.charges,
+                        until: room.bossElementMark.until
+                    });
+                }
+            }
         } else if (character.skillType === 'self_heal') {
             const healed = Math.min(p.maxHp, p.hp + character.skillHealAmount);
             if (healed !== p.hp) {
@@ -4587,7 +4713,7 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
                 }
             }
-        } else if (character.ultimateType === 'magma_zone') {
+        } else if (character.ultimateType === 'magma_zone' || character.ultimateType === 'dumpling_zone') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
             if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
@@ -4597,9 +4723,12 @@ io.on('connection', (socket) => {
             const scale = dist > 0 ? clampedDist / dist : 0;
             const tx = targetX * scale, ty = targetY * scale;
 
-            io.to(roomId).emit('magmaZonePlaced', { id: socket.id, x: tx, y: ty, radius: character.ultimateRadius, durationMs: character.ultimateZoneDurationMs });
+            io.to(roomId).emit('magmaZonePlaced', {
+                id: socket.id, x: tx, y: ty, radius: character.ultimateRadius,
+                durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
+            });
 
-            room.activeBuffs.push({
+            room.activeBuffs.push(Object.assign({
                 type: 'magma_zone',
                 casterId: socket.id,
                 x: tx, y: ty,
@@ -4608,7 +4737,7 @@ io.on('connection', (socket) => {
                 tickMs: character.ultimateZoneTickMs,
                 endAt: now + character.ultimateZoneDurationMs,
                 lastTickAt: now
-            });
+            }, zoneMarkFields(character)));
         } else if (character.ultimateType === 'element_mark') {
             // No immediate effect -- read by the playerAttack handler, which
             // marks whatever it hits for the rest of this window.
@@ -4833,6 +4962,12 @@ io.on('connection', (socket) => {
 
         damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
         if (!rooms[roomId]) return;
+        // 치즈만두맛 패시브: 주먹 자체가 표식을 남긴다.
+        const attackMarks = attackMarkChargesOf(character, p);
+        if (attackMarks) {
+            markGuestTargets(roomId, room, targets, character.element,
+                attackMarkOpts(character, attackMarks));
+        }
         const killedAny = targets.some(t => (t.boss
             ? room.bossHp <= 0
             : !(room.monsters[t.mid] && room.monsters[t.mid].alive)));
@@ -4873,6 +5008,14 @@ io.on('connection', (socket) => {
             damageGuestTargets(roomId, room,
                 guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth),
                 character.skillDamage, socket.id);
+        }
+        // 치즈만두맛 만두 주먹: 앞에 있는 것(보스든 부하든) 전부에 표식을 박는다.
+        else if (character.skillType === 'mark_punch') {
+            const targets = guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth);
+            if (!targets.length) return;
+            damageGuestTargets(roomId, room, targets, character.skillDamage, socket.id);
+            if (!rooms[roomId]) return;
+            markGuestTargets(roomId, room, targets, character.element, skillMarkOpts(character));
         } else if (character.skillType === 'self_heal') {
             p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
             p.partyHp[p.active] = p.hp;
@@ -5105,19 +5248,19 @@ io.on('connection', (socket) => {
             damageGuestTargets(roomId, room,
                 guestCircleTargets(room, t.x, t.y, character.ultimateRadius),
                 character.ultimateDamage, socket.id);
-        } else if (character.ultimateType === 'magma_zone') {
+        } else if (character.ultimateType === 'magma_zone' || character.ultimateType === 'dumpling_zone') {
             const t = aimed();
             if (!t) return;
             io.to(roomId).emit('guestMagmaZonePlaced', {
                 id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius,
-                durationMs: character.ultimateZoneDurationMs
+                durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
             });
-            room.activeBuffs.push({
+            room.activeBuffs.push(Object.assign({
                 type: 'magma_zone', casterId: socket.id, x: t.x, y: t.y,
                 radius: character.ultimateRadius, damage: character.ultimateZoneDamagePerTick,
                 tickMs: character.ultimateZoneTickMs,
                 endAt: now + character.ultimateZoneDurationMs, lastTickAt: now
-            });
+            }, zoneMarkFields(character)));
         } else if (character.ultimateType === 'attack_heal_boost') {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
         } else if (character.ultimateType === 'awakening') {

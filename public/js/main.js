@@ -714,7 +714,9 @@ function passiveText(stats) {
         const total = stats.attackBurnDamage * stats.attackBurnTicks;
         parts.push(`기본 공격이 적중하면 대상을 불태워 ${sec(stats.attackBurnIntervalMs)}초마다 ${stats.attackBurnDamage}의 화염 피해를 ${stats.attackBurnTicks}번 추가로 줍니다. (추가 피해 합계 ${total})`);
     }
-    if (stats.passiveReviveCount) {
+    // 치즈만두맛은 부활이 곧 각성이라(awakenOnReviveNo가 1) 여기서 한 번 더
+    // 말하면 체력이 그대로 돌아오는 것처럼 읽힌다. 각성 쪽 문장에 맡긴다.
+    if (stats.passiveReviveCount && stats.awakenOnReviveNo !== 1) {
         const hpPct = Math.round(stats.passiveReviveHpRatio * 100);
         parts.push(hpPct >= 100
             ? `쓰러져도 전투당 ${stats.passiveReviveCount}번 체력을 모두 채워 완전 부활합니다.`
@@ -736,10 +738,28 @@ function passiveText(stats) {
         parts.push(`공격을 적중시킬 때마다 ${Math.round(stats.passiveHitHealChance * 100)}% 확률로`
             + ` 최대 체력의 ${Math.round(stats.passiveHitHealRatio * 100)}%를 회복합니다.`);
     }
+    // 각성 형태는 쿠키마다 바뀌는 항목이 다르다 (번개악마맛은 궁극기 피해까지,
+    // 치즈만두맛은 표식이 사라진다). awakenedForm에 적힌 것만 읽어서 늘어놓는다.
     if (stats.awakenOnReviveNo) {
-        parts.push(`쓰러져도 반드시 한 번 부활합니다. 각성 장비를 끼면 부활이 한 번 더 생기고,`
-            + ` ${stats.awakenOnReviveNo}번째 부활에서 각성해 체력 ${stats.awakenedForm.health},`
-            + ` 기본공격 ${stats.awakenedForm.attackDamage}, 궁극기 피해 ${stats.awakenedForm.ultimateDamage}가 됩니다.`);
+        const form = stats.awakenedForm || {};
+        const bits = [];
+        if (form.health != null) bits.push(`체력 ${form.health}`);
+        if (form.attackDamage != null) bits.push(`기본공격 ${form.attackDamage}`);
+        if (form.ultimateDamage != null) bits.push(`궁극기 피해 ${form.ultimateDamage}`);
+        const when = stats.awakenOnReviveNo === 1
+            ? '쓰러지면 그 자리에서 각성해 다시 일어납니다. 각성 장비를 끼면 각성한 뒤에도 한 번 더 일어납니다.'
+            : `쓰러져도 반드시 한 번 부활합니다. 각성 장비를 끼면 부활이 한 번 더 생기고,`
+              + ` ${stats.awakenOnReviveNo}번째 부활에서 각성합니다.`;
+        let text = `${when} 각성하면 ${bits.join(', ')}가 됩니다.`;
+        if (form.attackMarkUses === 0 && stats.attackMarkUses) {
+            text += ' 대신 기본 공격이 더 이상 속성 표식을 남기지 않습니다.';
+        }
+        parts.push(text);
+    }
+    if (stats.attackMarkUses) {
+        parts.push(`기본 공격이 적중할 때마다 대상에게 ${stats.element} 속성 표식을 ${stats.attackMarkUses}번 남깁니다.`
+            + ` 표식이 붙어 있는 동안 같은 속성의 쿠키가 공격하면 피해가 ${stats.attackMarkMultiplier}배가 되고,`
+            + ` 표식은 한 번 쓸 때마다 하나씩 줄어듭니다.`);
     }
     if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
@@ -844,6 +864,9 @@ function describeAbility(stats, kind) {
                 return `전방을 크게 벤니다. 가로 ${stats.skillWidth}px, 전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 주고, 한 명이라도 맞히면 팀 전체를 ${stats.skillHealOnHit}만큼 회복시킵니다.${cd}`;
             case 'charge_dash':
                 return `전방으로 빠르게 돌진해 최대 ${stats.skillRange}px까지 달려가 부딪칩니다. 맞은 적에게 ${stats.skillDamage}의 피해를 주고, 그 뒤 ${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라집니다.${cd}`;
+            case 'mark_punch':
+                return `앞으로 주먹을 질러 전방 ${stats.skillRange}px(가로 ${stats.skillWidth}px) 범위의 적에게 ${stats.skillDamage}의 피해를 주고,`
+                    + ` 맞은 적에게 ${stats.element} 속성 표식을 한 번에 ${stats.skillMarkUses}개 박습니다.${cd}`;
             case 'tide_cycle':
                 return tideCycleText(stats, sec);
             default:
@@ -869,6 +892,10 @@ function describeAbility(stats, kind) {
                 return `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedMultiplier}배가 되고, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다. 체력을 ${stats.ultimateSelfHeal}만큼 즉시 회복합니다.${cd}`;
             case 'magma_zone':
                 return `지정한 위치에 마그마를 떨어뜨려 반경 ${stats.ultimateRadius}px에 화염 표식을 남깁니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 줍니다.${cd}`;
+            case 'dumpling_zone':
+                return `지정한 위치에 치즈만두 덩어리를 떨어뜨립니다. 반경 ${stats.ultimateRadius}px 안의 적은`
+                    + ` ${sec(stats.ultimateZoneDurationMs)}초 동안 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 입고,`
+                    + ` 그때마다 ${stats.element} 속성 표식을 ${stats.ultimateZoneMarkUses}개씩 받습니다.${cd}`;
             case 'element_mark':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 대상에게 속성 표식을 남깁니다. 표식이 있는 동안 같은 속성의 캐릭터가 공격하면 피해가 ${stats.ultimateMarkMultiplier}배가 되고, 표식은 ${stats.ultimateMarkUses}회 사용되면 사라집니다. 표식은 중첩됩니다.${cd}`;
             case 'awakening_rapid':
@@ -922,6 +949,14 @@ function elementMarkLabel(mark) {
 }
 
 const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑', '물': '💧', '빛': '✨' };
+
+// 바닥에 깔리는 지대는 지금 두 가지다 -- 화산맛의 마그마(주황)와 치즈만두맛의
+// 만두 덩어리(노랑/초록). 서버가 look으로 어느 쪽인지 알려 준다.
+function zoneColors(look) {
+    return look === 'dumpling'
+        ? { fill: 'rgba(39, 174, 96, 0.28)', stroke: 'rgba(244, 208, 63, 0.9)' }
+        : { fill: 'rgba(230, 81, 0, 0.25)', stroke: 'rgba(255, 152, 0, 0.85)' };
+}
 
 // Split-color icon background so similarly-colored cookies stay tellable
 // apart at a glance -- a hard 50/50 split, not a blend.
@@ -987,7 +1022,9 @@ const SKILL_ICONS = {
     vampire_slash: '🗡',
     blink_heal: '💫',
     great_slash: '⚔️',
-    tide_cycle: '🌊'
+    tide_cycle: '🌊',
+    mark_punch: '🥊',
+    dumpling_zone: '🥟'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -3350,8 +3387,8 @@ socket.on('storyLightningStrike', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400, bolt: true });
 });
 
-socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs }) => {
-    storyMagmaZones.push({ x, y, radius, until: performance.now() + durationMs });
+socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs, look }) => {
+    storyMagmaZones.push({ x, y, radius, look, until: performance.now() + durationMs });
 });
 
 socket.on('storyEarthquake', () => {
@@ -3894,11 +3931,12 @@ function storyRender(now) {
     storyMagmaZones = storyMagmaZones.filter(z => now < z.until);
     storyMagmaZones.forEach(z => {
         const pulse = 3 + Math.sin(now / 120) * 3;
+        const skin = zoneColors(z.look);
         storyCtx.beginPath();
         storyCtx.arc(z.x, z.y, z.radius + pulse, 0, Math.PI * 2);
-        storyCtx.fillStyle = 'rgba(230, 81, 0, 0.25)';
+        storyCtx.fillStyle = skin.fill;
         storyCtx.fill();
-        storyCtx.strokeStyle = 'rgba(255, 152, 0, 0.85)';
+        storyCtx.strokeStyle = skin.stroke;
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
     });
@@ -4480,8 +4518,8 @@ socket.on('lightningStrike', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 400, bolt: true });
 });
 
-socket.on('magmaZonePlaced', ({ x, y, radius, durationMs }) => {
-    magmaZones.push({ x, y, radius, until: performance.now() + durationMs });
+socket.on('magmaZonePlaced', ({ x, y, radius, durationMs, look }) => {
+    magmaZones.push({ x, y, radius, look, until: performance.now() + durationMs });
 });
 
 socket.on('earthquake', () => {
@@ -4778,7 +4816,7 @@ function confirmSkillTarget() {
 
 function isTargetedUltimate(type) {
     return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike'
-        || type === 'magma_pour' || type === 'mark_flood';
+        || type === 'magma_pour' || type === 'mark_flood' || type === 'dumpling_zone';
 }
 
 // 때파기 / 물방울 터트리기 are the first SKILLS that are placed on a spot
@@ -4939,11 +4977,12 @@ function render(now) {
     magmaZones = magmaZones.filter(z => now < z.until);
     magmaZones.forEach(z => {
         const pulse = 3 + Math.sin(now / 120) * 3;
+        const skin = zoneColors(z.look);
         ctx.beginPath();
         ctx.arc(z.x, z.y, z.radius + pulse, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(230, 81, 0, 0.25)';
+        ctx.fillStyle = skin.fill;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 152, 0, 0.85)';
+        ctx.strokeStyle = skin.stroke;
         ctx.lineWidth = 3;
         ctx.stroke();
     });

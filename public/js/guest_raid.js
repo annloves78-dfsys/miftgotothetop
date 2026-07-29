@@ -947,10 +947,14 @@ function guestRender(now) {
     // Magma zones sit under everything.
     guestMagmaZones = guestMagmaZones.filter(z => now < z.until);
     guestMagmaZones.forEach(z => {
+        const skin = zoneColors(z.look);
         guestCtx.beginPath();
         guestCtx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
-        guestCtx.fillStyle = 'rgba(230, 81, 0, 0.25)';
+        guestCtx.fillStyle = skin.fill;
         guestCtx.fill();
+        guestCtx.strokeStyle = skin.stroke;
+        guestCtx.lineWidth = 3;
+        guestCtx.stroke();
     });
 
     // Red danger zones for the telegraphed skills.

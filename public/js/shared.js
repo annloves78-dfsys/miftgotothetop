@@ -638,6 +638,65 @@ const CHARACTERS = {
         },
         ultimateDurationMs: 10000,
         ultimateCooldownMs: 30000
+    },
+    // 게스트 둘째. 혼자서는 거의 아무 것도 못 깎는다 -- 주먹이 1이다. 대신
+    // 때릴 때마다 빛 표식을 쌓아 두는 쿠키라서, 같은 빛 속성 쿠키(오렌지
+    // 레몬맛 · 번개악마맛 · 자색 고구마맛)와 같이 나가면 그 표식이 전부
+    // 그쪽의 피해로 돌아간다. 표식 규칙은 물방울맛/마그마맛의 것과 같다.
+    cheesedumpling: {
+        name: '치즈만두맛 쿠키',
+        shortName: '치즈만두', // shown on the lobby's character-select button
+        color: '#f4d03f',
+        colorLeft: '#f4d03f', // 노랑
+        colorRight: '#27ae60', // 초록
+        grade: '게스트',
+        element: '빛',
+        role: '스트라이커',
+        // 이 게임에서 가장 두꺼운 쿠키다. 피해가 1뿐이라 맞고 버티는 것이 곧
+        // 역할이고, 쓰러져도 각성으로 한 번 더 일어난다.
+        health: 400,
+        speed: 2,
+        // 주먹. 짧고 좁게 지른다.
+        attackType: 'melee_kick',
+        attackRange: 90,
+        attackWidth: 40,
+        attackDamage: 1,
+        attackCooldown: 500,
+        // 패시브 1: 기본공격이 적중할 때마다 빛 표식이 attackMarkUses번 쌓인다.
+        // 각성하면 awakenedForm이 이 값을 0으로 덮어써서 더는 주지 않는다.
+        attackMarkUses: 2,
+        attackMarkMultiplier: 1.3,
+        // 패시브 2: 쓰러지면 그 자리에서 각성한다. 부활이 곧 각성이라
+        // awakenOnReviveNo가 1이다 (번개악마맛은 2번째 부활에서 각성한다).
+        passiveReviveCount: 1,
+        passiveReviveHpRatio: 1,
+        awakenOnReviveNo: 1,
+        // 만두 주먹: 앞을 한 대 치면서 빛 표식을 한 번에 10개 박는다.
+        // 피해는 주먹과 같은 1이다 -- 값어치는 전부 표식 쪽에 있다.
+        skillType: 'mark_punch',
+        skillRange: 90,
+        skillWidth: 40,
+        skillDamage: 1,
+        skillMarkUses: 10,
+        skillMarkMultiplier: 1.3,
+        skillCooldown: 10000,
+        // 치즈만두 덩어리: 자리를 찍어 떨어뜨린다. 화산맛의 마그마 지대와 같은
+        // 방식이지만, 1초마다 피해를 주면서 빛 표식도 같이 박는다.
+        ultimateType: 'dumpling_zone',
+        ultimateRadius: 100,
+        ultimateZoneDamagePerTick: 2,
+        ultimateZoneTickMs: 1000,
+        ultimateZoneDurationMs: 10000,
+        ultimateZoneMarkUses: 4,
+        ultimateZoneMarkMultiplier: 1.3,
+        ultimateCooldownMs: 30000,
+        // 각성 형태. 여기 적힌 것만 덮어쓴다 -- 체력이 400에서 200으로 반토막
+        // 나는 대신 주먹이 1에서 6이 되고, 표식은 더 이상 주지 않는다.
+        awakenedForm: {
+            health: 200,
+            attackDamage: 6,
+            attackMarkUses: 0
+        }
     }
 };
 
@@ -2694,6 +2753,14 @@ const EQUIPMENT = {
         // 부활은 패시브 1번 + 이 검 1번 = 총 2번.
         ownerBonus: { bonusAttack: 2, bonusHealth: 60, bonusRevive: 1 },
         ownerText: '번개지옥맛 쿠키 전용 — 공격력 +2, 체력 +60, 부활 1회 추가(패시브 포함 총 2번).'
+    },
+    // 치즈만두맛은 부활이 곧 각성이다. 그래서 이 만두피가 주는 "부활 1회
+    // 추가"는 각성한 뒤에도 한 번 더 일어난다는 뜻이 된다.
+    yellow_dumpling_skin: {
+        name: '노란 만두피', slot: 'awaken', grade: '게스트', icon: '🥟',
+        ownerChar: 'cheesedumpling',
+        ownerBonus: { bonusHealth: 40, bonusRevive: 1 },
+        ownerText: '치즈만두맛 쿠키 전용 — 체력 +40, 부활 1회 추가(각성한 뒤에도 한 번 더 일어납니다).'
     },
     // ---- 스토리 1층 ----
     wood_stick: {
