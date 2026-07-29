@@ -321,13 +321,21 @@
             <div class="tower-right">
                 <div class="detail-specs">
                 </div>
-                <div id="tower-char-preview" class="char-preview clickable" title="눌러서 캐릭터 변경">
-                    <div id="tower-char-icon" class="char-icon-circle small"></div>
-                    <div id="tower-char-name" class="char-name"></div>
-                </div>
-                <div id="tower-partner-preview" class="char-preview hidden">
-                    <div id="tower-partner-icon" class="char-icon-circle small"></div>
-                    <div id="tower-partner-name" class="char-name"></div>
+                <div class="char-preview-row waiting-row">
+                    <div id="tower-char-preview" class="char-preview clickable" title="눌러서 캐릭터 변경">
+                        <div id="tower-my-ready" class="ready-badge hidden">✅ READY</div>
+                        <div id="tower-char-icon" class="char-icon-circle small"></div>
+                        <div id="tower-char-name" class="char-name"></div>
+                    </div>
+                    <div id="tower-campfire" class="campfire hidden" aria-hidden="true">
+                        <div class="campfire-flame">🔥</div>
+                        <div class="campfire-logs">🪵</div>
+                    </div>
+                    <div id="tower-partner-preview" class="char-preview hidden">
+                        <div id="tower-partner-ready" class="ready-badge hidden">✅ READY</div>
+                        <div id="tower-partner-icon" class="char-icon-circle small"></div>
+                        <div id="tower-partner-name" class="char-name"></div>
+                    </div>
                 </div>
                 <div id="tower-rewards" class="reward-preview"></div>
                 <button id="tower-play-btn" class="play-btn">플레이</button>
@@ -434,12 +442,19 @@
         <button id="detail-leave-btn" class="leave-party-btn hidden">나가기</button>
         <div class="detail-layout">
             <div class="detail-left">
-                <div class="char-preview-row">
+                <div class="char-preview-row waiting-row">
                     <div class="char-preview">
+                        <div id="detail-my-ready" class="ready-badge hidden">✅ READY</div>
                         <div id="detail-char-icon" class="char-icon-circle"></div>
                         <div id="detail-char-name" class="char-name"></div>
                     </div>
+                    <!-- 짝이 맞으면 둘 사이에 모닥불이 피어난다. -->
+                    <div id="detail-campfire" class="campfire hidden" aria-hidden="true">
+                        <div class="campfire-flame">🔥</div>
+                        <div class="campfire-logs">🪵</div>
+                    </div>
                     <div id="detail-partner-preview" class="char-preview hidden">
+                        <div id="detail-partner-ready" class="ready-badge hidden">✅ READY</div>
                         <div id="detail-partner-icon" class="char-icon-circle"></div>
                         <div id="detail-partner-name" class="char-name"></div>
                     </div>

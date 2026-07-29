@@ -1741,6 +1741,36 @@ itemsBtn.addEventListener('click', () => {
 });
 backFromItemsBtn.addEventListener('click', () => showScreen('lobby'));
 
+// ---- 대기 화면 ----
+// 짝이 맞으면 둘이 모닥불을 사이에 두고 마주 서고, 준비를 누른 쪽 머리 위에
+// READY가 뜬다. 보스 레이드와 스토리 타워가 같은 것을 쓴다.
+// els = { campfire, myReady, partnerReady }
+function renderWaitingScene(els, players, matched) {
+    els.campfire.classList.toggle('hidden', !matched);
+    if (!matched) {
+        els.myReady.classList.add('hidden');
+        els.partnerReady.classList.add('hidden');
+        return;
+    }
+    const mine = players && players[socket.id];
+    const partner = players && Object.entries(players).find(([id]) => id !== socket.id);
+    els.myReady.classList.toggle('hidden', !(mine && mine.ready));
+    els.partnerReady.classList.toggle('hidden', !(partner && partner[1].ready));
+}
+
+const detailCampfire = document.getElementById('detail-campfire');
+const detailMyReadyBadge = document.getElementById('detail-my-ready');
+const detailPartnerReadyBadge = document.getElementById('detail-partner-ready');
+const towerCampfire = document.getElementById('tower-campfire');
+const towerMyReadyBadge = document.getElementById('tower-my-ready');
+const towerPartnerReadyBadge = document.getElementById('tower-partner-ready');
+const RAID_WAIT_ELS = {
+    campfire: detailCampfire, myReady: detailMyReadyBadge, partnerReady: detailPartnerReadyBadge
+};
+const TOWER_WAIT_ELS = {
+    campfire: towerCampfire, myReady: towerMyReadyBadge, partnerReady: towerPartnerReadyBadge
+};
+
 // ---- 각성모드 ----
 // 각성 장비를 얻는 모드. 어떤 쿠키의 각성 장비를 노릴지 고르면 그 쿠키의
 // 보스 버전과 싸운다. 파티는 3명이고 혼자 한다. 레벨은 순서 잠금이 없다.
@@ -2694,6 +2724,7 @@ socket.on('storyRoomUpdate', (data) => {
             towerPartnerName.textContent = pStats.name;
             towerPartnerPreview.classList.remove('hidden');
         }
+        renderWaitingScene(TOWER_WAIT_ELS, data.players, true);
         if (!storyMyReady) {
             towerPlayBtn.textContent = '플레이';
             towerPlayBtn.disabled = false;
@@ -2703,6 +2734,7 @@ socket.on('storyRoomUpdate', (data) => {
         storyPhase = 'searching';
         storyMyReady = false;
         towerPartnerPreview.classList.add('hidden');
+        renderWaitingScene(TOWER_WAIT_ELS, data.players, false);
         towerPlayBtn.disabled = true;
         storySearchStartAt = Date.now();
         updateStorySearchLabel();
@@ -3850,6 +3882,7 @@ socket.on('raidRoomUpdate', (data) => {
             detailPartnerName.textContent = pStats.name;
             detailPartnerPreview.classList.remove('hidden');
         }
+        renderWaitingScene(RAID_WAIT_ELS, data.players, true);
         if (!myReady) {
             detailMultiBtn.textContent = '플레이';
             detailMultiBtn.disabled = false;
@@ -3859,6 +3892,7 @@ socket.on('raidRoomUpdate', (data) => {
         raidPhase = 'searching';
         myReady = false;
         detailPartnerPreview.classList.add('hidden');
+        renderWaitingScene(RAID_WAIT_ELS, data.players, false);
         detailSoloBtn.classList.remove('hidden');
         detailMultiBtn.disabled = true;
         detailSoloBtn.disabled = true;

@@ -3040,3 +3040,67 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 @media (max-width: 720px) {
     .awaken-layout { flex-direction: column; align-items: center; }
 }
+
+/* ---- 대기 화면 ---- */
+/* 짝이 맞으면 둘이 모닥불을 사이에 두고 마주 선다. 준비를 누른 쪽 머리 위에
+   READY가 뜨므로, 누가 아직 안 눌렀는지 한눈에 보인다. */
+.waiting-row {
+    align-items: flex-end;
+    justify-content: center;
+    gap: 18px;
+}
+
+.waiting-row .char-preview {
+    position: relative;
+    padding: 12px 14px 10px;
+    border-radius: 12px;
+}
+
+.ready-badge {
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #2ecc71, #21955a);
+    border: 2px solid #a7f3c8;
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+    animation: ready-pop 240ms ease-out;
+}
+
+@keyframes ready-pop {
+    from { transform: scale(0.6); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.campfire {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 8px;
+    filter: drop-shadow(0 0 18px rgba(243, 156, 18, 0.55));
+}
+
+.campfire-flame {
+    font-size: 34px;
+    line-height: 1;
+    animation: campfire-flicker 900ms ease-in-out infinite alternate;
+    transform-origin: bottom center;
+}
+
+.campfire-logs {
+    font-size: 22px;
+    line-height: 1;
+    margin-top: -4px;
+}
+
+@keyframes campfire-flicker {
+    from { transform: scale(1) rotate(-3deg); opacity: 0.85; }
+    to { transform: scale(1.14) rotate(3deg); opacity: 1; }
+}
+
+/* 불빛이 닿는 자리: 짝이 맞았을 때만 은은하게 깔린다. */
+.waiting-row:has(.campfire:not(.hidden)) .char-preview {
+    background: radial-gradient(circle at 50% 90%, rgba(243, 156, 18, 0.18), transparent 70%);
+}
