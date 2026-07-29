@@ -1938,14 +1938,54 @@ const CLEAR_DROPS = {
     story6: ['mint_blade', 'bomber_helm'],
     story7: ['cream_plate', 'cream_greaves'],
     story8: ['cream_greaves', 'frost_boots'],
-    story9: ['dark_blade', 'dark_crown'],
+    story9: ['cream_plate', 'frost_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
 };
-function clearDropsFor(key) { return CLEAR_DROPS[key] || null; }
+// ---- 10층마다 오는 타워 보스전 ----
+// 레전더리 장비는 오직 여기서만 나온다. 스토리 층을 아무리 돌아도 안 나오고,
+// 보스를 잡으면 레전더리 중 하나가 무작위로 떨어진다.
+const TOWER_BOSS_EVERY = 10;
+function isTowerBossFloor(floor) {
+    return typeof floor === 'number' && floor > 0 && floor % TOWER_BOSS_EVERY === 0;
+}
+function legendaryEquipmentIds() {
+    return Object.keys(EQUIPMENT).filter(id => EQUIPMENT[id].grade === '레전더리');
+}
+
+function clearDropsFor(key) {
+    if (CLEAR_DROPS[key]) return CLEAR_DROPS[key];
+    // 보스전 층은 표를 따로 적지 않는다 -- 레전더리 전체가 곧 그 층의 표다.
+    // 그래서 레전더리를 새로 만들면 보스 드랍에 자동으로 끼어든다.
+    const m = /^story(\d+)$/.exec(key || '');
+    if (m && isTowerBossFloor(Number(m[1]))) return legendaryEquipmentIds();
+    return null;
+}
 
 function storyRewardKey(floor) { return 'story' + floor; }
-function clearRewardFor(key) { return CLEAR_REWARDS[key] || null; }
+
+// 보스전 층의 재화 보상. 보스 자체는 아직 없으므로 층수에 맞춰 자동으로
+// 계산해 둔다 -- 진짜 보스가 들어오면 CLEAR_REWARDS에 그 층을 적어서
+// 덮어쓰면 된다 (적어 둔 표가 항상 이깁니다).
+function towerBossReward(floor) {
+    const tier = floor / TOWER_BOSS_EVERY; // 10층=1, 20층=2, ...
+    return {
+        material: 25 * tier,
+        materialRare: 10 * tier,
+        potion: 25 * tier,
+        potionRare: 8 * tier,
+        coins: 3000 * tier,
+        diamonds: 50 * tier,
+        ticketNormal: 3 * tier
+    };
+}
+
+function clearRewardFor(key) {
+    if (CLEAR_REWARDS[key]) return CLEAR_REWARDS[key];
+    const m = /^story(\d+)$/.exec(key || '');
+    if (m && isTowerBossFloor(Number(m[1]))) return towerBossReward(Number(m[1]));
+    return null;
+}
 
 // ==================== 장비 ====================
 // 가방은 계정 공용이고 장착은 쿠키별이다. 한 장비를 다른 쿠키에 끼우면
@@ -2063,6 +2103,18 @@ const EQUIPMENT = {
     dark_crown: {
         name: '어둠의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑',
         bonusHealth: 26, bonusAttack: 2, bonusCooldown: 0.94
+    },
+    dark_mantle: {
+        name: '어둠의 망토', slot: 'armor', grade: '레전더리', icon: '🧥',
+        bonusHealth: 34, bonusDamageTaken: 0.91
+    },
+    dark_greaves: {
+        name: '어둠의 각반', slot: 'leggings', grade: '레전더리', icon: '🦿',
+        bonusHealth: 26, bonusCooldown: 0.93
+    },
+    dark_boots: {
+        name: '어둠의 장화', slot: 'boots', grade: '레전더리', icon: '🥾',
+        bonusHealth: 24, bonusDamageTaken: 0.93
     },
     // ---- 시하라얼 ----
     shihara_spear: {
@@ -2246,7 +2298,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }

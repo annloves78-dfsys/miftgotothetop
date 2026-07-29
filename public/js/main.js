@@ -475,6 +475,17 @@ function equipStatText(src) {
     return parts.join(' · ');
 }
 
+// 보스전에서만 나오는 레전더리 장비 안내 칸. 무엇이 나올지는 무작위라
+// 하나를 콕 집어 보여주지 않고 "레전더리 장비 하나"라고만 알려준다.
+function legendaryDropChipHtml() {
+    return `
+        <div class="reward-chip legendary-chip">
+            <span class="reward-chip-icon">⚔</span>
+            <span class="reward-chip-amount">1</span>
+            <span class="reward-chip-label">레전더리 장비</span>
+        </div>`;
+}
+
 function equipDropChipHtml(dropped) {
     if (!dropped) return '';
     const item = dropped.item;
@@ -2200,8 +2211,12 @@ function renderTower() {
     floors.forEach(f => {
         const unlocked = isFloorUnlocked(f);
         const card = document.createElement('div');
-        card.className = 'floor-card' + (unlocked ? '' : ' locked') + (f === selectedStoryFloor ? ' selected' : '');
-        card.textContent = unlocked ? `${f}층` : `🔒 ${f}층`;
+        const isBoss = SHARED.isTowerBossFloor(f);
+        card.className = 'floor-card' + (unlocked ? '' : ' locked')
+            + (f === selectedStoryFloor ? ' selected' : '') + (isBoss ? ' boss-floor' : '');
+        // 10층마다 오는 보스전은 한눈에 구분되어야 한다 -- 레전더리가 여기서만 나온다.
+        const label = isBoss ? `${f}층 보스` : `${f}층`;
+        card.textContent = unlocked ? label : `🔒 ${label}`;
         if (unlocked) {
             card.addEventListener('click', () => {
                 if (f !== selectedStoryFloor) leaveStoryRoomIfWaiting();
@@ -2216,7 +2231,8 @@ function renderTower() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     towerCharIcon.style.background = charIconBackground(stats);
     towerCharName.textContent = stats.name;
-    towerRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(SHARED.storyRewardKey(selectedStoryFloor)));
+    towerRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(SHARED.storyRewardKey(selectedStoryFloor)))
+        + (SHARED.isTowerBossFloor(selectedStoryFloor) ? legendaryDropChipHtml() : '');
     towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor) || !floorDef;
     // 짝을 기다리는 중에는 위 판정과 상관없이 버튼 상태를 건드리지 않는다.
     if (storyPhase === 'searching' || storyMyReady) towerPlayBtn.disabled = true;
