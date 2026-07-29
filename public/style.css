@@ -3176,3 +3176,39 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 
 .swap-hp-fill { display: block; height: 100%; background: #2ecc71; }
+
+/* ---- 보스 부활 알림 ---- */
+/* 보스가 쓰러졌다가 다시 일어나면 왜 안 죽었는지 알 수 있게 크게 알린다. */
+.boss-revive-banner {
+    position: absolute;
+    left: 50%;
+    top: 18%;
+    transform: translateX(-50%);
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 26px;
+    border-radius: 12px;
+    background: rgba(24, 8, 12, 0.82);
+    border: 2px solid #e74c3c;
+    box-shadow: 0 0 26px rgba(231, 76, 60, 0.55);
+    pointer-events: none;
+    animation: brb-in 260ms ease-out;
+}
+
+.brb-title {
+    color: #ff8a7a;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.brb-sub { color: #e8c1bb; font-size: 13px; }
+
+@keyframes brb-in {
+    from { transform: translateX(-50%) scale(0.7); opacity: 0; }
+    to { transform: translateX(-50%) scale(1); opacity: 1; }
+}

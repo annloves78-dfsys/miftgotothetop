@@ -1820,7 +1820,7 @@ function awakenBossStatLines(charType, level) {
     const base = SHARED.CHARACTERS[charType];
     const stats = SHARED.awakenLevelStats(level) || {};
     const lines = [];
-    lines.push(`체력 ${SHARED.awakenBossMaxHp(charType, level)} (+${SHARED.awakenLevelHealthBonus(level)})`);
+    lines.push(`체력 ${SHARED.awakenBossMaxHp(charType, level)} (+${SHARED.awakenLevelHealthBonus(charType, level)})`);
     const atk = SHARED.awakenBossAttackDamage(charType, level);
     if (atk != null) lines.push(`공격력 ${atk} (+${stats.attack || 0})`);
     if (stats.speed) lines.push(`이동 속도 +${stats.speed}`);
@@ -2981,12 +2981,32 @@ socket.on('bossMinions', ({ monsters }) => {
 socket.on('monsterShield', ({ id, shieldHp }) => {
     if (storyMonsters && storyMonsters[id]) storyMonsters[id].shieldHp = shieldHp;
 });
-// 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌린다.
-socket.on('bossRevived', ({ x, y, monsters }) => {
+// 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 화면에도
+// 크게 알린다 -- 아니면 왜 안 죽었는지 알 수가 없다.
+const bossReviveBanner = document.getElementById('boss-revive-banner');
+let bossReviveBannerHandle = null;
+socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     if (monsters) storyMonsters = monsters;
-    storyImpactEffects.push({ x, y, radius: 110, until: performance.now() + 600 });
-    storyQuakeUntil = performance.now() + 450;
+    // 겹겹의 고리로 크게 터뜨린다.
+    const now = performance.now();
+    [70, 130, 200].forEach((r, i) => {
+        storyImpactEffects.push({ x, y, radius: r, until: now + 500 + i * 220 });
+    });
+    storyQuakeUntil = now + 600;
     updateStoryMonstersLeft();
+
+    const m = storyMonsters && storyMonsters[id];
+    const def = m && SHARED.MONSTERS[m.type];
+    const name = (def && def.name) || '보스';
+    bossReviveBanner.innerHTML = `<span class="brb-title">💀 ${name} 부활!</span>`
+        + `<span class="brb-sub">${left > 0 ? `아직 ${left}번 더 일어납니다` : '이번이 마지막입니다'}</span>`;
+    bossReviveBanner.classList.remove('hidden');
+    // 다시 일어나면 타이머를 새로 잡는다 (겹쳐도 2초는 보이게).
+    if (bossReviveBannerHandle) clearTimeout(bossReviveBannerHandle);
+    bossReviveBannerHandle = setTimeout(() => {
+        bossReviveBanner.classList.add('hidden');
+        bossReviveBannerHandle = null;
+    }, 2200);
 });
 // 일어나면서 터지는 충격파 (번개지옥맛).
 socket.on('bossReviveBlast', ({ x, y }) => {
