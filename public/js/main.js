@@ -715,8 +715,15 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
-            case 'undying_soul':
-                return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복합니다. ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다.${cd}`;
+            case 'undying_soul': {
+                const summon = stats.ultimateSummon;
+                const minions = summon
+                    ? ` 또한 ${stats.ultimateSummonCount}마리의 부하를 불러냅니다. 부하는 체력 ${summon.health},`
+                      + ` 이동 속도 ${summon.speed}로 스스로 가장 가까운 적에게 다가가 ${sec(summon.attackCooldown)}초마다 ${summon.attackDamage}의 피해를 주며,`
+                      + ` 적에게 맞으면 쓰러지고 궁극기가 끝나면 사라집니다.`
+                    : '';
+                return `죽지 않는 영혼을 불러내 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복합니다. ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다.${minions}${cd}`;
+            }
             case 'lightning_strike':
                 return `원하는 지점에 번개를 내려 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다. 맞은 적은 ${sec(stats.ultimateStunMs)}초 동안 기절하고, ${sec(stats.ultimateDebuffDurationMs)}초 동안 주는 피해가 ${stats.ultimateDamageDebuffMultiplier}배로 줄어듭니다.${cd}`;
             case 'mark_flood':
@@ -1109,6 +1116,45 @@ function setupUltimateJoystick(zoneEl, isStory) {
 // stick-aimed cast readable.
 // 크게베기. 예열 동안은 벤 자리가 흐리게 차오르고, 베는 순간 확 밝아졌다가
 // 짧게 사라진다. 예고가 보여야 피할 틈이 생긴다.
+
+// 부하(번개지옥맛 궁극기). 작은 노란 몸에 얼굴 방향 표시와 체력 고리.
+// 내 부하는 테두리를 밝게 해서 남의 것과 구분한다.
+function drawSummons(c, summons, mySocketId) {
+    Object.values(summons || {}).forEach(s => {
+        const R = SHARED.SUMMON_RADIUS;
+        c.save();
+        c.translate(s.x, s.y);
+        c.rotate(s.facing || 0);
+        // 뾰족한 앞코: 어디를 보고 있는지 알 수 있게.
+        c.beginPath();
+        c.moveTo(R + 6, 0);
+        c.lineTo(R - 3, -6);
+        c.lineTo(R - 3, 6);
+        c.closePath();
+        c.fillStyle = '#f39c12';
+        c.fill();
+        c.restore();
+
+        c.save();
+        c.translate(s.x, s.y);
+        c.beginPath();
+        c.arc(0, 0, R, 0, Math.PI * 2);
+        c.fillStyle = '#f1c40f';
+        c.fill();
+        c.strokeStyle = s.ownerId === mySocketId ? '#fff' : '#7f8c8d';
+        c.lineWidth = 2;
+        c.stroke();
+        // 체력 고리: 남은 만큼만 노랗게 돈다.
+        const pct = Math.max(0, Math.min(1, s.hp / (s.maxHp || 1)));
+        c.beginPath();
+        c.arc(0, 0, R + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+        c.strokeStyle = 'rgba(46, 204, 113, 0.9)';
+        c.lineWidth = 3;
+        c.stroke();
+        c.restore();
+    });
+}
+
 function drawGreatSlashes(c, slashes, now) {
     slashes.forEach(g => {
         const age = now - (g.until - g.windupMs - 250);
@@ -2361,6 +2407,8 @@ let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
 // 같이 들어온 사람. 내 것은 여기 안 들어온다 (내 쿠키는 storyPlayer가 주인).
 // 서버 틱(50ms)마다 통째로 갈아 끼우고, 그 사이는 그냥 마지막 자리에 그린다.
 let storyPartners = {};
+// 번개지옥맛 궁극기가 부른 부하들. 서버 틱마다 통째로 갈아 끼운다.
+let storySummons = {};
 let storyMouseX = null;
 let storyMouseY = null;
 let storyLoopHandle = null;
@@ -2424,7 +2472,8 @@ socket.on('monsterExploded', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 320 });
 });
 
-socket.on('storyTick', ({ monsters, projectiles, players }) => {
+socket.on('storyTick', ({ monsters, projectiles, players, summons }) => {
+    storySummons = summons || {};
     if (players) {
         const next = {};
         Object.entries(players).forEach(([id, pl]) => { if (id !== socket.id) next[id] = pl; });
@@ -2558,6 +2607,7 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     stopStoryLoop();
     // 한 판이 끝났으면 타워 버튼도 처음 상태로 (다시 짝을 찾을 수 있게).
     storyPartners = {};
+    storySummons = {};
     resetTowerActions();
     resultRewardsEl.innerHTML = '';
     const stage = eventStageById(floor);
@@ -3177,6 +3227,8 @@ function storyRender(now) {
         storyCtx.stroke();
     });
 
+    drawSummons(storyCtx, storySummons, socket.id);
+
     // 파트너는 내 쿠키보다 먼저 그린다 -- 겹쳤을 때 내가 위에 오는 편이
     // 자기 쿠키를 놓치지 않는다.
     Object.values(storyPartners).forEach(pl => {
@@ -3487,6 +3539,7 @@ let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in are
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
 let raidQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
+let raidSummons = {}; // 번개지옥맛 궁극기가 부른 부하들
 let raidGreatSlashes = []; // 크게베기의 벤 자리
 let raidDrops = {}; // id -> thrown 물방울 in flight
 let raidDropSplashes = []; // [{x, y, until}]
@@ -3524,6 +3577,7 @@ socket.on('raidStarted', (data) => {
     raidDrops = {};
     raidDropSplashes = [];
     raidGreatSlashes = [];
+    raidSummons = {};
     bossMark = null;
     raidQuakeUntil = 0;
     resetDetailActions();
@@ -3565,6 +3619,8 @@ socket.on('skillMark', ({ x, y, radius }) => {
 socket.on('ultimateMark', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 700 });
 });
+socket.on('summonTick', ({ summons }) => { raidSummons = summons || {}; });
+
 socket.on('greatSlash', (d) => {
     raidGreatSlashes.push({ ...d, until: performance.now() + d.windupMs + 250 });
     const me = players[socket.id];
@@ -3984,6 +4040,7 @@ function render(now) {
         ctx.fillText(elementMarkLabel(bossMark), 0, 0);
         ctx.restore();
     }
+    drawSummons(ctx, raidSummons, socket.id);
     Object.values(players).forEach(p => p.draw(ctx, now));
 
     raidGreatSlashes = raidGreatSlashes.filter(g => now < g.until);

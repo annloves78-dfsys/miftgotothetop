@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor } = require('./public/js/shared.js');
@@ -544,6 +544,30 @@ function tickRoom(roomId) {
         }
     }
 
+    // 부하는 레이드에서는 늘 한가운데 보스를 친다. 보스는 부하를 무시한다
+    // (패턴이 사람을 겨냥해 돌아가므로, 부하는 시간이 다 되면 사라진다).
+    tickSummons(roomId, room, now, {
+        nearestEnemy: () => ({ x: 0, y: 0, radius: BOSS_RADIUS, boss: true }),
+        clamp: (s) => {
+            const d = Math.hypot(s.x, s.y);
+            const max = ARENA_RADIUS - SUMMON_RADIUS;
+            if (d > max) { s.x = (s.x / d) * max; s.y = (s.y / d) * max; }
+        },
+        hit: (t, dmg, s) => {
+            room.bossHp = Math.max(0, room.bossHp - dmg);
+            io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: s.ownerId });
+            if (room.bossHp <= 0) endRoom(roomId, 'win');
+        }
+    });
+    if (!rooms[roomId]) return;
+    // 레이드는 따로 상태를 매 틱 보내지 않으므로, 부하가 있을 때만 알린다.
+    if (room.summons && Object.keys(room.summons).length) {
+        io.to(roomId).emit('summonTick', { summons: publicSummons(room) });
+    } else if (room.summonsWereShown) {
+        io.to(roomId).emit('summonTick', { summons: {} });
+    }
+    room.summonsWereShown = !!(room.summons && Object.keys(room.summons).length);
+
     if (room.bossStunnedUntil && now < room.bossStunnedUntil) return; // frozen: no pattern progression at all
 
     // 시하라얼처럼 몸에 닿아 있는 것만으로 아픈 보스. 패턴과 따로 돌아서,
@@ -849,6 +873,8 @@ function storyMonsterCtx(roomId, room) {
     return {
         roomId, room, floorDef,
         damagePlayer: (playerId, dmg, mark) => applyDamageToStoryPlayer(roomId, playerId, dmg, mark),
+        damageTarget: (ref, dmg, mark) => damageTargetRef(roomId, room, ref, dmg, mark,
+            (pid, d, mk) => applyDamageToStoryPlayer(roomId, pid, d, mk)),
         clamp: (m) => { if (floorDef) { const k = clampToLane(floorDef, m.x, m.y); m.x = k.x; m.y = k.y; } },
         // A raised shield stops an EMPLACEMENT firing through it; see shieldBetween.
         sightBlocked: (m, target, def) => def.speed === 0 && !!floorDef && shieldBetween(room, floorDef, m, target),
@@ -891,26 +917,120 @@ function tickMonsterProjectiles(ctx, alivePlayers, dtMs) {
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
 
-        let hitPlayerId = null;
+        // 부하도 화살에 맞는다. 반지름이 작아서 사람보다 맞기 어렵다.
+        let hitRef = null;
         for (const p of alivePlayers) {
-            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= PLAYER_RADIUS + PROJECTILE_RADIUS) {
-                hitPlayerId = Object.keys(room.players).find(pid => room.players[pid] === p);
-                break;
-            }
+            const r = (room.summons && Object.values(room.summons).includes(p)) ? SUMMON_RADIUS : PLAYER_RADIUS;
+            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + PROJECTILE_RADIUS) { hitRef = p; break; }
         }
 
         const expired = now - pr.bornAt >= PROJECTILE_MAX_LIFETIME_MS;
-        if (hitPlayerId || expired || ctx.outOfBounds(pr)) {
+        if (hitRef || expired || ctx.outOfBounds(pr)) {
             delete room.projectiles[id];
-            io.to(roomId).emit(ctx.ev.projectileGone, { id, hit: !!hitPlayerId, x: pr.x, y: pr.y });
-            if (hitPlayerId) {
-                ctx.damagePlayer(hitPlayerId, pr.damage, pr.elementMark);
+            io.to(roomId).emit(ctx.ev.projectileGone, { id, hit: !!hitRef, x: pr.x, y: pr.y });
+            if (hitRef) {
+                ctx.damageTarget(hitRef, pr.damage, pr.elementMark);
                 if (!rooms[roomId]) return; // player died; room already torn down
             }
         }
     }
 }
 
+
+
+// ==================== 부하 (소환수) ====================
+// 번개지옥맛 궁극기가 불러내는 편. 몬스터와 반대로 이쪽 편에서 싸운다:
+// 가장 가까운 적에게 걸어가 스스로 때리고, 궁극기 시간이 끝나면 사라진다.
+// 적에게 맞으면 죽는다 -- 몬스터가 표적을 고를 때 사람과 같이 후보에 든다.
+function spawnSummons(roomId, room, ownerId, character, now) {
+    if (!character.ultimateSummonCount || !character.ultimateSummon) return;
+    const p = room.players[ownerId];
+    if (!p) return;
+    const def = character.ultimateSummon;
+    room.summons = room.summons || {};
+    room.nextSummonId = room.nextSummonId || 0;
+    for (let i = 0; i < character.ultimateSummonCount; i++) {
+        const ang = (Math.PI * 2 * i) / character.ultimateSummonCount;
+        room.summons['s' + (room.nextSummonId++)] = {
+            ownerId,
+            x: p.x + Math.cos(ang) * 48,
+            y: p.y + Math.sin(ang) * 48,
+            facing: ang,
+            hp: def.health, maxHp: def.health,
+            alive: true, lastAttackAt: 0,
+            until: now + character.ultimateDurationMs
+        };
+    }
+}
+
+function summonDefOf(room, s) {
+    const owner = room.players[s.ownerId];
+    const character = owner && CHARACTERS[owner.charType];
+    return (character && character.ultimateSummon) || null;
+}
+
+function damageSummon(room, sid, dmg) {
+    const s = room.summons && room.summons[sid];
+    if (!s || !s.alive) return;
+    s.hp = Math.max(0, s.hp - Math.round(dmg));
+    if (s.hp <= 0) s.alive = false;
+}
+
+// 사람 + 부하를 한 줄로. 몬스터는 이 중에서 가장 가까운 것을 고른다.
+function aliveTargetsOf(room) {
+    const out = Object.values(room.players).filter(p => p.alive);
+    if (room.summons) {
+        for (const s of Object.values(room.summons)) if (s.alive) out.push(s);
+    }
+    return out;
+}
+
+// 이 참조가 사람인지 부하인지 가려서 알맞은 곳으로 피해를 보낸다.
+function damageTargetRef(roomId, room, ref, dmg, mark, damagePlayer) {
+    const pid = Object.keys(room.players).find(id => room.players[id] === ref);
+    if (pid) { damagePlayer(pid, dmg, mark); return; }
+    const sid = room.summons && Object.keys(room.summons).find(id => room.summons[id] === ref);
+    if (sid) damageSummon(room, sid, dmg);
+}
+
+// 부하 한 틱. 적을 찾고, 다가가고, 사거리에 들면 때린다.
+function tickSummons(roomId, room, now, api) {
+    if (!room.summons || !Object.keys(room.summons).length) return;
+    for (const [id, s] of Object.entries(room.summons)) {
+        if (!s.alive) continue;
+        if (now >= s.until) { s.alive = false; continue; }
+        const def = summonDefOf(room, s);
+        if (!def) { s.alive = false; continue; }
+        const target = api.nearestEnemy(s);
+        if (!target) continue;
+        const gap = Math.hypot(target.x - s.x, target.y - s.y) - (target.radius || 0);
+        s.facing = Math.atan2(target.y - s.y, target.x - s.x);
+        if (gap > def.attackRange * 0.6) {
+            const step = Math.min(def.speed * 3, gap);
+            s.x += Math.cos(s.facing) * step;
+            s.y += Math.sin(s.facing) * step;
+            if (api.clamp) api.clamp(s);
+        }
+        if (gap <= def.attackRange && now - s.lastAttackAt >= def.attackCooldown) {
+            s.lastAttackAt = now;
+            api.hit(target, def.attackDamage, s);
+            if (!rooms[roomId]) return;
+        }
+    }
+    for (const id of Object.keys(room.summons)) {
+        if (!room.summons[id].alive) delete room.summons[id];
+    }
+}
+
+function publicSummons(room) {
+    const out = {};
+    if (!room.summons) return out;
+    for (const [id, s] of Object.entries(room.summons)) {
+        if (!s.alive) continue;
+        out[id] = { x: s.x, y: s.y, facing: s.facing, hp: s.hp, maxHp: s.maxHp, ownerId: s.ownerId };
+    }
+    return out;
+}
 
 // ==================== Player projectiles ====================
 // A melee swing resolves the instant the button is pressed. A thrown attack
@@ -1347,8 +1467,7 @@ function tickLaser(ctx, m, mid, def, nearest, alivePlayers, now) {
     m.laser.nextDamageAt += def.laserTickMs;
     for (const p of alivePlayers) {
         if (!meleeLineHitPoint(m.x, m.y, m.laser.angle, def.laserRange, def.laserWidth, p.x, p.y, PLAYER_RADIUS)) continue;
-        const targetId = Object.keys(room.players).find(id => room.players[id] === p);
-        ctx.damagePlayer(targetId, def.laserDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+        ctx.damageTarget(p, def.laserDamage * outgoingDamageMultiplier(m, now), m.elementMark);
         if (!rooms[roomId]) return; // that hit may have ended the floor
     }
 }
@@ -1449,8 +1568,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                     const dmg = def.attackDamage * outgoingDamageMultiplier(m, now);
                     for (const p of alivePlayers) {
                         if (Math.hypot(p.x - m.x, p.y - m.y) > def.explodeRadius + PLAYER_RADIUS) continue;
-                        const pid = Object.keys(room.players).find(id => room.players[id] === p);
-                        ctx.damagePlayer(pid, dmg, m.elementMark);
+                        ctx.damageTarget(p, dmg, m.elementMark);
                         if (!rooms[roomId]) return;
                     }
                     continue;
@@ -1461,9 +1579,8 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                     io.to(roomId).emit(ctx.ev.attack, { id: mid });
                     spawnMonsterProjectile(ctx, mid, m, def, nearest.x, nearest.y);
                 } else if (d <= def.attackRange) {
-                    const targetId = Object.keys(room.players).find(id => room.players[id] === nearest);
                     io.to(roomId).emit(ctx.ev.attack, { id: mid });
-                    ctx.damagePlayer(targetId, def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+                    ctx.damageTarget(nearest, def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
                     if (!rooms[roomId]) return;
                 }
             }
@@ -1528,10 +1645,32 @@ function tickStoryRoom(roomId) {
     }
 
     const ctx = storyMonsterCtx(roomId, room);
-    tickMonsterSet(ctx, alivePlayers, now);
+    // 부하도 몬스터의 표적이 된다 (사람과 같은 줄에 세운다).
+    const targets = aliveTargetsOf(room);
+    tickMonsterSet(ctx, targets, now);
+    if (!rooms[roomId]) return;
 
+    // 부하는 살아 있는 몬스터 중 가장 가까운 것을 스스로 때린다.
+    const floorForSummons = floorDefFor(room.floor);
+    tickSummons(roomId, room, now, {
+        nearestEnemy: (s) => {
+            let best = null, bestD = Infinity;
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                const d = Math.hypot(m.x - s.x, m.y - s.y);
+                if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: MONSTER_RADIUS, mid, m }; }
+            }
+            return best;
+        },
+        clamp: (s) => { if (floorForSummons) { const k = clampToLane(floorForSummons, s.x, s.y); s.x = k.x; s.y = k.y; } },
+        hit: (t, dmg) => {
+            t.m.hp = Math.max(0, t.m.hp - dmg);
+            if (t.m.hp <= 0) { t.m.alive = false; io.to(roomId).emit('monsterDefeated', { id: t.mid }); }
+            else io.to(roomId).emit('monsterDamaged', { id: t.mid, hp: t.m.hp });
+        }
+    });
     if (!rooms[roomId]) return; // room may have just ended (player died) mid-loop above
-    tickMonsterProjectiles(ctx, alivePlayers, 50);
+    tickMonsterProjectiles(ctx, targets, 50);
     if (!rooms[roomId]) return; // an arrow may have just killed the last player
 
     // Thrown drops. A drop can also pop the stage's star, so 물방울맛 can
@@ -1571,6 +1710,7 @@ function tickStoryRoom(roomId) {
     io.to(roomId).emit('storyTick', {
         monsters: publicMonsters(room),
         projectiles: publicProjectiles(room),
+        summons: publicSummons(room),
         // 파트너를 그리려면 위치가 필요하다. 솔로 방이면 자기 자신 하나뿐이라
         // 클라이언트가 그냥 무시한다.
         players: publicStoryPlayers(room)
@@ -2086,6 +2226,8 @@ function guestMonsterCtx(roomId, room) {
     return {
         roomId, room,
         damagePlayer: (playerId, dmg, mark) => applyDamageToGuestPlayer(roomId, playerId, dmg, mark),
+        damageTarget: (ref, dmg, mark) => damageTargetRef(roomId, room, ref, dmg, mark,
+            (pid, d, mk) => applyDamageToGuestPlayer(roomId, pid, d, mk)),
         clamp: (m) => {
             m.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, m.x));
             m.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, m.y));
@@ -2481,10 +2623,35 @@ function tickGuestRoom(roomId) {
 
     // Summoned adds (2차) live in the same room and fight on their own clock.
     if (Object.keys(room.monsters).length) {
-        const mctx = guestMonsterCtx(roomId, room);
-        tickMonsterSet(mctx, guestAlivePlayers(room), now);
+        // 부하는 몬스터를 먼저 치고, 없으면 보스를 친다.
+        tickSummons(roomId, room, now, {
+            nearestEnemy: (s) => {
+                let best = null, bestD = Infinity;
+                for (const [mid, m] of Object.entries(room.monsters)) {
+                    if (!m.alive) continue;
+                    const d = Math.hypot(m.x - s.x, m.y - s.y);
+                    if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: MONSTER_RADIUS, mid }; }
+                }
+                if (best) return best;
+                const gdef = GUEST_BOSS_DEFS[room.guestId];
+                return { x: room.bossX, y: room.bossY, radius: (gdef && gdef.radius) || 46, boss: true };
+            },
+            clamp: (s) => {
+                s.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, s.x));
+                s.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, s.y));
+            },
+            hit: (t, dmg, s) => {
+                if (t.boss) damageGuestBoss(roomId, room, dmg, s.ownerId);
+                else damageGuestMonster(roomId, room, t.mid, dmg);
+            }
+        });
         if (!rooms[roomId]) return;
-        tickMonsterProjectiles(mctx, guestAlivePlayers(room), 50);
+
+        const mctx = guestMonsterCtx(roomId, room);
+        const gTargets = aliveTargetsOf(room);
+        tickMonsterSet(mctx, gTargets, now);
+        if (!rooms[roomId]) return;
+        tickMonsterProjectiles(mctx, gTargets, 50);
         if (!rooms[roomId]) return;
     }
 
@@ -2697,6 +2864,7 @@ function guestTickPayload(room) {
         };
     }
     return {
+        summons: publicSummons(room),
         bossHp: room.bossHp,
         bossMaxHp: room.bossMaxHp,
         bossShieldHp: room.bossShieldHp || 0,
@@ -3306,6 +3474,7 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             }
+            spawnSummons(roomId, room, socket.id, character, now);
         }
     });
 
@@ -3630,6 +3799,7 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             }
+            spawnSummons(roomId, room, socket.id, character, now);
         }
     });
 
@@ -4093,6 +4263,7 @@ io.on('connection', (socket) => {
             p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
             p.partyHp[p.active] = p.hp;
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            spawnSummons(roomId, room, socket.id, character, now);
         } else if (character.ultimateType === 'element_mark') {
             p.elementMarkUntil = now + character.ultimateDurationMs;
         }

@@ -57,6 +57,7 @@ let guestIsTargetingSkill = false; // 때파기 / 물방울 터트리기 aim lik
 let guestPhaseNo = 1;        // 1차 / 2차
 let guestMonsters = {};      // 부하 소환 (2차)
 let guestProjectiles = {};
+let guestSummons = {}; // 번개지옥맛 궁극기가 부른 부하들
 let guestGreatSlashes = []; // 크게베기의 벤 자리
 let guestDrops = {}; // id -> thrown 물방울 in flight
 let guestDropSplashes = []; // [{x, y, until}]
@@ -367,6 +368,7 @@ socket.on('guestStarted', (data) => {
 
 socket.on('guestTick', (data) => {
     if (!guestState) return;
+    guestSummons = data.summons || {};
     guestState.bossHp = data.bossHp;
     if (data.bossMaxHp) guestState.bossMaxHp = data.bossMaxHp;
     guestState.bossShieldHp = data.bossShieldHp || 0;
@@ -449,7 +451,7 @@ socket.on('guestPhase2Started', (data) => {
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestImpacts = []; guestFallZones = [];
     guestMonsters = {}; guestProjectiles = {};
-    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = [];
+    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     if (me) syncGuestMobileIcons(me.charType);
     updateGuestHpBars();
@@ -584,7 +586,7 @@ socket.on('guestResult', ({ result }) => {
     guestDiscardOverlay.classList.add('hidden');
     guestDiscardChoicesEl.classList.remove('locked');
     guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
-    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = [];
+    guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
     const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
@@ -1073,6 +1075,7 @@ function guestRender(now) {
         guestCtx.fillRect(-8, -2, 16, 4);
         guestCtx.restore();
     });
+    drawSummons(guestCtx, guestSummons, socket.id);
     guestGreatSlashes = guestGreatSlashes.filter(g => now < g.until);
     drawGreatSlashes(guestCtx, guestGreatSlashes, now);
     drawThrownDrops(guestCtx, guestDrops, now);
