@@ -1378,7 +1378,7 @@ function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
 }
 
 function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
-    let dmg = Math.round(baseDamage * consumeElementMark(m, character, now) * monsterDamageTaken(m));
+    let dmg = Math.round(damageWithMark(m, character, baseDamage, now, opts.markUse) * monsterDamageTaken(m));
     dmg = absorbMonsterShield(roomId, mid, m, dmg);
     m.hp = Math.max(0, m.hp - dmg);
     if (m.hp <= 0) {
@@ -1452,8 +1452,9 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
     // boss. Goes through the shared helper so a timed mark (폭포 / 마그마 쏟기)
     // behaves the same here.
     const before = room.bossElementMark;
-    const mult = consumeElementMark(bossMarkTarget(room), character, now);
-    dmg = Math.round(dmg * mult);
+    // swing이 있는 호출만 기본공격이다 (날아간 물방울은 표식 규칙이 그대로).
+    const markUse = swing ? markUseOf(character, p) : null;
+    dmg = Math.round(damageWithMark(bossMarkTarget(room), character, dmg, now, markUse));
     let markChanged = before !== room.bossElementMark
         || (before && room.bossElementMark && before.charges !== room.bossElementMark.charges);
 
@@ -2057,6 +2058,41 @@ function attackMarkChargesOf(character, p) {
 }
 function attackMarkOpts(character, charges) {
     return { charges, multiplier: character.attackMarkMultiplier || 1.3 };
+}
+
+// 이 쿠키가 자기 앞의 표식을 어떻게 대하는가. 기본은 "먹고 배수를 받는다"이고,
+// 표식을 쌓는 쿠키(치즈만두맛)만 두 가지가 다르다:
+//   skip  = 자기 표식을 아예 건드리지 않는다 (쌓기만 한다)
+//   bonus = 먹을 때 배수 대신 한 개당 이만큼을 더한다 (각성한 뒤)
+function markUseOf(character, p) {
+    return {
+        skip: !!stat(character, p, 'keepsOwnMarks'),
+        bonus: stat(character, p, 'markEatBonus') || 0
+    };
+}
+
+// 표식이 붙은 대상에 한 방 넣을 때의 최종 피해. use가 없으면 지금까지와 똑같이
+// 배수만 적용된다.
+function damageWithMark(target, character, baseDamage, now, use) {
+    if (use && use.skip) return baseDamage;
+    const mult = consumeElementMark(target, character, now);
+    if (mult === 1) return baseDamage;
+    if (use && use.bonus) return baseDamage + use.bonus; // 배수 대신 더하기
+    return baseDamage * mult;
+}
+
+// 만두 주먹: 대상에 쌓인 자기 속성 표식을 한 번에 터뜨린다. 터진 만큼 표식이
+// 사라지고, 표식 한 개당 skillMarkBurstDamage의 추가 피해를 돌려준다.
+// 시간짜리 표식(폭포·마그마 쏟기)은 횟수가 없으므로 터지지 않는다.
+function burstElementMarks(target, character) {
+    const per = character.skillMarkBurstDamage;
+    if (!per) return 0;
+    const mark = target.elementMark;
+    if (!mark || mark.element !== character.element || !mark.charges) return 0;
+    const n = Math.min(mark.charges, character.skillMarkBurstMax || Infinity);
+    mark.charges -= n;
+    if (mark.charges <= 0) target.elementMark = null;
+    return n * per;
 }
 
 // 지대 궁극기(화산맛 마그마 지대 · 치즈만두맛 덩어리)는 같은 buff 하나로
@@ -3966,7 +4002,8 @@ io.on('connection', (socket) => {
                 if (landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
                     knockback: true, floorDef, fromX: p.x, fromY: p.y,
                     marks: !!(p.elementMarkUntil && now < p.elementMarkUntil),
-                    attackMarks: attackMarkChargesOf(character, p)
+                    attackMarks: attackMarkChargesOf(character, p),
+                    markUse: markUseOf(character, p)
                 })) anyKill = true;
             }
         }
@@ -4138,11 +4175,14 @@ io.on('connection', (socket) => {
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
                 if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) continue;
-                if (hurtStoryMonster(roomId, room, mid, m, character.skillDamage)) continue;
-                if (!applyElementMark(m, character.element, skillMarkOpts(character), now)) continue;
-                io.to(roomId).emit('monsterMarked', {
-                    id: mid, element: m.elementMark.element, charges: m.elementMark.charges
-                });
+                // 먼저 10개를 박고, 쌓여 있던 것까지 한꺼번에 터뜨린다.
+                if (applyElementMark(m, character.element, skillMarkOpts(character), now)) {
+                    io.to(roomId).emit('monsterMarked', {
+                        id: mid, element: m.elementMark.element, charges: m.elementMark.charges
+                    });
+                }
+                hurtStoryMonster(roomId, room, mid, m,
+                    character.skillDamage + burstElementMarks(m, character));
             }
         }
         // 슈가 플라이맛 돌진: rush forward, hit the first thing in the lane,
@@ -4611,19 +4651,24 @@ io.on('connection', (socket) => {
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
         }
-        // 치즈만두맛 만두 주먹: 보스를 한 대 치면서 표식을 크게 박는다.
+        // 치즈만두맛 만두 주먹: 보스에 표식을 박고, 쌓여 있던 것까지 터뜨린다.
         else if (character.skillType === 'mark_punch') {
             if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
-                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
-                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
-                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
-                if (applyElementMark(bossMarkTarget(room), character.element, skillMarkOpts(character), now)) {
-                    io.to(roomId).emit('bossMarked', {
+                const target = bossMarkTarget(room);
+                let burst = 0;
+                if (applyElementMark(target, character.element, skillMarkOpts(character), now)) {
+                    burst = burstElementMarks(target, character);
+                }
+                io.to(roomId).emit('bossMarked', room.bossElementMark
+                    ? {
                         element: room.bossElementMark.element,
                         charges: room.bossElementMark.charges,
                         until: room.bossElementMark.until
-                    });
-                }
+                    }
+                    : { element: null, charges: 0 });
+                room.bossHp = Math.max(0, room.bossHp - (character.skillDamage + burst));
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
             }
         } else if (character.skillType === 'self_heal') {
             const healed = Math.min(p.maxHp, p.hp + character.skillHealAmount);
@@ -5013,8 +5058,15 @@ io.on('connection', (socket) => {
         const targets = guestLineTargets(room, swing.originX, swing.originY, p.facing, swing.range, swing.width);
         if (!targets.length) return;
 
-        damageGuestTargets(roomId, room, targets, swing.damage, socket.id);
-        if (!rooms[roomId]) return;
+        // 표식이 붙어 있으면 같은 속성의 공격이 더 아프다 -- 스토리 층과 레이드는
+        // 원래 그랬는데 게스트 레이드만 표식을 아예 안 보고 있었다.
+        const markUse = markUseOf(character, p);
+        for (const t of targets) {
+            const ref = t.boss ? bossMarkTarget(room) : room.monsters[t.mid];
+            const dmg = ref ? damageWithMark(ref, character, swing.damage, now, markUse) : swing.damage;
+            damageGuestTargets(roomId, room, [t], dmg, socket.id);
+            if (!rooms[roomId]) return;
+        }
         // 치즈만두맛 패시브: 주먹 자체가 표식을 남긴다.
         const attackMarks = attackMarkChargesOf(character, p);
         if (attackMarks) {
@@ -5062,13 +5114,30 @@ io.on('connection', (socket) => {
                 guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth),
                 character.skillDamage, socket.id);
         }
-        // 치즈만두맛 만두 주먹: 앞에 있는 것(보스든 부하든) 전부에 표식을 박는다.
+        // 치즈만두맛 만두 주먹: 앞에 있는 것(보스든 부하든) 전부에 표식을 박고,
+        // 그 대상에 쌓여 있던 표식까지 한꺼번에 터뜨린다.
         else if (character.skillType === 'mark_punch') {
             const targets = guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth);
             if (!targets.length) return;
-            damageGuestTargets(roomId, room, targets, character.skillDamage, socket.id);
-            if (!rooms[roomId]) return;
             markGuestTargets(roomId, room, targets, character.element, skillMarkOpts(character));
+            let bossBurst = false;
+            for (const t of targets) {
+                const ref = t.boss ? bossMarkTarget(room) : room.monsters[t.mid];
+                if (!ref || (!t.boss && !ref.alive)) continue;
+                const burst = burstElementMarks(ref, character);
+                if (burst && t.boss) bossBurst = true;
+                damageGuestTargets(roomId, room, [t], character.skillDamage + burst, socket.id);
+                if (!rooms[roomId]) return;
+            }
+            if (bossBurst) {
+                io.to(roomId).emit('guestBossMarked', room.bossElementMark
+                    ? {
+                        element: room.bossElementMark.element,
+                        charges: room.bossElementMark.charges,
+                        until: room.bossElementMark.until
+                    }
+                    : { element: null, charges: 0 });
+            }
         } else if (character.skillType === 'self_heal') {
             p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
             p.partyHp[p.active] = p.hp;

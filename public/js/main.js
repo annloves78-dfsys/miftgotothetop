@@ -752,14 +752,17 @@ function passiveText(stats) {
               + ` ${stats.awakenOnReviveNo}번째 부활에서 각성합니다.`;
         let text = `${when} 각성하면 ${bits.join(', ')}가 됩니다.`;
         if (form.attackMarkUses === 0 && stats.attackMarkUses) {
-            text += ' 대신 기본 공격이 더 이상 속성 표식을 남기지 않습니다.';
+            text += ' 대신 표식을 쌓는 쪽에서 거둬들이는 쪽으로 바뀝니다 —'
+                + ' 기본 공격이 더 이상 표식을 남기지 않고,'
+                + ` 그동안 쌓아 둔 표식을 한 개씩 먹으면서 한 번에 ${form.markEatBonus}의 추가 피해를 줍니다.`;
         }
         parts.push(text);
     }
     if (stats.attackMarkUses) {
         parts.push(`기본 공격이 적중할 때마다 대상에게 ${stats.element} 속성 표식을 ${stats.attackMarkUses}번 남깁니다.`
             + ` 표식이 붙어 있는 동안 같은 속성의 쿠키가 공격하면 피해가 ${stats.attackMarkMultiplier}배가 되고,`
-            + ` 표식은 한 번 쓸 때마다 하나씩 줄어듭니다.`);
+            + ` 표식은 한 번 쓸 때마다 하나씩 줄어듭니다.`
+            + (stats.keepsOwnMarks ? ' 자기 표식은 자기가 먹지 않으므로 때리는 족족 쌓이기만 합니다.' : ''));
     }
     if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
@@ -865,8 +868,12 @@ function describeAbility(stats, kind) {
             case 'charge_dash':
                 return `전방으로 빠르게 돌진해 최대 ${stats.skillRange}px까지 달려가 부딪칩니다. 맞은 적에게 ${stats.skillDamage}의 피해를 주고, 그 뒤 ${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라집니다.${cd}`;
             case 'mark_punch':
-                return `앞으로 주먹을 질러 전방 ${stats.skillRange}px(가로 ${stats.skillWidth}px) 범위의 적에게 ${stats.skillDamage}의 피해를 주고,`
-                    + ` 맞은 적에게 ${stats.element} 속성 표식을 한 번에 ${stats.skillMarkUses}개 박습니다.${cd}`;
+                return [
+                    `앞으로 주먹을 질러 전방 ${stats.skillRange}px(가로 ${stats.skillWidth}px) 범위의 적을 ${stats.skillDamage}만큼 때립니다.`,
+                    `맞은 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}개 박고, 그 적에게 쌓여 있던 표식을 전부 터뜨립니다.`,
+                    `터진 표식 한 개당 ${stats.skillMarkBurstDamage}의 추가 피해 (한 번에 최대 ${stats.skillMarkBurstMax}개).`,
+                    `표식이 하나도 없어도 방금 박은 ${stats.skillMarkUses}개는 터지므로 최소 ${stats.skillDamage + stats.skillMarkUses * stats.skillMarkBurstDamage}, 꽉 쌓이면 ${stats.skillDamage + stats.skillMarkBurstMax * stats.skillMarkBurstDamage}입니다.${cd}`
+                ].join('\n');
             case 'tide_cycle':
                 return tideCycleText(stats, sec);
             default:

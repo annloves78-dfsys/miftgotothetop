@@ -656,29 +656,38 @@ const CHARACTERS = {
         // 역할이고, 쓰러져도 각성으로 한 번 더 일어난다.
         health: 400,
         speed: 2,
-        // 주먹. 짧고 좁게 지른다.
+        // 주먹. 짧고 좁게, 대신 빠르게 지른다 -- 한 대의 피해보다 몇 번
+        // 때리느냐가 중요한 쿠키다 (때린 횟수만큼 표식이 쌓이므로).
         attackType: 'melee_kick',
         attackRange: 90,
         attackWidth: 40,
-        attackDamage: 1,
-        attackCooldown: 500,
+        attackDamage: 2,
+        attackCooldown: 250,
         // 패시브 1: 기본공격이 적중할 때마다 빛 표식이 attackMarkUses번 쌓인다.
         // 각성하면 awakenedForm이 이 값을 0으로 덮어써서 더는 주지 않는다.
         attackMarkUses: 2,
-        attackMarkMultiplier: 1.3,
+        attackMarkMultiplier: 1.5,
+        // 표식을 쌓는 쿠키라서 자기가 박은 표식은 자기가 먹지 않는다. 안 그러면
+        // 때릴 때마다 스스로 한 개씩 까먹어서 쌓이는 속도가 반토막 난다.
+        // 각성하면 반대로 '먹는 쪽'이 되므로 awakenedForm에서 뒤집힌다.
+        keepsOwnMarks: true,
         // 패시브 2: 쓰러지면 그 자리에서 각성한다. 부활이 곧 각성이라
         // awakenOnReviveNo가 1이다 (번개악마맛은 2번째 부활에서 각성한다).
         passiveReviveCount: 1,
         passiveReviveHpRatio: 1,
         awakenOnReviveNo: 1,
-        // 만두 주먹: 앞을 한 대 치면서 빛 표식을 한 번에 10개 박는다.
-        // 피해는 주먹과 같은 1이다 -- 값어치는 전부 표식 쪽에 있다.
+        // 만두 주먹: 앞을 한 대 치면서 빛 표식을 10개 박고, 그 자리에서
+        // 쌓여 있던 표식을 전부 터뜨린다. 쌓는 것은 주먹, 터뜨리는 것은
+        // 이쪽 -- 그래서 혼자 나가도 쌓아 둔 것이 피해로 돌아온다.
+        // 표식이 하나도 없어도 방금 박은 10개는 터지므로 최소 50이다.
         skillType: 'mark_punch',
         skillRange: 90,
         skillWidth: 40,
-        skillDamage: 1,
+        skillDamage: 2,
         skillMarkUses: 10,
-        skillMarkMultiplier: 1.3,
+        skillMarkMultiplier: 1.5,
+        skillMarkBurstDamage: 5, // 표식 한 개당
+        skillMarkBurstMax: 40, // 한 번에 터뜨릴 수 있는 표식 수 (궁극기 한 판 분량)
         skillCooldown: 10000,
         // 치즈만두 덩어리: 자리를 찍어 떨어뜨린다. 화산맛의 마그마 지대와 같은
         // 방식이지만, 1초마다 피해를 주면서 빛 표식도 같이 박는다.
@@ -688,14 +697,20 @@ const CHARACTERS = {
         ultimateZoneTickMs: 1000,
         ultimateZoneDurationMs: 10000,
         ultimateZoneMarkUses: 4,
-        ultimateZoneMarkMultiplier: 1.3,
+        ultimateZoneMarkMultiplier: 1.5,
         ultimateCooldownMs: 30000,
-        // 각성 형태. 여기 적힌 것만 덮어쓴다 -- 체력이 400에서 200으로 반토막
-        // 나는 대신 주먹이 1에서 6이 되고, 표식은 더 이상 주지 않는다.
+        // 각성 형태. 여기 적힌 것만 덮어쓴다. 체력이 400에서 200으로 반토막
+        // 나는 대신, 쌓는 쿠키에서 **거둬들이는** 쿠키로 뒤집힌다:
+        // 표식을 더 이상 주지 않고(attackMarkUses 0), 자기 표식을 먹기
+        // 시작하며(keepsOwnMarks false), 한 개 먹을 때마다 배수 대신
+        // markEatBonus만큼을 더해서 터뜨린다. 그동안 쌓아 둔 것이 전부
+        // 그 주먹으로 돌아온다.
         awakenedForm: {
             health: 200,
             attackDamage: 6,
-            attackMarkUses: 0
+            attackMarkUses: 0,
+            keepsOwnMarks: false,
+            markEatBonus: 5
         }
     }
 };
