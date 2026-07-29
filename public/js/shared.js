@@ -486,8 +486,8 @@ const CHARACTERS = {
         role: '대미지 딜러',
         health: 130,
         speed: 2,
-        // 보라빛 대검: 모든 베기가 흡혈 베기다. 차례를 세지 않고, 맞히기만
-        // 해도 빨아오며 그 베기로 쓰러뜨려도 마찬가지로 빨아온다.
+        // 보라빛 대검: 모든 베기가 흡혈 베기다. 차례는 세지 않지만, 빨아오는
+        // 것은 그 베기로 적을 쓰러뜨렸을 때뿐이다.
         attackType: 'vampire_slash',
         attackRange: 175,
         attackWidth: 80,
@@ -495,7 +495,7 @@ const CHARACTERS = {
         attackCooldown: 300,
         attackVampireRange: 175,
         attackVampireWidth: 80,
-        attackVampireHealRatio: 0.1, // 적중하면(쓰러뜨려도) 최대 체력의 10%
+        attackVampireHealRatio: 0.1, // 쓰러뜨렸을 때만 최대 체력의 10%
         // 패시브 1: 적중할 때마다 확률적으로 큰 회복이 터진다.
         passiveHitHealChance: 0.2,
         passiveHitHealRatio: 0.25,
@@ -528,6 +528,52 @@ const CHARACTERS = {
             skillHealRatio: 0.2,
             ultimateDamage: 70
         }
+    },
+    // 바다펄맛 쿠키는 이 게임에서 유일하게 궁극기 칸이 비어 있다. 특수스킬
+    // 자리에 있는 '밀물'이 곧 궁극기이고, 쓸 때마다 1 -> 2 -> 3 -> 4단계로
+    // 올라갔다가 다시 1로 돌아간다.
+    seapearl: {
+        name: '바다펄맛 쿠키',
+        shortName: '바다펄',
+        color: '#1b4f8a',
+        colorLeft: '#2e86de', // 파랑
+        colorRight: '#12161c', // 검정
+        grade: '비스트',
+        element: '물',
+        role: '힐러',
+        health: 150,
+        speed: 2,
+        // 주먹으로 짧게 지른다. 날아가지 않는 근접 판정이다.
+        attackType: 'melee_kick',
+        attackRange: 80,
+        attackWidth: 34,
+        attackDamage: 5,
+        attackCooldown: 300,
+        // 패시브: 체력이 lowHpAt 아래로 떨어지면 켜지고, 체력이 다시 꽉 찰
+        // 때까지 유지된다. 켜져 있는 동안 주먹이 약해지는 대신 때릴 때마다
+        // 스스로 회복한다. 몇 번이든 다시 켜진다.
+        lowHpAt: 50,
+        lowHpAttackDamage: 2,
+        lowHpAttackHealSelf: 2,
+        // 밀물: 특수스킬 자리에 있지만 실제로는 궁극기다. 쿨타임 15초는
+        // 일부러 짧게 잡은 값이다 (유누가 "실수 아님"이라고 못 박았다).
+        // 예열 시간은 쿨타임에 들어가지 않는다 -- 물결이 터진 순간부터 15초를
+        // 센다. 2단계부터는 자리를 찍어서 쓴다.
+        skillType: 'tide_cycle',
+        skillCooldown: 15000,
+        skillRadius: 110, // 2단계부터 찍는 자리의 크기
+        // damageRatio는 '맞은 적이 지금 가진 체력'의 비율, healRatio는
+        // '받는 쿠키의 최대 체력'의 비율이다.
+        skillStages: [
+            { windupMs: 0, healRatio: 0.1, shieldAmount: 20 },
+            { windupMs: 1000, damageRatio: 0.2, healRatio: 0.25, shieldAmount: 30 },
+            { windupMs: 3000, damageRatio: 0.3, healRatio: 0.5, shieldAmount: 70 },
+            // 4단계는 2·3단계를 둘 다 맞혔을 때만 나온다. 하나라도 빗나가면
+            // 곧바로 1단계로 되돌아간다 (advanceTideStage 참고).
+            { windupMs: 5000, damageRatio: 0.4, healRatio: 0.8, shieldAmount: 100 }
+        ],
+        // 궁극기 칸은 비어 있다.
+        ultimateType: null
     },
     lightninghell: {
         name: '번개지옥맛 쿠키',
@@ -1484,7 +1530,8 @@ const MONSTERS = {
         speed: 2,
         aggroRange: 1000,
         preferredDistance: 60,
-        attackRange: 130,
+        // 덩치가 큰 만큼 팔도 길다. 잡몹(90~130)보다 훨씬 멀리서 때린다.
+        attackRange: 220,
         attackDamage: 12,
         attackCooldown: 1400,
         telegraphMs: 500,
@@ -2445,8 +2492,14 @@ function awakenBossMaxHp(charType, level) {
 
 // 각성 칸을 가진 쿠키가 곧 각성모드에 나오는 보스다. 새 쿠키가 에이션트 이상으로
 // 들어오면 목록에 저절로 늘어난다 -- 여기에 이름을 적어 두지 않는다.
+// 각성모드 보스가 되는 쿠키 = 전용 각성 장비가 실제로 있는 쿠키. 각성 칸이
+// 있는 등급이라도 아직 장비가 없으면(바다펄맛처럼) 싸울 이유가 없으므로
+// 목록에 넣지 않는다 -- 장비를 만들어 주면 그때 저절로 나타난다.
 function awakenBossCharTypes() {
-    return Object.keys(CHARACTERS).filter(id => hasAwakenSlot(CHARACTERS[id].grade));
+    const owners = new Set(awakenEquipmentIds()
+        .map(id => EQUIPMENT[id].ownerChar).filter(Boolean));
+    return Object.keys(CHARACTERS)
+        .filter(id => hasAwakenSlot(CHARACTERS[id].grade) && owners.has(id));
 }
 function awakenEquipmentIds() {
     return Object.keys(EQUIPMENT).filter(id => EQUIPMENT[id].slot === AWAKEN_SLOT.key);

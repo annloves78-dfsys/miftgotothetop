@@ -67,6 +67,24 @@ function drawSweepSlash(c, R, range, width, t, vampire) {
     c.restore();
 }
 
+// ---- 바다펄맛 밀물 ----
+// 지금 쓸 단계(1~4). 방마다 플레이어 객체가 달라서 단계만 읽어 온다.
+function tideStageNoOf(o) {
+    const n = (o && o.tideStage) || 1;
+    return Math.max(1, n);
+}
+function tideStageDefOf(stats, o) {
+    if (!stats || stats.skillType !== 'tide_cycle') return null;
+    const stages = stats.skillStages || [];
+    return stages[Math.min(tideStageNoOf(o), stages.length) - 1] || null;
+}
+// 예열 시간은 쿨타임에 들어가지 않는다 -- 물결이 터지는 순간부터 15초를
+// 센다. 서버도 같은 계산을 한다.
+function skillCastStamp(stats, o, now) {
+    const stage = tideStageDefOf(stats, o);
+    return now + ((stage && stage.windupMs) || 0);
+}
+
 // '#e67e22' 같은 쿠키 색을 반투명하게 쓴다.
 function cookieColorAlpha(hex, a) {
     const h = String(hex || '#ffffff').replace('#', '');
@@ -270,7 +288,7 @@ class Player {
     }
 
     triggerSkillEffect() {
-        this.lastSkillClientTime = performance.now();
+        this.lastSkillClientTime = skillCastStamp(this.stats, this, performance.now());
         const duration = SKILL_FULL_DURATION_EFFECTS.includes(this.stats.skillType)
             ? this.stats.skillDurationMs : 350;
         this.skillEffectUntil = performance.now() + duration;

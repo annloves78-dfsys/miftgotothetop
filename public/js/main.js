@@ -697,7 +697,30 @@ function passiveText(stats) {
     if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
     }
+    if (stats.lowHpAt) {
+        parts.push(`체력이 ${stats.lowHpAt} 이하로 떨어지면 몸을 사려,`
+            + ` 기본 공격 피해가 ${stats.attackDamage} → ${stats.lowHpAttackDamage}로 줄어드는 대신`
+            + ` 공격이 적중할 때마다 자신의 체력을 ${stats.lowHpAttackHealSelf}만큼 회복합니다.`
+            + ` 체력이 다시 꽉 차면 풀리며, 횟수 제한은 없습니다.`);
+    }
     return parts.length ? parts.join(' ') : '없음';
+}
+
+// 밀물은 단계마다 값이 전부 달라서 표처럼 늘어놓는다.
+function tideCycleText(stats, sec) {
+    const pct = v => `${Math.round(v * 100)}%`;
+    const lines = (stats.skillStages || []).map((st, i) => {
+        const bits = [];
+        if (st.windupMs) bits.push(`예열 ${sec(st.windupMs)}초`);
+        if (st.damageRatio) bits.push(`지정한 자리 반경 ${stats.skillRadius}px 안의 적에게 그 적이 지금 가진 체력의 ${pct(st.damageRatio)}만큼 피해`);
+        bits.push(`팀 전체 최대 체력의 ${pct(st.healRatio)} 회복`);
+        bits.push(`보호막 ${st.shieldAmount}`);
+        return `${i + 1}단계 — ${bits.join(', ')}.`;
+    });
+    return `궁극기가 없는 대신 이 자리가 궁극기입니다. 쓸 때마다 1 → 2 → 3 → 4단계로 올라갔다가 다시 1단계로 돌아갑니다.`
+        + ` ${lines.join(' ')}`
+        + ` 4단계는 2단계와 3단계를 모두 맞혔을 때만 나오며, 하나라도 빗나가면 곧바로 1단계로 되돌아갑니다.`
+        + ` 예열 시간은 재사용 대기시간에 포함되지 않습니다 — 물결이 터진 순간부터 ${sec(stats.skillCooldown)}초를 셉니다.`;
 }
 
 function describeAbility(stats, kind) {
@@ -718,9 +741,8 @@ function describeAbility(stats, kind) {
         }
         if (stats.attackType === 'vampire_slash') {
             return `보라빛 대검으로 전방 ${stats.attackRange}px를 가로로 베어 ${stats.attackDamage}의 피해를 줍니다.`
-                + ` 모든 베기가 흡혈 베기라, 맞히기만 해도 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 빨아옵니다.`
-                + ` 그 베기로 쓰러뜨렸을 때도 마찬가지이고, 보스에게도 똑같이 적용됩니다.`
-                + ` (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+                + ` 모든 베기가 흡혈 베기이며, 그 베기로 적을 쓰러뜨리면 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 회복합니다.`
+                + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
             return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
@@ -771,11 +793,19 @@ function describeAbility(stats, kind) {
                 return `전방을 크게 벤니다. 가로 ${stats.skillWidth}px, 전방 ${stats.skillRange}px 범위의 적에게 ${stats.skillDamage}의 피해를 주고, 한 명이라도 맞히면 팀 전체를 ${stats.skillHealOnHit}만큼 회복시킵니다.${cd}`;
             case 'charge_dash':
                 return `전방으로 빠르게 돌진해 최대 ${stats.skillRange}px까지 달려가 부딪칩니다. 맞은 적에게 ${stats.skillDamage}의 피해를 주고, 그 뒤 ${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라집니다.${cd}`;
+            case 'tide_cycle':
+                return tideCycleText(stats, sec);
             default:
                 return '스킬 정보가 없습니다.';
         }
     }
     if (kind === 'ultimate') {
+        // 바다펄맛처럼 궁극기 칸이 아예 비어 있는 쿠키가 있다.
+        if (!stats.ultimateType) {
+            return stats.skillType === 'tide_cycle'
+                ? '궁극기가 없습니다. 특수스킬 자리의 밀물이 곧 궁극기입니다.'
+                : '궁극기가 없습니다.';
+        }
         const cd = ` (재사용 대기시간 ${sec(stats.ultimateCooldownMs)}초)`;
         switch (stats.ultimateType) {
             case 'team_heal_over_time':
@@ -905,7 +935,8 @@ const SKILL_ICONS = {
     butterfly_mode: '🦋',
     vampire_slash: '🗡',
     blink_heal: '💫',
-    great_slash: '⚔️'
+    great_slash: '⚔️',
+    tide_cycle: '🌊'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -1362,7 +1393,8 @@ function syncMobileButtonIcons(charType, isStory) {
 
 // Mirrors the text cooldown readouts into the buttons themselves, and dims a
 // button while its ability is still recharging.
-function syncMobileCooldowns(skillRemain, ultRemain, isStory) {
+// noUltimate면 궁극기 버튼 자체를 숨긴다 (바다펄맛).
+function syncMobileCooldowns(skillRemain, ultRemain, isStory, noUltimate) {
     if (!mobileControlsEnabled) return;
     const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
     const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
@@ -1372,6 +1404,7 @@ function syncMobileCooldowns(skillRemain, ultRemain, isStory) {
     cdUlt.textContent = ultRemain > 0.05 ? ultRemain.toFixed(1) : '';
     skillEl.classList.toggle('recharging', skillRemain > 0.05);
     ultEl.classList.toggle('recharging', ultRemain > 0.05);
+    ultEl.classList.toggle('hidden', !!noUltimate);
 }
 
 // ---- Character select ----
@@ -2872,7 +2905,8 @@ socket.on('storyFloorStarted', (data) => {
         equipSpeed: 0, equipCooldown: 1, // filled in below from what this cookie has on
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
-        comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0
+        comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0,
+        tideStage: 1 // 바다펄맛 밀물은 언제나 1단계부터 시작한다
     };
     isStoryTargetingUltimate = false;
     isStoryTargetingSkill = false;
@@ -3020,6 +3054,15 @@ socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     storyQuakeUntil = now + 600;
     updateStoryMonstersLeft();
 });
+// 바다펄맛 밀물. 예열이 있는 단계는 터질 자리에 미리 파란 고리가 뜬다.
+socket.on('storyTideCast', ({ windupMs, x, y, radius }) => {
+    if (!windupMs) return;
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + windupMs, tide: true });
+});
+socket.on('storyTideStage', ({ id, stage }) => {
+    if (storyPlayer && id === socket.id) storyPlayer.tideStage = stage;
+});
+
 // 일어나면서 터지는 충격파 (번개지옥맛).
 socket.on('bossReviveBlast', ({ x, y }) => {
     storyImpactEffects.push({ x, y, radius: 260, until: performance.now() + 700 });
@@ -3347,7 +3390,7 @@ function tryStoryUseSkill() {
     const now = performance.now();
     if (!storyCanUseSkill(now)) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    storyPlayer.lastSkillClientTime = now;
+    storyPlayer.lastSkillClientTime = skillCastStamp(stats, storyPlayer, now);
     storyPlayer.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
@@ -3391,10 +3434,10 @@ function storyHandleUltimateKey() {
 function storyHandleSkillTrigger() {
     if (!storyPlayer) return;
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    if (!isTargetedSkill(stats.skillType)) { tryStoryUseSkill(); return; }
+    if (!isTargetedSkill(stats.skillType, storyPlayer)) { tryStoryUseSkill(); return; }
     if (mobileControlsEnabled) {
         if (!storyCanUseSkill(performance.now())) return;
-        storyPlayer.lastSkillClientTime = performance.now();
+        storyPlayer.lastSkillClientTime = skillCastStamp(stats, storyPlayer, performance.now());
         socket.emit('storyPlayerSkill',
             mobileSkillTarget(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats));
         return;
@@ -3408,7 +3451,8 @@ function confirmStorySkillTarget() {
     isStoryTargetingSkill = false;
     if (!storyPlayer || storyMouseX === null) return;
     if (!storyCanUseSkill(performance.now())) return;
-    storyPlayer.lastSkillClientTime = performance.now();
+    const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
+    storyPlayer.lastSkillClientTime = skillCastStamp(stats, storyPlayer, performance.now());
     storyPlayer.skillEffectUntil = performance.now() + 300;
     const world = storyWorldFromMouse();
     socket.emit('storyPlayerSkill', { targetX: world.x, targetY: world.y });
@@ -3477,8 +3521,15 @@ function updateStoryCooldownDisplay(now) {
             - (now - storyPlayer.lastUltimateClientTime)) / 1000;
         storyMyUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
+    } else {
+        // 바다펄맛은 궁극기 칸이 비어 있다.
+        storyMyUltimateCdEl.textContent = '없음';
     }
-    syncMobileCooldowns(skillRemain, ultRemain, true);
+    // 밀물은 다음에 몇 단계가 나가는지가 쿨타임만큼 중요하다.
+    if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
+        storyMySkillCdEl.textContent = `${tideStageNoOf(storyPlayer)}단계`;
+    }
+    syncMobileCooldowns(skillRemain, ultRemain, true, !stats.ultimateType);
 }
 
 function storyFrame() {
@@ -3662,7 +3713,7 @@ function storyRender(now) {
     storyImpactEffects.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400);
         // Lightning uses a yellow flash plus a bolt dropping in from above.
-        const rgb = fx.bolt ? '241, 196, 15' : '142, 68, 173';
+        const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
         storyCtx.beginPath();
         storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
         storyCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
@@ -4284,6 +4335,16 @@ socket.on('reviveBlast', ({ id }) => {
     impactEffects.push({ x: p.x, y: p.y, radius: 220, until: performance.now() + 500, bolt: true });
 });
 
+// 바다펄맛 밀물 (보스 레이드).
+socket.on('tideCast', ({ windupMs, x, y, radius }) => {
+    if (!windupMs) return;
+    impactEffects.push({ x, y, radius, until: performance.now() + windupMs, tide: true });
+});
+socket.on('tideStage', ({ id, stage }) => {
+    const p = players[id];
+    if (p) p.tideStage = stage;
+});
+
 socket.on('bossMarked', ({ element, charges, until }) => {
     bossMark = element ? { element, charges, until } : null;
 });
@@ -4439,8 +4500,13 @@ function updateCooldownDisplay(now) {
             - (now - me.lastUltimateClientTime)) / 1000;
         myUltimateCdEl.textContent = remain > 0.05 ? `${remain.toFixed(1)}s` : '사용가능';
         ultRemain = remain;
+    } else {
+        myUltimateCdEl.textContent = '없음'; // 바다펄맛은 궁극기 칸이 비어 있다
     }
-    syncMobileCooldowns(skillRemain, ultRemain, false);
+    if (me.stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
+        mySkillCdEl.textContent = `${tideStageNoOf(me)}단계`;
+    }
+    syncMobileCooldowns(skillRemain, ultRemain, false, !me.stats.ultimateType);
 }
 
 // ---- Input ----
@@ -4527,7 +4593,7 @@ function tryUseUltimate() {
 function handleSkillTrigger() {
     const me = players[socket.id];
     if (!me) return;
-    if (!isTargetedSkill(me.stats.skillType)) { tryUseSkill(); return; }
+    if (!isTargetedSkill(me.stats.skillType, me)) { tryUseSkill(); return; }
     if (mobileControlsEnabled) {
         if (!me.canUseSkill(performance.now())) return;
         me.triggerSkillEffect();
@@ -4557,7 +4623,9 @@ function isTargetedUltimate(type) {
 // 때파기 / 물방울 터트리기 are the first SKILLS that are placed on a spot
 // rather than fired from the body, so they arm the same way an ultimate does:
 // trigger once to aim, left-click to commit, trigger again to cancel.
-function isTargetedSkill(type) {
+// 바다펄맛 밀물은 1단계만 자리를 안 찍는다. 2단계부터는 찍어서 쓴다.
+function isTargetedSkill(type, o) {
+    if (type === 'tide_cycle') return tideStageNoOf(o) > 1;
     return type === 'burrow_mark' || type === 'mark_burst' || type === 'blink_heal';
 }
 // Where a placed skill lands with no mouse (mobile): just ahead of the player.
@@ -4684,7 +4752,7 @@ function render(now) {
     impactEffects = impactEffects.filter(fx => now < fx.until);
     impactEffects.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400); // 0 -> 1 as it fades
-        const rgb = fx.bolt ? '241, 196, 15' : '142, 68, 173';
+        const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;

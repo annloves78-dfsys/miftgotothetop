@@ -74,11 +74,13 @@ let guestQuakeUntil = 0;
 // own skill/ultimate cooldown and its own buff windows, so using one cookie's
 // ultimate doesn't spend anybody else's.
 const GUEST_SLOT_FIELDS = ['lastSkillClientTime', 'lastUltimateClientTime',
-    'skillEffectUntil', 'ultimateEffectUntil', 'speedBoostUntil', 'awakenUntil', 'rapidStrikeUntil'];
+    'skillEffectUntil', 'ultimateEffectUntil', 'speedBoostUntil', 'awakenUntil', 'rapidStrikeUntil',
+    // 바다펄맛 밀물의 단계도 쿠키마다 따로 센다.
+    'tideStage'];
 const GUEST_SLOT_DEFAULTS = {
     lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
     skillEffectUntil: 0, ultimateEffectUntil: 0,
-    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0
+    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, tideStage: 1
 };
 
 function guestSlotBag(i) {
@@ -573,6 +575,15 @@ socket.on('guestPlayerTeleported', ({ id, x, y }) => {
 });
 socket.on('guestEarthquake', () => { guestQuakeUntil = performance.now() + QUAKE_DURATION_MS; });
 
+// 바다펄맛 밀물 (게스트 레이드).
+socket.on('guestTideCast', ({ windupMs, x, y, radius }) => {
+    if (!windupMs) return;
+    guestImpacts.push({ x, y, radius, until: performance.now() + windupMs, tide: true });
+});
+socket.on('guestTideStage', ({ id, stage }) => {
+    if (guestLocal && id === socket.id) guestLocal.tideStage = stage;
+});
+
 socket.on('guestFloorCollapse', () => {
     guestCollapseOverlay.classList.remove('hidden');
     guestQuakeUntil = performance.now() + 2600;
@@ -633,10 +644,10 @@ guestCanvas.addEventListener('mousedown', (e) => {
 function guestHandleSkillTrigger() {
     if (!guestLocal) return;
     const stats = guestStats();
-    if (!isTargetedSkill(stats.skillType)) { tryGuestUseSkill(); return; }
+    if (!isTargetedSkill(stats.skillType, guestLocal)) { tryGuestUseSkill(); return; }
     if (mobileControlsEnabled) {
         if (!guestCanUseSkill(performance.now())) return;
-        guestLocal.lastSkillClientTime = performance.now();
+        guestLocal.lastSkillClientTime = skillCastStamp(stats, guestLocal, performance.now());
         socket.emit('guestPlayerSkill',
             mobileSkillTarget(guestLocal.x, guestLocal.y, guestLocal.facing, stats));
         return;
@@ -650,7 +661,7 @@ function confirmGuestSkillTarget() {
     guestIsTargetingSkill = false;
     if (!guestLocal || guestMouseX === null) return;
     if (!guestCanUseSkill(performance.now())) return;
-    guestLocal.lastSkillClientTime = performance.now();
+    guestLocal.lastSkillClientTime = skillCastStamp(guestStats(), guestLocal, performance.now());
     const w = guestWorldFromMouse();
     socket.emit('guestPlayerSkill', { targetX: w.x, targetY: w.y });
 }
@@ -696,7 +707,7 @@ function tryGuestUseSkill() {
     const stats = guestStats();
     const now = performance.now();
     if (!stats.skillType || now - guestLocal.lastSkillClientTime < stats.skillCooldown) return;
-    guestLocal.lastSkillClientTime = now;
+    guestLocal.lastSkillClientTime = skillCastStamp(stats, guestLocal, now);
     guestLocal.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') guestLocal.speedBoostUntil = now + stats.skillSpeedDurationMs;
@@ -797,6 +808,11 @@ function updateGuestCooldownDisplay(now) {
         else ultRemain = Math.max(0, stats.ultimateCooldownMs * guestEquipCooldown()
             - (now - guestLocal.lastUltimateClientTime)) / 1000;
         guestMyUltimateCdEl.textContent = ultRemain > 0.05 ? `${ultRemain.toFixed(1)}s` : '사용가능';
+    } else {
+        guestMyUltimateCdEl.textContent = '없음'; // 바다펄맛은 궁극기 칸이 비어 있다
+    }
+    if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
+        guestMySkillCdEl.textContent = `${tideStageNoOf(guestLocal)}단계`;
     }
     syncGuestMobileCooldowns(skillRemain, ultRemain);
 }
@@ -1006,7 +1022,7 @@ function guestRender(now) {
     guestImpacts = guestImpacts.filter(fx => now < fx.until);
     guestImpacts.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400);
-        const rgb = fx.bolt ? '241, 196, 15' : '142, 68, 173';
+        const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
         guestCtx.beginPath();
         guestCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
         guestCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;

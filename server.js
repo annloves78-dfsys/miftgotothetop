@@ -211,7 +211,18 @@ function effectiveAttackDamage(character, p, now) {
     }
     // 나비모드 has no end time -- it is on until it is switched off.
     if (butterflyActive(character, p)) return character.ultimateAttackDamage + bonusOf(p).attack;
+    // 바다펄맛: 체력이 바닥나 있는 동안에는 주먹이 약해진다 (대신 때릴 때마다
+    // 스스로 회복한다 -- lowHpSelfHeal 참고).
+    if (character.lowHpAt && p.lowHpOn && character.lowHpAttackDamage != null) {
+        return character.lowHpAttackDamage + bonusOf(p).attack;
+    }
     return stat(character, p, 'attackDamage') + bonusOf(p).attack;
+}
+
+// 바다펄맛: 약해진 주먹이 적중할 때마다 스스로 회복하는 양.
+function lowHpSelfHeal(character, p) {
+    if (!character.lowHpAt || !p.lowHpOn) return 0;
+    return character.lowHpAttackHealSelf || 0;
 }
 
 // 나비모드 (sugarfly): a toggle rather than a timer, so it is checked by a
@@ -260,12 +271,51 @@ function passiveChanceHeal(character, p, swing) {
     return heal;
 }
 
-// 흡혈 베기는 맞히기만 해도 빨아온다. 쓰러뜨렸을 때도 같은 양이다 (쓰러뜨린
-// 것도 맞힌 것이니 따로 세지 않는다). 몬스터든 보스든 규칙은 같다.
-// killed 인자는 호출부를 바꾸지 않으려고 남겨 뒀을 뿐, 이제 보지 않는다.
+// 흡혈은 그 베기로 적을 쓰러뜨려야 채워진다. 다만 차례를 세지는 않는다 --
+// 번개악마맛의 모든 베기가 흡혈 베기다. 몬스터든 보스든 규칙은 같다.
 function vampireKillHeal(character, p, swing, killed) {
-    if (!swing || !swing.vampire || !character.attackVampireHealRatio) return 0;
+    if (!killed || !swing || !swing.vampire || !character.attackVampireHealRatio) return 0;
     return Math.round(p.maxHp * character.attackVampireHealRatio);
+}
+
+// ---- 바다펄맛 쿠키 ----
+// 패시브: 체력이 lowHpAt 아래로 떨어지면 켜지고, 체력이 꽉 찰 때까지 유지된다.
+// 켜져 있는 동안 주먹이 약해지는 대신 때릴 때마다 스스로 회복한다.
+// 체력이 바뀔 때마다(맞을 때, 회복할 때) 이 함수를 불러 상태를 갱신한다.
+function refreshLowHpMode(character, p) {
+    if (!character || !character.lowHpAt) return false;
+    if (p.hp <= 0) { p.lowHpOn = false; return false; }
+    if (p.hp >= p.maxHp) p.lowHpOn = false;
+    else if (p.hp <= character.lowHpAt) p.lowHpOn = true;
+    return !!p.lowHpOn;
+}
+
+// 밀물: 지금 쓸 단계. 없으면 null.
+function tideStageOf(character, p) {
+    const stages = character && character.skillStages;
+    if (!stages || !stages.length) return null;
+    return stages[Math.min(p.tideStage || 0, stages.length - 1)] || null;
+}
+
+// 다음에 쓸 단계를 정한다. 공격이 있는 단계를 빗나갔으면 곧바로 1단계로
+// 되돌아간다 -- 그래서 4단계는 2·3단계를 둘 다 맞혔을 때만 나온다.
+function advanceTideStage(character, p, hit) {
+    const stages = (character && character.skillStages) || [];
+    if (!stages.length) return;
+    const idx = Math.min(p.tideStage || 0, stages.length - 1);
+    const missed = !!stages[idx].damageRatio && !hit;
+    p.tideStage = (missed || idx >= stages.length - 1) ? 0 : idx + 1;
+}
+
+// 회복량은 받는 쿠키의 최대 체력 비율이다.
+function tideHealFor(stage, maxHp) {
+    return Math.round((maxHp || 0) * (stage.healRatio || 0));
+}
+
+// 맞은 적이 '지금 가진' 체력의 비율만큼 깎는다. 그래서 이 기술만으로는
+// 절대 마지막 한 대를 넣지 못한다.
+function tideDamageFor(stage, currentHp) {
+    return Math.max(1, Math.round((currentHp || 0) * (stage.damageRatio || 0)));
 }
 
 // 크게베기는 베기 전에 짧게 예열한다. 방에 남아 있을 때만 터지게 하기 위해
@@ -509,6 +559,10 @@ function tickRoom(roomId) {
     if (!room || room.state !== 'fighting') return;
     const bossDef = BOSS_DEFS[room.bossId];
     const now = Date.now();
+
+    // 바다펄맛 패시브는 체력이 오르내릴 때마다 켜지고 꺼진다. 피해와 회복이
+    // 여러 갈래로 들어오므로 한 곳에서 매 틱 다시 본다.
+    for (const pl of Object.values(room.players)) refreshLowHpMode(charOf(pl), pl);
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
@@ -1261,6 +1315,7 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
     // Some cookies heal whenever the attack actually connects (only a chance to
     // proc, if attackHealChance is set). The ultimate can raise the amount.
     const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+            + lowHpSelfHeal(character, p)
         + vampireKillHeal(character, p, swing, killedBoss);
     if (selfHeal) {
         p.hp = Math.min(p.maxHp, p.hp + selfHeal);
@@ -2001,6 +2056,10 @@ function tickStoryRoom(roomId) {
     const now = Date.now();
 
     // 나비모드 burns its owner while it is on; it can kill them.
+    // 바다펄맛 패시브는 체력이 오르내릴 때마다 켜지고 꺼진다. 피해와 회복이
+    // 여러 갈래로 들어오므로 한 곳에서 매 틱 다시 본다.
+    for (const pl of Object.values(room.players)) refreshLowHpMode(charOf(pl), pl);
+
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToStoryPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
 
@@ -2309,6 +2368,23 @@ function healGuestTeam(room, roomId, amount) {
         io.to(roomId).emit('guestPlayerHealed', {
             id, hp: p.hp, partyHp: p.partyHp
         });
+    }
+}
+
+// 바다펄맛 밀물의 회복. 파티마다 최대 체력이 달라서 비율로 계산한다.
+function healGuestTeamByRatio(room, roomId, ratio) {
+    if (!ratio) return;
+    for (const [id, p] of Object.entries(room.players)) {
+        let changed = false;
+        for (let i = 0; i < p.party.length; i++) {
+            if (!p.partyAlive[i]) continue;
+            const healed = Math.min(p.partyMaxHp[i],
+                p.partyHp[i] + Math.round(p.partyMaxHp[i] * ratio));
+            if (healed !== p.partyHp[i]) { p.partyHp[i] = healed; changed = true; }
+        }
+        if (!changed) continue;
+        p.hp = p.partyHp[p.active];
+        io.to(roomId).emit('guestPlayerHealed', { id, hp: p.hp, partyHp: p.partyHp });
     }
 }
 
@@ -3024,6 +3100,10 @@ function tickGuestRoom(roomId) {
     const def = guestDefFor(room);
     const now = Date.now();
 
+    // 바다펄맛 패시브는 체력이 오르내릴 때마다 켜지고 꺼진다. 피해와 회복이
+    // 여러 갈래로 들어오므로 한 곳에서 매 틱 다시 본다.
+    for (const pl of Object.values(room.players)) refreshLowHpMode(charOf(pl), pl);
+
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToGuestPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
 
@@ -3605,6 +3685,7 @@ io.on('connection', (socket) => {
 
         if (anyHit) {
             const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+            + lowHpSelfHeal(character, p)
                 + vampireKillHeal(character, p, swing, anyKill);
             if (selfHeal) {
                 p.hp = Math.min(p.maxHp, p.hp + selfHeal);
@@ -3798,6 +3879,50 @@ io.on('connection', (socket) => {
             }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp }));
+        }
+        // 바다펄맛 밀물: 특수스킬 자리에 있지만 실제로는 궁극기다.
+        else if (character.skillType === 'tide_cycle') {
+            const stage = tideStageOf(character, p);
+            if (!stage) return;
+            const stageNo = (p.tideStage || 0) + 1;
+            const t = stage.damageRatio ? targetPoint(payload) : null;
+            if (stage.damageRatio && !t) {
+                // 자리를 못 받았으면 쓰지 않은 것으로 되돌린다.
+                p.lastSkillTime = 0;
+                return;
+            }
+            // 예열은 쿨타임에 들어가지 않는다: 물결이 터진 순간부터 15초를 센다.
+            p.lastSkillTime = now + (stage.windupMs || 0);
+            io.to(roomId).emit('storyTideCast', {
+                id: socket.id, stage: stageNo, windupMs: stage.windupMs || 0,
+                x: t ? t.x : p.x, y: t ? t.y : p.y, radius: character.skillRadius
+            });
+            afterWindup(roomId, socket.id, stage.windupMs || 0, (rm, pl) => {
+                let hit = true;
+                if (t) {
+                    hit = false;
+                    for (const [mid, m] of Object.entries(rm.monsters)) {
+                        if (!m.alive) continue;
+                        if (Math.hypot(t.x - m.x, t.y - m.y) > character.skillRadius + mR(m)) continue;
+                        hit = true;
+                        hurtStoryMonster(roomId, rm, mid, m, tideDamageFor(stage, m.hp));
+                    }
+                    io.to(roomId).emit('storyUltimateMark',
+                        { x: t.x, y: t.y, radius: character.skillRadius });
+                }
+                for (const [id, tp] of Object.entries(rm.players)) {
+                    if (!tp.alive) continue;
+                    const healed = Math.min(tp.maxHp, tp.hp + tideHealFor(stage, tp.maxHp));
+                    if (healed !== tp.hp) {
+                        tp.hp = healed;
+                        io.to(roomId).emit('storyPlayerHealed', { id, hp: tp.hp });
+                    }
+                }
+                shieldStoryTeam(rm, roomId, stage.shieldAmount);
+                advanceTideStage(character, pl, hit);
+                io.to(roomId).emit('storyTideStage',
+                    { id: socket.id, stage: (pl.tideStage || 0) + 1, hit });
+            });
         }
         // speed_boost is purely client-side; nothing more to do here.
     });
@@ -4101,6 +4226,47 @@ io.on('connection', (socket) => {
             }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp }));
+        }
+        // 바다펄맛 밀물. 보스는 경기장 한가운데에 박혀 있으므로, 찍은 자리가
+        // 보스에 닿았는지만 본다.
+        else if (character.skillType === 'tide_cycle') {
+            const stage = tideStageOf(character, p);
+            if (!stage) return;
+            const stageNo = (p.tideStage || 0) + 1;
+            const t = stage.damageRatio ? targetPoint(payload) : null;
+            if (stage.damageRatio && !t) { p.lastSkillTime = 0; return; }
+            const spot = t ? clampToArena(t.x, t.y, ARENA_RADIUS - PLAYER_RADIUS) : null;
+            // 예열은 쿨타임에 들어가지 않는다.
+            p.lastSkillTime = now + (stage.windupMs || 0);
+            io.to(roomId).emit('tideCast', {
+                id: socket.id, stage: stageNo, windupMs: stage.windupMs || 0,
+                x: spot ? spot.x : p.x, y: spot ? spot.y : p.y, radius: character.skillRadius
+            });
+            afterWindup(roomId, socket.id, stage.windupMs || 0, (rm, pl) => {
+                let hit = true;
+                if (spot) {
+                    hit = Math.hypot(spot.x, spot.y) <= character.skillRadius + BOSS_RADIUS;
+                    if (hit) {
+                        rm.bossHp = Math.max(0, rm.bossHp - tideDamageFor(stage, rm.bossHp));
+                        io.to(roomId).emit('bossDamaged', { bossHp: rm.bossHp, by: socket.id });
+                    }
+                    io.to(roomId).emit('ultimateMark',
+                        { x: spot.x, y: spot.y, radius: character.skillRadius });
+                    if (rm.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                }
+                for (const [id, tp] of Object.entries(rm.players)) {
+                    if (!tp.alive) continue;
+                    const healed = Math.min(tp.maxHp, tp.hp + tideHealFor(stage, tp.maxHp));
+                    if (healed !== tp.hp) {
+                        tp.hp = healed;
+                        io.to(roomId).emit('playerHealed', { id, hp: tp.hp });
+                    }
+                }
+                shieldTeam(rm, roomId, stage.shieldAmount);
+                advanceTideStage(character, pl, hit);
+                io.to(roomId).emit('tideStage',
+                    { id: socket.id, stage: (pl.tideStage || 0) + 1, hit });
+            });
         } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // A spinning kick hits regardless of facing, unlike the basic attack.
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
@@ -4529,6 +4695,7 @@ io.on('connection', (socket) => {
             ? room.bossHp <= 0
             : !(room.monsters[t.mid] && room.monsters[t.mid].alive)));
         const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
+            + lowHpSelfHeal(character, p)
             + vampireKillHeal(character, p, swing, killedAny);
         if (selfHeal) {
             p.hp = Math.min(p.maxHp, p.hp + selfHeal);
@@ -4574,6 +4741,46 @@ io.on('connection', (socket) => {
                 damageGuestTargets(roomId, room, hit, character.skillDamage, socket.id);
                 if (rooms[roomId]) healGuestTeam(room, roomId, character.skillHealOnHit);
             }
+        }
+        // 바다펄맛 밀물. 게스트 레이드는 보스와 부하가 같이 있으므로 찍은
+        // 자리에 들어온 것 전부가 자기 체력의 비율만큼 깎인다.
+        else if (character.skillType === 'tide_cycle') {
+            const stage = tideStageOf(character, p);
+            if (!stage) return;
+            const stageNo = (p.tideStage || 0) + 1;
+            const t = stage.damageRatio ? targetPoint(payload) : null;
+            if (stage.damageRatio && !t) { p.lastSkillTime = 0; return; }
+            const spot = t ? {
+                x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, t.x)),
+                y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, t.y))
+            } : null;
+            // 예열은 쿨타임에 들어가지 않는다.
+            p.lastSkillTime = now + (stage.windupMs || 0);
+            io.to(roomId).emit('guestTideCast', {
+                id: socket.id, stage: stageNo, windupMs: stage.windupMs || 0,
+                x: spot ? spot.x : p.x, y: spot ? spot.y : p.y, radius: character.skillRadius
+            });
+            afterWindup(roomId, socket.id, stage.windupMs || 0, (rm, pl) => {
+                let hit = true;
+                if (spot) {
+                    const targets = guestCircleTargets(rm, spot.x, spot.y, character.skillRadius);
+                    hit = targets.length > 0;
+                    io.to(roomId).emit('guestUltimateMark',
+                        { x: spot.x, y: spot.y, radius: character.skillRadius });
+                    for (const tg of targets) {
+                        const hpNow = tg.boss ? rm.bossHp
+                            : (rm.monsters[tg.mid] && rm.monsters[tg.mid].hp);
+                        if (!hpNow) continue;
+                        damageGuestTargets(roomId, rm, [tg], tideDamageFor(stage, hpNow), socket.id);
+                        if (!rooms[roomId]) return;
+                    }
+                }
+                healGuestTeamByRatio(rm, roomId, stage.healRatio);
+                shieldGuestTeam(rm, roomId, stage.shieldAmount);
+                advanceTideStage(character, pl, hit);
+                io.to(roomId).emit('guestTideStage',
+                    { id: socket.id, stage: (pl.tideStage || 0) + 1, hit });
+            });
         } else if (character.skillType === 'earthquake') {
             io.to(roomId).emit('guestEarthquake', { id: socket.id });
             // 지진: with a crowd on the field it kills one outright instead of
