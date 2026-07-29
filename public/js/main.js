@@ -3083,10 +3083,21 @@ function storyRender(now) {
         storyCtx.restore();
 
         const barW = 32, barH = 4;
+        const barTop = m.y - SHARED.MONSTER_RADIUS - 8 - barH;
         storyCtx.fillStyle = '#c0392b';
-        storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW, barH);
+        storyCtx.fillRect(m.x - barW / 2, barTop, barW, barH);
         storyCtx.fillStyle = '#2ecc71';
-        storyCtx.fillRect(m.x - barW / 2, m.y - SHARED.MONSTER_RADIUS - 8 - barH, barW * (m.hp / m.maxHp), barH);
+        storyCtx.fillRect(m.x - barW / 2, barTop, barW * (m.hp / m.maxHp), barH);
+
+        // 이름은 체력 바 바로 위에. 무엇이 다가오는지 보고 대비할 수 있어야 한다.
+        storyCtx.save();
+        storyCtx.font = 'bold 12px sans-serif';
+        storyCtx.textAlign = 'center';
+        storyCtx.fillStyle = '#ecf0f1';
+        storyCtx.shadowColor = 'rgba(0,0,0,0.85)';
+        storyCtx.shadowBlur = 4;
+        storyCtx.fillText(def.name, m.x, barTop - 5);
+        storyCtx.restore();
 
         if (m.elementMark) {
             storyCtx.save();
@@ -3095,7 +3106,8 @@ function storyRender(now) {
             storyCtx.fillStyle = '#fff';
             storyCtx.shadowColor = 'rgba(0,0,0,0.8)';
             storyCtx.shadowBlur = 3;
-            storyCtx.fillText(elementMarkLabel(m.elementMark), m.x, m.y - SHARED.MONSTER_RADIUS - 14 - barH);
+            // 이름 한 줄 위로 올려서 겹치지 않게.
+            storyCtx.fillText(elementMarkLabel(m.elementMark), m.x, barTop - 20);
             storyCtx.restore();
         }
     });
