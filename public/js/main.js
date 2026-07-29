@@ -5,6 +5,8 @@ const screens = {
     lobby: document.getElementById('lobby-screen'),
     shop: document.getElementById('shop-screen'),
     items: document.getElementById('items-screen'),
+    awakenBoss: document.getElementById('awaken-boss-screen'),
+    awakenDetail: document.getElementById('awaken-detail-screen'),
     gacha: document.getElementById('gacha-screen'),
     gachaPull: document.getElementById('gacha-pull-screen'),
     legendary: document.getElementById('legendary-screen'),
@@ -1738,6 +1740,189 @@ itemsBtn.addEventListener('click', () => {
     showScreen('items');
 });
 backFromItemsBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- 각성모드 ----
+// 각성 장비를 얻는 모드. 어떤 쿠키의 각성 장비를 노릴지 고르면 그 쿠키의
+// 보스 버전과 싸운다. 파티는 3명이고 혼자 한다. 레벨은 순서 잠금이 없다.
+const awakenModeCard = document.getElementById('awaken-mode-card');
+const awakenBossListEl = document.getElementById('awaken-boss-list');
+const backFromAwakenBossBtn = document.getElementById('back-from-awaken-boss-btn');
+const awakenBossNameEl = document.getElementById('awaken-boss-name');
+const awakenBossIconEl = document.getElementById('awaken-boss-icon');
+const awakenBossGearEl = document.getElementById('awaken-boss-gear');
+const awakenLevelChipsEl = document.getElementById('awaken-level-chips');
+const awakenLevelInfoEl = document.getElementById('awaken-level-info');
+const awakenPartyEl = document.getElementById('awaken-party');
+const awakenPlayBtn = document.getElementById('awaken-play-btn');
+const awakenMsgEl = document.getElementById('awaken-msg');
+const backFromAwakenDetailBtn = document.getElementById('back-from-awaken-detail-btn');
+
+let awakenBossId = null;
+let awakenLevel = 1;
+// 3칸. 빈 칸은 null이고, 같은 쿠키를 두 칸에 넣지 못한다.
+let awakenParty = new Array(SHARED.AWAKEN_PARTY_SIZE).fill(null);
+
+// 이 쿠키의 각성 장비 (보스 카드에 무엇이 걸려 있는지 보여주려고).
+function awakenGearOwnedBy(charType) {
+    const ids = SHARED.awakenEquipmentIds();
+    const own = ids.find(id => SHARED.EQUIPMENT[id].ownerChar === charType);
+    return own ? SHARED.EQUIPMENT[own] : null;
+}
+
+function renderAwakenBossList() {
+    awakenBossListEl.innerHTML = '';
+    SHARED.awakenBossCharTypes().forEach(id => {
+        const stats = SHARED.CHARACTERS[id];
+        const gear = awakenGearOwnedBy(id);
+        const card = document.createElement('div');
+        card.className = 'boss-card';
+        card.innerHTML = `
+            <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
+            <div class="name">${stats.name}</div>
+            <div class="awaken-card-gear">${gear ? `${gear.icon} ${gear.name}` : '각성 장비 없음'}</div>`;
+        card.addEventListener('click', () => openAwakenDetail(id));
+        awakenBossListEl.appendChild(card);
+    });
+}
+
+// 레벨에 따라 달라지는 보스 수치를 한 줄씩. 값이 없는 항목은 아예 안 적는다.
+function awakenBossStatLines(charType, level) {
+    const base = SHARED.CHARACTERS[charType];
+    const stats = SHARED.awakenLevelStats(level) || {};
+    const lines = [];
+    lines.push(`체력 ${base.health + (stats.health || 0)} (+${stats.health || 0})`);
+    const atk = SHARED.awakenBossAttackDamage(charType, level);
+    if (atk != null) lines.push(`공격력 ${atk} (+${stats.attack || 0})`);
+    if (stats.speed) lines.push(`이동 속도 +${stats.speed}`);
+    if (stats.damageTaken) lines.push(`받는 피해 ${Math.round(stats.damageTaken * 100)}%`);
+    if (stats.regenAmount) lines.push(`${Math.round(stats.regenIntervalMs / 1000)}초마다 ${stats.regenAmount} 회복`);
+
+    const skill = SHARED.awakenBossSkillDamage(charType, level);
+    if (skill != null) lines.push(`특수스킬 피해 ${skill}`);
+    const skillHeal = SHARED.awakenBossSkillHealOnHit(charType, level);
+    if (skillHeal != null) lines.push(`특수스킬 회복 ${skillHeal}`);
+    const ult = SHARED.awakenBossUltimateDamage(charType, level);
+    if (ult != null) lines.push(`궁극기 피해 ${ult}`);
+    const ultAtk = SHARED.awakenBossUltimateAttackDamage(charType, level);
+    if (ultAtk != null) lines.push(`궁극기 중 공격력 ${ultAtk}`);
+    const ultHeal = SHARED.awakenBossUltimateHealAmount(charType, level);
+    if (ultHeal) lines.push(`궁극기 회복 ${ultHeal}`);
+    const shield = SHARED.awakenBossUltimateShield(charType, level);
+    if (shield != null) lines.push(`궁극기 보호막 ${shield}`);
+    const summons = SHARED.awakenBossSummonCount(charType, level);
+    if (summons != null) {
+        lines.push(`부하 ${summons}마리 (체력 ${SHARED.awakenBossSummonHealth(charType, level)})`);
+    }
+    const burn = SHARED.awakenBossBurnTotal(charType, level);
+    if (burn != null) lines.push(`화염 피해 ${burn}`);
+    const hitHeal = SHARED.awakenBossAttackHeal(charType, level);
+    if (hitHeal != null) lines.push(`적중할 때마다 ${hitHeal} 회복`);
+    return lines;
+}
+
+// 이 레벨을 깨면 받는 것.
+function awakenDropText(level) {
+    const drop = SHARED.awakenLevelDrop(level);
+    if (!drop) return '';
+    if (drop.gearChance != null) {
+        return `🎁 각성 장비 ${Math.round(drop.gearChance * 100)}% · 꽝이면 🧩 조각 ${drop.missFragments}개`;
+    }
+    return `🧩 각성 장비 조각 ${drop.fragmentMin}~${drop.fragmentMax}개`;
+}
+
+function renderAwakenLevelChips() {
+    awakenLevelChipsEl.innerHTML = '';
+    for (let lv = 1; lv <= SHARED.AWAKEN_MAX_LEVEL; lv++) {
+        const chip = document.createElement('button');
+        chip.className = 'awaken-level-chip' + (lv === awakenLevel ? ' selected' : '');
+        chip.textContent = String(lv);
+        chip.addEventListener('click', () => { awakenLevel = lv; renderAwakenDetail(); });
+        awakenLevelChipsEl.appendChild(chip);
+    }
+}
+
+function renderAwakenParty() {
+    awakenPartyEl.innerHTML = '';
+    awakenParty.forEach((id, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'awaken-party-slot' + (id ? ' filled' : '');
+        if (id) {
+            const stats = SHARED.CHARACTERS[id];
+            slot.innerHTML = `
+                <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
+                <div class="name">${stats.shortName || stats.name}</div>`;
+        } else {
+            slot.innerHTML = '<div class="icon">＋</div><div class="name">비어 있음</div>';
+        }
+        slot.addEventListener('click', () => {
+            openCharacterSelect('awakenDetail', {
+                selectedId: id,
+                onPick: (picked) => {
+                    // 같은 쿠키가 두 칸에 들어가지 않게, 있던 칸은 비운다.
+                    const already = awakenParty.indexOf(picked);
+                    if (already >= 0) awakenParty[already] = null;
+                    awakenParty[i] = picked;
+                    renderAwakenDetail();
+                }
+            });
+        });
+        awakenPartyEl.appendChild(slot);
+    });
+}
+
+function renderAwakenDetail() {
+    if (!awakenBossId) return;
+    const stats = SHARED.CHARACTERS[awakenBossId];
+    const gear = awakenGearOwnedBy(awakenBossId);
+    awakenBossNameEl.textContent = `${stats.name} 보스`;
+    awakenBossIconEl.style.background = charIconBackground(stats);
+    awakenBossGearEl.innerHTML = gear
+        ? `노리는 각성 장비: <b>${gear.icon} ${gear.name}</b>`
+        : '';
+    renderAwakenLevelChips();
+
+    const reward = SHARED.awakenLevelReward(awakenLevel) || {};
+    awakenLevelInfoEl.innerHTML = `
+        <div class="awaken-level-title">${awakenLevel}레벨 보스</div>
+        <ul class="awaken-stat-list">${
+            awakenBossStatLines(awakenBossId, awakenLevel).map(t => `<li>${t}</li>`).join('')
+        }</ul>
+        <div class="awaken-drop">${awakenDropText(awakenLevel)}</div>
+        <div class="reward-chips">${rewardChipsHtml(reward)}</div>`;
+    renderAwakenParty();
+    awakenPlayBtn.disabled = awakenParty.some(id => !id);
+}
+
+function openAwakenDetail(charType) {
+    awakenBossId = charType;
+    if (!SHARED.awakenLevelStats(awakenLevel)) awakenLevel = 1;
+    showAwakenMsg('');
+    renderAwakenDetail();
+    showScreen('awakenDetail');
+}
+
+function showAwakenMsg(text, good) {
+    if (!awakenMsgEl) return;
+    awakenMsgEl.textContent = text || '';
+    awakenMsgEl.classList.toggle('hidden', !text);
+    awakenMsgEl.classList.toggle('good', !!good);
+}
+
+awakenModeCard.addEventListener('click', () => {
+    renderAwakenBossList();
+    showScreen('awakenBoss');
+});
+backFromAwakenBossBtn.addEventListener('click', () => showScreen('modeSelect'));
+backFromAwakenDetailBtn.addEventListener('click', () => showScreen('awakenBoss'));
+
+awakenPlayBtn.addEventListener('click', () => {
+    if (awakenParty.some(id => !id)) {
+        showAwakenMsg('파티 3명을 모두 채워 주세요.');
+        return;
+    }
+    // 전투는 아직 만드는 중이다. 여기까지가 이번에 들어간 부분.
+    showAwakenMsg('전투는 아직 준비 중입니다. 보스와 레벨, 파티는 그대로 저장돼 있습니다.');
+});
 
 // ---- Event: 레전더리 이벤트 ----
 // Laid out like the shop -- categories down the left, the selected one on the

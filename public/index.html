@@ -265,8 +265,40 @@
                 <div class="icon">👑</div>
                 <div class="name">게스트 레이드</div>
             </div>
+            <div id="awaken-mode-card" class="mode-card">
+                <div class="icon">✨</div>
+                <div class="name">각성모드</div>
+            </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 각성모드: 어떤 쿠키의 각성 장비를 노릴지 고른다 -->
+    <div id="awaken-boss-screen" class="screen hidden">
+        <h2>각성모드</h2>
+        <p class="awaken-sub">각성 장비를 얻을 쿠키를 고르세요. 그 쿠키의 보스 버전과 싸웁니다.</p>
+        <div id="awaken-boss-list" class="boss-list"></div>
+        <button id="back-from-awaken-boss-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 각성모드: 레벨과 파티 3명 -->
+    <div id="awaken-detail-screen" class="screen hidden">
+        <div class="awaken-layout">
+            <div class="awaken-left">
+                <div id="awaken-boss-name" class="awaken-boss-name"></div>
+                <div id="awaken-boss-icon" class="awaken-boss-icon"></div>
+                <div id="awaken-boss-gear" class="awaken-boss-gear"></div>
+                <div id="awaken-level-chips" class="awaken-level-chips"></div>
+            </div>
+            <div class="awaken-right">
+                <div id="awaken-level-info" class="awaken-level-info"></div>
+                <div class="awaken-party-title">파티 3명</div>
+                <div id="awaken-party" class="awaken-party"></div>
+                <button id="awaken-play-btn" class="play-btn">▶ 시작</button>
+                <div id="awaken-msg" class="equip-picker-msg hidden"></div>
+            </div>
+        </div>
+        <button id="back-from-awaken-detail-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Story mode: multi (locked) / solo entry -->

@@ -2440,7 +2440,13 @@ const AWAKEN_BOSSES = {
         },
         movement: null
     },
-    orangelemon: { skill: null, ultimate: null, movement: null }
+    orangelemon: {
+        // 발차기 피해가 레벨마다 2씩. 10 -> 10레벨 30.
+        skill: { damagePerLevel: 2 },
+        // 각성(궁극기)은 그대로 둔다.
+        ultimate: null,
+        movement: null
+    }
 };
 function awakenBossSpec(charType) {
     return AWAKEN_BOSSES[charType] || null;

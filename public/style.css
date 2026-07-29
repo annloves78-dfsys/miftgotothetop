@@ -2907,3 +2907,129 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 
 .item-use-btn:hover { background: #2ecc71; }
+
+/* ---- 각성모드 ---- */
+.awaken-sub {
+    color: #9fb1c1;
+    font-size: 14px;
+    margin: -6px 0 14px;
+    text-align: center;
+}
+
+.awaken-card-gear {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #f1c40f;
+}
+
+.awaken-layout {
+    display: flex;
+    gap: 22px;
+    align-items: flex-start;
+    width: min(880px, 94vw);
+    margin-bottom: 14px;
+}
+
+.awaken-left, .awaken-right {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.awaken-boss-name { color: #ecf0f1; font-size: 20px; font-weight: bold; }
+
+.awaken-boss-icon {
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.35);
+}
+
+.awaken-boss-gear { color: #9fb1c1; font-size: 13px; }
+
+/* 레벨 1~10. 순서 잠금이 없으므로 전부 그냥 누를 수 있다. */
+.awaken-level-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+
+.awaken-level-chip {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid #34495e;
+    background: #22303f;
+    color: #ecf0f1;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.awaken-level-chip.selected {
+    background: #b9770e;
+    border-color: #f1c40f;
+    color: #fff;
+}
+
+.awaken-level-info {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #22303f;
+    border: 1px solid #34495e;
+    text-align: left;
+}
+
+.awaken-level-title { color: #f1c40f; font-weight: bold; margin-bottom: 6px; }
+
+.awaken-stat-list {
+    margin: 0 0 8px;
+    padding-left: 18px;
+    color: #cfd9e3;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.awaken-drop {
+    color: #8fe0ac;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.awaken-party-title { color: #9fb1c1; font-size: 13px; }
+
+.awaken-party { display: flex; gap: 10px; }
+
+.awaken-party-slot {
+    width: 84px;
+    padding: 10px 6px;
+    border-radius: 10px;
+    background: #22303f;
+    border: 1px dashed #34495e;
+    cursor: pointer;
+    text-align: center;
+}
+
+.awaken-party-slot.filled { border-style: solid; border-color: #f1c40f; }
+
+.awaken-party-slot .icon {
+    width: 42px;
+    height: 42px;
+    margin: 0 auto 5px;
+    border-radius: 50%;
+    font-size: 24px;
+    line-height: 42px;
+    color: #7f8c8d;
+}
+
+.awaken-party-slot .name { color: #ecf0f1; font-size: 12px; }
+
+#awaken-play-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+    .awaken-layout { flex-direction: column; align-items: center; }
+}
