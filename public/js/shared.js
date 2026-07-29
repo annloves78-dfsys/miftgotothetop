@@ -2377,6 +2377,37 @@ function awakenEquipmentIds() {
     return Object.keys(EQUIPMENT).filter(id => EQUIPMENT[id].slot === AWAKEN_SLOT.key);
 }
 
+// ---- 보스마다의 특수스킬 · 궁극기 · 움직임 ----
+// 유누가 보스를 하나씩 정해서 준다. 아직 안 받은 보스는 null로 비워 두고,
+// 그때까지는 그 쿠키의 기본공격만 한다 (이벤트 보스를 비워 둔 것과 같은 방식).
+const AWAKEN_BOSSES = {
+    lightningdevil: {
+        // 순간이동(blink_heal)은 레벨이 올라도 그대로다 -- 강해지지 않는다.
+        skill: { perLevel: null },
+        // 크게베기는 레벨마다 피해가 5씩 오른다. 10레벨이면 50 -> 100.
+        ultimate: { damagePerLevel: 5 },
+        movement: null
+    },
+    orangelemon: { skill: null, ultimate: null, movement: null },
+    dragonfruit: { skill: null, ultimate: null, movement: null },
+    blacksugar: { skill: null, ultimate: null, movement: null },
+    lightninghell: { skill: null, ultimate: null, movement: null }
+};
+function awakenBossSpec(charType) {
+    return AWAKEN_BOSSES[charType] || null;
+}
+
+// 그 레벨에서 보스의 궁극기 피해. damagePerLevel이 없으면 쿠키 원래 값 그대로.
+function awakenBossUltimateDamage(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.ultimateDamage == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const per = spec && spec.ultimate && spec.ultimate.damagePerLevel;
+    if (!per) return base.ultimateDamage;
+    const lv = Math.max(0, Number(level) || 0);
+    return base.ultimateDamage + per * lv;
+}
+
 // ---- 각성모드 보상 ----
 // 1~5레벨은 조각을 주고, 조각 AWAKEN_FRAGMENT_GOAL개가 모이면 "랜덤 각성 장비"
 // 하나로 바뀐다. 6~10레벨은 각성 장비가 확률로 바로 나온다 (꽝이면 재화만).
@@ -2389,14 +2420,33 @@ const AWAKEN_LEVEL_DROPS = {
     3: { fragmentMin: 2, fragmentMax: 3 },
     4: { fragmentMin: 3, fragmentMax: 4 },
     5: { fragmentMin: 4, fragmentMax: 5 },
-    6: { gearChance: 0.10 },
-    7: { gearChance: 0.20 },
-    8: { gearChance: 0.35 },
-    9: { gearChance: 0.55 },
-    10: { gearChance: 0.90 }
+    // 6~10레벨은 꽝이어도 빈손으로 보내지 않는다: 조각을 (레벨 - 3)개 준다.
+    6: { gearChance: 0.10, missFragments: 3 },
+    7: { gearChance: 0.20, missFragments: 4 },
+    8: { gearChance: 0.35, missFragments: 5 },
+    9: { gearChance: 0.55, missFragments: 6 },
+    10: { gearChance: 0.90, missFragments: 7 }
 };
 function awakenLevelDrop(level) {
     return AWAKEN_LEVEL_DROPS[Number(level)] || null;
+}
+
+// 한 판을 깼을 때의 드랍을 굴린다. rand는 테스트에서 갈아 끼울 수 있게 받는다.
+// 1~5레벨은 조각만, 6~10레벨은 확률로 각성 장비 -- 꽝이면 조각으로 보상한다.
+function rollAwakenDrop(level, rand) {
+    const drop = awakenLevelDrop(level);
+    if (!drop) return { fragments: 0, gearId: null };
+    const r = rand || Math.random;
+    if (drop.gearChance != null) {
+        if (r() < drop.gearChance) {
+            const pool = awakenEquipmentIds();
+            return { fragments: 0, gearId: pool.length ? pool[Math.floor(r() * pool.length)] : null };
+        }
+        return { fragments: drop.missFragments || 0, gearId: null };
+    }
+    const lo = drop.fragmentMin || 0;
+    const hi = drop.fragmentMax || 0;
+    return { fragments: lo + Math.floor(r() * (hi - lo + 1)), gearId: null };
 }
 
 // 재화 보상은 유누가 따로 정하지 않아서 레벨에 비례하게 잡았다. 6레벨부터는
@@ -2463,7 +2513,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }

@@ -2010,7 +2010,6 @@ body.mc-on .gacha-odds-row {
 .lobby-left-actions {
     display: flex;
     gap: 16px;
-    /* 아이템 버튼이 붙어 네 개가 되면서 좁은 화면에서는 한 줄에 안 들어간다. */
     flex-wrap: wrap;
 }
 
@@ -2816,17 +2815,41 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     border-color: #e67e22;
 }
 
+/* 설정(☰) 왼쪽에 나란히 서는 같은 크기의 모서리 버튼. 배지를 붙일 수 있게
+   position만 relative가 아니라 absolute 자리를 따로 잡아 준다. */
+.corner-btn {
+    right: 76px;
+}
+
 /* ---- 아이템창 ---- */
 /* 재화 바에 없는, "쓰는" 것들. 조각처럼 모으는 아이템은 개수 대신 진행 막대로 */
 /* 보여줘서 얼마나 남았는지 한눈에 보이게 한다. */
 .items-list {
     width: min(560px, 92vw);
-    margin: 0 auto 16px;
+    margin: 14px auto 16px;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 10px;
     max-height: 60vh;
     overflow-y: auto;
+}
+
+/* 아이템이 하나도 없을 때의 안내 문구. 목록 상자는 왼쪽 정렬이라 그냥 두면
+   가운데에서 왼쪽으로 밀려 보인다. */
+.items-list .shop-empty {
+    width: 100%;
+    margin: 0;
+    text-align: center;
+}
+
+#items-screen h2 {
+    margin-bottom: 4px;
+}
+
+#items-msg {
+    width: min(560px, 92vw);
+    text-align: center;
 }
 
 .item-row {
