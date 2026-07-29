@@ -3121,3 +3121,49 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .waiting-row:has(.campfire:not(.hidden)) .char-preview {
     background: radial-gradient(circle at 50% 90%, rgba(243, 156, 18, 0.18), transparent 70%);
 }
+
+/* ---- 각성모드: 싸우는 중의 파티 교체 ---- */
+.awaken-swap-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 6;
+}
+
+.awaken-swap-btn {
+    width: 74px;
+    padding: 6px 4px 5px;
+    border-radius: 10px;
+    border: 2px solid #34495e;
+    background: rgba(20, 24, 32, 0.72);
+    color: #ecf0f1;
+    cursor: pointer;
+}
+
+.awaken-swap-btn.active { border-color: #f1c40f; }
+.awaken-swap-btn.down { opacity: 0.35; }
+.awaken-swap-btn:disabled { cursor: default; }
+
+.swap-swatch {
+    display: block;
+    width: 30px;
+    height: 30px;
+    margin: 0 auto 3px;
+    border-radius: 50%;
+}
+
+.swap-name { display: block; font-size: 11px; }
+
+.swap-hp {
+    display: block;
+    height: 4px;
+    margin-top: 4px;
+    border-radius: 2px;
+    background: #16212c;
+    overflow: hidden;
+}
+
+.swap-hp-fill { display: block; height: 100%; background: #2ecc71; }

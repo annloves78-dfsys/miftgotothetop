@@ -1962,6 +1962,10 @@ awakenPlayBtn.addEventListener('click', () => {
 // 한 판이 끝났을 때. 이겼으면 그 레벨의 드랍을 굴려 조각이나 각성 장비를 준다.
 function showAwakenResult(awaken, result) {
     const stats = SHARED.CHARACTERS[awaken.charType] || SHARED.CHARACTERS.kicker;
+    resultReturnScreen = 'awakenDetail';
+    resultBackBtn.textContent = '각성모드로';
+    awakenBossId = awaken.charType;
+    awakenLevel = awaken.level;
     if (result !== 'win') {
         resultTitle.textContent = '패배...';
         resultTitle.style.color = '#e74c3c';
@@ -1974,7 +1978,7 @@ function showAwakenResult(awaken, result) {
 
     const bag = SHARED.awakenLevelReward(awaken.level);
     grantCurrencies(bag);
-    const drop = SHARED.rollAwakenDrop(awaken.level);
+    const drop = SHARED.rollAwakenDrop(awaken.level, awaken.charType);
     const lines = [`${stats.name} 보스 ${awaken.level}레벨을 잡았습니다.`];
     let chips = rewardChipsHtml(bag);
     if (drop.gearId) {
@@ -2876,14 +2880,60 @@ socket.on('storyFloorStarted', (data) => {
     storyPlayer.equipSpeed = myBonus.speed;
     storyPlayer.equipCooldown = myBonus.cooldown;
     updateStoryMonstersLeft();
+    // 각성모드면 파티 3명이 같이 들어온다.
+    awakenFightParty = p.party
+        ? {
+            party: p.party.slice(), active: p.active || 0,
+            partyAlive: p.partyAlive.slice(),
+            partyHp: p.partyHp.slice(), partyMaxHp: p.partyMaxHp.slice()
+        }
+        : null;
+    renderAwakenSwapBar();
     syncMobileButtonIcons(p.charType, true);
     showScreen('storyFight');
     startStoryLoop();
 });
 
+// ---- 각성모드: 싸우는 중의 파티 교체 ----
+// 살아 있는 쿠키끼리 아무 때나 바꿀 수 있다. 쓰러진 쿠키는 회색으로 남는다.
+const awakenSwapBar = document.getElementById('awaken-swap-bar');
+let awakenFightParty = null; // { party, active, partyAlive, partyHp, partyMaxHp } | null
+
+function renderAwakenSwapBar() {
+    if (!awakenSwapBar) return;
+    const s = awakenFightParty;
+    awakenSwapBar.classList.toggle('hidden', !s);
+    if (!s) { awakenSwapBar.innerHTML = ''; return; }
+    awakenSwapBar.innerHTML = s.party.map((id, i) => {
+        const stats = SHARED.CHARACTERS[id] || SHARED.CHARACTERS.kicker;
+        const alive = s.partyAlive[i];
+        const pct = Math.max(0, Math.min(1, (s.partyHp[i] || 0) / (s.partyMaxHp[i] || 1)));
+        return `
+            <button class="awaken-swap-btn${i === s.active ? ' active' : ''}${alive ? '' : ' down'}"
+                    data-index="${i}" ${alive && i !== s.active ? '' : 'disabled'}>
+                <span class="swap-swatch" style="background:${charIconBackground(stats)}"></span>
+                <span class="swap-name">${stats.shortName || stats.name}</span>
+                <span class="swap-hp"><span class="swap-hp-fill" style="width:${Math.round(pct * 100)}%"></span></span>
+            </button>`;
+    }).join('');
+}
+
+awakenSwapBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.awaken-swap-btn');
+    if (!btn || btn.disabled) return;
+    socket.emit('awakenSwap', { index: Number(btn.dataset.index) });
+});
+
 // 각성모드: 쿠키 하나가 쓰러지면 다음 쿠키가 들어온다. 셋이 다 쓰러져야 진다.
-socket.on('storyPlayerSwapped', ({ id, charType, hp, maxHp }) => {
+socket.on('storyPlayerSwapped', ({ id, charType, hp, maxHp, active, partyAlive, partyHp }) => {
     if (id !== socket.id || !storyPlayer) return;
+    if (awakenFightParty) {
+        if (active != null) awakenFightParty.active = active;
+        if (partyAlive) awakenFightParty.partyAlive = partyAlive;
+        if (partyHp) awakenFightParty.partyHp = partyHp;
+        awakenFightParty.partyHp[awakenFightParty.active] = hp;
+        renderAwakenSwapBar();
+    }
     storyPlayer.charType = charType;
     storyPlayer.hp = hp;
     storyPlayer.maxHp = maxHp;
@@ -2906,6 +2956,30 @@ socket.on('storyPlayerSwapped', ({ id, charType, hp, maxHp }) => {
     storyPlayer.equipCooldown = bonus.cooldown;
     updateStoryHpBar();
     syncMobileButtonIcons(charType, true);
+});
+
+// ---- 각성모드 보스가 스킬/궁극기를 쓸 때 ----
+socket.on('bossAbility', ({ x, y, radius, kind }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + (kind === 'ultimate' ? 700 : 450) });
+    if (kind === 'ultimate') storyQuakeUntil = performance.now() + 400;
+});
+socket.on('bossBlink', ({ x, y }) => {
+    storyImpactEffects.push({ x, y, radius: 60, until: performance.now() + 350 });
+});
+// 끌어오기: 보스가 나를 자기 앞으로 당긴다.
+socket.on('storyPlayerPulled', ({ id, x, y }) => {
+    if (id !== socket.id || !storyPlayer) return;
+    storyPlayer.x = x;
+    storyPlayer.y = y;
+    storyImpactEffects.push({ x, y, radius: 50, until: performance.now() + 300 });
+});
+// 보스가 부하를 부르면 몬스터 목록이 통째로 갈아 끼워진다.
+socket.on('bossMinions', ({ monsters }) => {
+    storyMonsters = monsters;
+    updateStoryMonstersLeft();
+});
+socket.on('monsterShield', ({ id, shieldHp }) => {
+    if (storyMonsters && storyMonsters[id]) storyMonsters[id].shieldHp = shieldHp;
 });
 
 // 사탕 폭탄병이 터진 자리. 기존 충격 효과(storyImpactEffects)를 그대로 쓴다.
@@ -2966,6 +3040,10 @@ socket.on('storyPlayerDamaged', ({ hp, alive, shieldHp }) => {
     storyPlayer.alive = alive;
     storyPlayer.shieldHp = shieldHp || 0;
     updateStoryHpBar();
+    if (awakenFightParty) {
+        awakenFightParty.partyHp[awakenFightParty.active] = hp;
+        renderAwakenSwapBar();
+    }
 });
 
 socket.on('storyPlayerShielded', ({ shieldHp }) => {
@@ -3049,6 +3127,8 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     // 한 판이 끝났으면 타워 버튼도 처음 상태로 (다시 짝을 찾을 수 있게).
     storyPartners = {};
     storySummons = {};
+    awakenFightParty = null;
+    renderAwakenSwapBar();
     resetTowerActions();
     resultRewardsEl.innerHTML = '';
     // 각성모드는 판 이름이 'awaken:쿠키:레벨'이라 여기서 갈라진다.
@@ -4212,6 +4292,10 @@ resultBackBtn.addEventListener('click', () => {
     } else if (resultReturnScreen === 'storyTower') {
         renderTower();
         showScreen('storyTower');
+    } else if (resultReturnScreen === 'awakenDetail') {
+        // 각성모드에서 왔으면 보스 선택이 아니라 각성모드로 돌아간다.
+        renderAwakenDetail();
+        showScreen('awakenDetail');
     } else {
         renderBossList();
         showScreen('bossSelect');

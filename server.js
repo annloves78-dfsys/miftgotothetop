@@ -8,7 +8,10 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
-    awakenFloorKey, AWAKEN_PARTY_SIZE, AWAKEN_BOSS_LEVELS } = require('./public/js/shared.js');
+    awakenFloorKey, AWAKEN_PARTY_SIZE, AWAKEN_BOSS_LEVELS,
+    awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
+    awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
+    awakenBossSummonCount, awakenBossSummonHealth } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -136,6 +139,7 @@ function endRoom(roomId, result) {
 // 클라이언트는 장착한 장비 **id**만 보낸다. 수치는 여기서 shared.js의 표를
 // 보고 직접 계산하므로, 클라이언트가 능력치를 지어내서 보내도 소용이 없다.
 // 없는 id나 슬롯이 안 맞는 id는 equipBonusFor가 그냥 무시한다.
+const AWAKEN_SWAP_COOLDOWN_MS = 1500; // 각성모드 자유 교체 쿨타임
 const NO_EQUIP_BONUS = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldown: 1 };
 function bonusFrom(equip, charType) {
     if (!equip || typeof equip !== 'object') return { ...NO_EQUIP_BONUS };
@@ -1111,9 +1115,25 @@ function monsterDamageTaken(m) {
     const def = m && MONSTERS[m.type];
     return (def && def.damageTaken) || 1;
 }
+// 각성모드 보스의 각성(awakening_rapid)처럼 공격이 빨라지는 동안에만 짧아진다.
+function monsterAttackCooldown(m, def, now) {
+    if (m && m.rapidUntil && now < m.rapidUntil && m.rapidCooldown) return m.rapidCooldown;
+    return def.attackCooldown;
+}
+
+// 보스가 스스로 두른 보호막을 먼저 깎는다.
+function absorbMonsterShield(roomId, mid, m, dmg) {
+    if (!m.shieldHp || m.shieldHp <= 0) return dmg;
+    const absorbed = Math.min(m.shieldHp, dmg);
+    m.shieldHp -= absorbed;
+    io.to(roomId).emit('monsterShield', { id: mid, shieldHp: m.shieldHp });
+    return dmg - absorbed;
+}
+
 // 몬스터에게 피해를 준다. 죽었으면 true.
 function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
-    const dmg = Math.max(1, Math.round(rawDamage * monsterDamageTaken(m)));
+    let dmg = Math.max(1, Math.round(rawDamage * monsterDamageTaken(m)));
+    dmg = absorbMonsterShield(roomId, mid, m, dmg);
     m.hp = Math.max(0, m.hp - dmg);
     if (m.hp <= 0) {
         m.alive = false;
@@ -1125,7 +1145,8 @@ function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
 }
 
 function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
-    const dmg = Math.round(baseDamage * consumeElementMark(m, character, now) * monsterDamageTaken(m));
+    let dmg = Math.round(baseDamage * consumeElementMark(m, character, now) * monsterDamageTaken(m));
+    dmg = absorbMonsterShield(roomId, mid, m, dmg);
     m.hp = Math.max(0, m.hp - dmg);
     if (m.hp <= 0) {
         m.alive = false;
@@ -1318,6 +1339,212 @@ function endStoryRoom(roomId, result) {
     delete rooms[roomId];
 }
 
+// ==================== 각성모드 보스의 스킬과 궁극기 ====================
+// 보스는 그 쿠키의 스킬/궁극기를 쓴다. 수치는 레벨 표를 따른다.
+// 화면에는 boss-ability 하나로만 알려 주고(자리와 반경), 나머지는 이미 있는
+// 충격 효과가 그려 준다.
+function awakenBossSpecOf(m) {
+    const def = MONSTERS[m && m.type];
+    if (!def || !def.awakenCharType) return null;
+    return { charType: def.awakenCharType, level: def.awakenLevel, def };
+}
+
+function nearestStoryPlayer(room, m) {
+    let best = null, bestD = Infinity;
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        const d = Math.hypot(p.x - m.x, p.y - m.y);
+        if (d < bestD) { bestD = d; best = { id, p, d }; }
+    }
+    return best;
+}
+
+function healAwakenBoss(roomId, mid, m, amount) {
+    if (!amount) return;
+    m.hp = Math.min(m.maxHp, m.hp + Math.round(amount));
+    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+}
+
+// 보스 둘레 radius 안의 사람들을 때린다. 맞힌 사람 수를 돌려준다.
+function awakenBossHitAround(roomId, room, m, radius, damage) {
+    let hits = 0;
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        if (Math.hypot(p.x - m.x, p.y - m.y) > radius + PLAYER_RADIUS) continue;
+        hits++;
+        applyDamageToStoryPlayer(roomId, id, damage);
+        if (!rooms[roomId]) return hits;
+    }
+    return hits;
+}
+
+function useAwakenBossSkill(roomId, room, mid, m, now) {
+    const info = awakenBossSpecOf(m);
+    if (!info) return;
+    const base = CHARACTERS[info.charType];
+    const dmg = awakenBossSkillDamage(info.charType, info.level) || 0;
+    const radius = base.skillRange || base.skillRadius || 160;
+    io.to(roomId).emit('bossAbility', {
+        id: mid, kind: 'skill', type: base.skillType, x: m.x, y: m.y, radius
+    });
+    switch (base.skillType) {
+        case 'earthquake':
+            // 지진은 겨냥이 없다 -- 마당 전체가 흔들린다.
+            awakenBossHitAround(roomId, room, m, 100000, dmg);
+            break;
+        case 'blink_heal': {
+            // 가장 가까운 사람 옆으로 순간이동하고 스스로 회복한다.
+            const near = nearestStoryPlayer(room, m);
+            if (near) {
+                const floorDef = floorDefFor(room.floor);
+                const spot = clampToLane(floorDef, near.p.x + 60, near.p.y);
+                m.x = spot.x; m.y = spot.y;
+                io.to(roomId).emit('bossBlink', { id: mid, x: m.x, y: m.y });
+            }
+            healAwakenBoss(roomId, mid, m, m.maxHp * (base.skillHealRatio || 0));
+            break;
+        }
+        case 'pull_in': {
+            // 끌어오기: 둘레의 사람들을 보스 앞으로 당긴다.
+            for (const [id, p] of Object.entries(room.players)) {
+                if (!p.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) > (base.skillRange || 260)) continue;
+                const floorDef = floorDefFor(room.floor);
+                const spot = clampToLane(floorDef, m.x + 70, m.y);
+                p.x = spot.x; p.y = spot.y;
+                io.to(roomId).emit('storyPlayerPulled', { id, x: p.x, y: p.y });
+            }
+            break;
+        }
+        case 'wide_slash': {
+            // 크게베기: 맞힌 사람 수만큼 스스로 회복한다.
+            const hits = awakenBossHitAround(roomId, room, m, radius, dmg);
+            if (!rooms[roomId]) return;
+            const heal = awakenBossSkillHealOnHit(info.charType, info.level) || 0;
+            if (hits > 0) healAwakenBoss(roomId, mid, m, heal);
+            break;
+        }
+        default:
+            // 발차기(kick)를 비롯한 나머지는 앞쪽 반경을 그냥 때린다.
+            awakenBossHitAround(roomId, room, m, radius, dmg);
+            break;
+    }
+}
+
+function useAwakenBossUltimate(roomId, room, mid, m, now) {
+    const info = awakenBossSpecOf(m);
+    if (!info) return;
+    const base = CHARACTERS[info.charType];
+    const radius = base.ultimateRange || base.ultimateRadius || 260;
+    io.to(roomId).emit('bossAbility', {
+        id: mid, kind: 'ultimate', type: base.ultimateType, x: m.x, y: m.y, radius
+    });
+    switch (base.ultimateType) {
+        case 'great_slash':
+            awakenBossHitAround(roomId, room, m, radius,
+                awakenBossUltimateDamage(info.charType, info.level) || 0);
+            break;
+        case 'undying_soul': {
+            // 스스로 크게 회복하고, 잠시 더 세게 때리고, 부하를 부른다.
+            healAwakenBoss(roomId, mid, m, m.maxHp * (base.ultimateHealRatio || 0));
+            const boosted = awakenBossUltimateAttackDamage(info.charType, info.level);
+            if (boosted && info.def.attackDamage) {
+                // 나가는 피해 배수는 이미 있는 장치를 그대로 쓴다.
+                m.damageDebuffUntil = now + base.ultimateDurationMs;
+                m.damageDebuffMultiplier = boosted / info.def.attackDamage;
+            }
+            spawnAwakenBossMinions(roomId, room, m, info, now);
+            break;
+        }
+        case 'guard_surge':
+        case 'team_guard': {
+            const flat = awakenBossUltimateHealAmount(info.charType, info.level) || 0;
+            const ratio = base.ultimateHealRatio || 0;
+            healAwakenBoss(roomId, mid, m, flat + m.maxHp * ratio);
+            const shield = awakenBossUltimateShield(info.charType, info.level) || 0;
+            if (shield) {
+                m.shieldHp = shield;
+                io.to(roomId).emit('monsterShield', { id: mid, shieldHp: m.shieldHp });
+            }
+            break;
+        }
+        case 'awakening_rapid':
+            // 각성: 잠시 공격이 훨씬 빨라진다.
+            m.rapidUntil = now + base.ultimateDurationMs;
+            m.rapidCooldown = Math.max(120, base.ultimateRapidCooldown || 150);
+            break;
+        default:
+            awakenBossHitAround(roomId, room, m, radius, base.ultimateDamage || 0);
+            break;
+    }
+}
+
+// 번개지옥맛 보스의 부하. 사람을 노리는 진짜 적으로 마당에 세운다.
+// summonedBy가 붙어 있어서 이기고 지는 판정에는 세지 않는다 -- 보스만 잡으면
+// 이긴다.
+function spawnAwakenBossMinions(roomId, room, boss, info, now) {
+    const count = awakenBossSummonCount(info.charType, info.level);
+    const health = awakenBossSummonHealth(info.charType, info.level);
+    const summon = CHARACTERS[info.charType].ultimateSummon;
+    if (!count || !summon) return;
+    const type = `awakenminion_${info.charType}_${info.level}`;
+    if (!MONSTERS[type]) {
+        MONSTERS[type] = {
+            name: summon.name, color: summon.color,
+            health, speed: summon.speed,
+            aggroRange: 900, preferredDistance: Math.max(30, (summon.attackRange || 110) - 30),
+            attackRange: summon.attackRange || 110,
+            attackDamage: summon.attackDamage || 2,
+            attackCooldown: summon.attackCooldown || 300,
+            telegraphMs: 150
+        };
+    }
+    const floorDef = floorDefFor(room.floor);
+    const until = now + (CHARACTERS[info.charType].ultimateDurationMs || 10000);
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count;
+        const spot = clampToLane(floorDef, boss.x + Math.cos(angle) * 60, boss.y + Math.sin(angle) * 60);
+        room.monsters[`bm${room.nextMinionId = (room.nextMinionId || 0) + 1}`] = {
+            type, x: spot.x, y: spot.y,
+            hp: health, maxHp: health,
+            alive: true, state: 'idle', roomIndex: 0,
+            elementMark: null,
+            summonedBy: 'boss', expiresAt: until
+        };
+    }
+    io.to(roomId).emit('bossMinions', { monsters: publicMonsters(room) });
+}
+
+// 보스가 스스로 스킬과 궁극기를 쓴다. 쿨타임은 그 쿠키의 것을 그대로 쓴다.
+function tickAwakenBoss(roomId, room, now) {
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive || m.summonedBy) continue;
+        const info = awakenBossSpecOf(m);
+        if (!info) continue;
+        const base = CHARACTERS[info.charType];
+        // 처음부터 바로 쓰지 않게 한 박자 쉬고 시작한다.
+        if (!m.abilityStartAt) m.abilityStartAt = now + 2500;
+        if (now < m.abilityStartAt) continue;
+        if (base.skillCooldown && now - (m.lastSkillAt || 0) >= base.skillCooldown) {
+            m.lastSkillAt = now;
+            useAwakenBossSkill(roomId, room, mid, m, now);
+            if (!rooms[roomId]) return;
+        }
+        if (base.ultimateCooldownMs && now - (m.lastUltAt || 0) >= base.ultimateCooldownMs) {
+            m.lastUltAt = now;
+            useAwakenBossUltimate(roomId, room, mid, m, now);
+            if (!rooms[roomId]) return;
+        }
+    }
+    // 시간이 다 된 부하는 사라진다.
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (m.summonedBy && m.alive && m.expiresAt && now >= m.expiresAt) {
+            m.alive = false;
+            io.to(roomId).emit('monsterDefeated', { id: mid });
+        }
+    }
+}
+
 // 각성모드 파티: 쓰러진 쿠키 대신 아직 살아 있는 다음 쿠키를 세운다.
 // 파티가 없거나 남은 쿠키가 없으면 null.
 function swapToNextPartyCookie(p) {
@@ -1325,16 +1552,25 @@ function swapToNextPartyCookie(p) {
     p.partyAlive[p.active] = false;
     const next = p.partyAlive.findIndex(a => a);
     if (next < 0) return null;
+    activatePartyCookie(p, next, true);
+    return next;
+}
+
+// 파티의 index번째 쿠키를 세운다. fresh면 체력을 가득 채워 새로 들어온다.
+// 자유 교체는 fresh가 아니라 그 쿠키가 쉬는 동안의 체력을 그대로 가져간다.
+function activatePartyCookie(p, next, fresh) {
+    if (p.party && p.partyHp && !fresh) p.partyHp[p.active] = p.hp;
     p.active = next;
     p.charType = p.party[next];
     p.character = p.partyCharacter[next];
     p.awakenGear = p.partyAwakenGear[next];
     p.bonus = p.partyBonus[next];
     p.maxHp = p.partyMaxHp[next];
-    p.hp = p.partyMaxHp[next];
+    // 쓰러져서 바뀐 것이면 새 쿠키가 가득 찬 체력으로 들어오고,
+    // 자유 교체면 그 쿠키가 쉬는 동안 남아 있던 체력을 그대로 쓴다.
+    p.hp = fresh ? p.partyMaxHp[next] : (p.partyHp ? p.partyHp[next] : p.partyMaxHp[next]);
     p.shieldHp = 0;
-    p.revivesUsed = 0;
-    p.awakened = false;
+    if (fresh) { p.revivesUsed = 0; p.awakened = false; }
     // 새로 들어온 쿠키는 쿨다운을 처음부터 쓴다.
     p.lastAttackTime = 0; p.lastSkillTime = 0; p.lastUltimateTime = 0;
     p.undyingSoulUntil = 0; p.rapidStrikeUntil = 0; p.awakenUntil = 0;
@@ -1538,7 +1774,7 @@ function tickLaser(ctx, m, mid, def, nearest, alivePlayers, now) {
     if (now >= m.laser.endAt) {
         m.laser = null;
         m.state = 'idle';
-        m.nextAttackAt = now + def.attackCooldown;
+        m.nextAttackAt = now + monsterAttackCooldown(m, def, now);
         return;
     }
 
@@ -1586,7 +1822,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
         if (blockedByShield && m.laser) {
             m.laser = null;
             m.state = 'idle';
-            m.nextAttackAt = now + def.attackCooldown;
+            m.nextAttackAt = now + monsterAttackCooldown(m, def, now);
             continue;
         }
         if (m.state === 'idle' && nearestDist > def.aggroRange) continue; // dormant until approached
@@ -1623,7 +1859,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                 // A shield came up (or the player ducked back behind one) while
                 // this was winding up -- drop the swing rather than firing through it.
                 m.state = 'idle';
-                m.nextAttackAt = now + def.attackCooldown;
+                m.nextAttackAt = now + monsterAttackCooldown(m, def, now);
                 continue;
             }
             if (now - m.telegraphStartAt >= def.telegraphMs) {
@@ -1640,7 +1876,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                     continue;
                 }
                 m.state = 'idle';
-                m.nextAttackAt = now + def.attackCooldown;
+                m.nextAttackAt = now + monsterAttackCooldown(m, def, now);
                 const d = Math.hypot(nearest.x - m.x, nearest.y - m.y);
                 // 자폭: 예열이 끝나면 제자리에서 터진다. 반경 안에 있는 사람은
                 // 전부 맞고, 터진 본인은 죽는다. 예열이 길어서 보고 빠지면 된다.
@@ -1700,7 +1936,10 @@ function tickStoryRoom(roomId) {
             m.hp = Math.min(m.maxHp, m.hp + def.regenAmount);
             io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
         }
-        if (!Object.values(room.monsters).some(m => m.alive)) {
+        tickAwakenBoss(roomId, room, now);
+        if (!rooms[roomId]) return;
+        // 부하는 세지 않는다 -- 보스만 잡으면 이긴다.
+        if (!Object.values(room.monsters).some(m => m.alive && !m.summonedBy)) {
             endStoryRoom(roomId, 'win');
             return;
         }
@@ -3057,6 +3296,7 @@ io.on('connection', (socket) => {
             partyCharacter: characters,
             partyAwakenGear: gears,
             partyMaxHp: maxHp.slice(),
+            partyHp: maxHp.slice(),
             partyAlive: chosen.map(() => true),
             active: 0,
             charType: chosen[0],
@@ -3071,6 +3311,27 @@ io.on('connection', (socket) => {
         socket.join(roomId);
         socket.data.roomId = roomId;
         startStoryFight(roomId);
+    });
+
+    // 자유 교체. 살아 있는 쿠키끼리 아무 때나 바꿀 수 있고, 너무 자주 바꾸지
+    // 못하게 짧은 쿨타임만 둔다. 바꾼 쿠키의 체력은 그대로 남아 있다.
+    socket.on('awakenSwap', ({ index }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive || !p.party) return;
+        const i = Number(index);
+        if (!Number.isInteger(i) || i < 0 || i >= p.party.length) return;
+        if (i === p.active || !p.partyAlive[i]) return;
+        const now = Date.now();
+        if (now - (p.lastSwapTime || 0) < AWAKEN_SWAP_COOLDOWN_MS) return;
+        p.lastSwapTime = now;
+        activatePartyCookie(p, i, false);
+        io.to(roomId).emit('storyPlayerSwapped', {
+            id: socket.id, charType: p.charType, hp: p.hp, maxHp: p.maxHp,
+            active: p.active, partyAlive: p.partyAlive, partyHp: p.partyHp
+        });
     });
 
     socket.on('startRaid', () => {
