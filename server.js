@@ -4,7 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
+const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
@@ -260,10 +260,11 @@ function passiveChanceHeal(character, p, swing) {
     return heal;
 }
 
-// 흡혈 베기는 맞히기만 해서는 안 빨리고, 그 베기로 적을 쓰러뜨려야 채워진다.
-// 몬스터든 보스든 규칙은 같다.
+// 흡혈 베기는 맞히기만 해도 빨아온다. 쓰러뜨렸을 때도 같은 양이다 (쓰러뜨린
+// 것도 맞힌 것이니 따로 세지 않는다). 몬스터든 보스든 규칙은 같다.
+// killed 인자는 호출부를 바꾸지 않으려고 남겨 뒀을 뿐, 이제 보지 않는다.
 function vampireKillHeal(character, p, swing, killed) {
-    if (!killed || !swing || !swing.vampire || !character.attackVampireHealRatio) return 0;
+    if (!swing || !swing.vampire || !character.attackVampireHealRatio) return 0;
     return Math.round(p.maxHp * character.attackVampireHealRatio);
 }
 
@@ -359,16 +360,12 @@ function attackCooldownFor(character, p, rapid) {
 
 // Steps whichever "which swing comes next" counter this attack type keeps.
 // Must run after resolveAttack, which reads that counter.
-// 번개악마맛의 4번째 공격은 흥혈 베기다. 0-based 카운터라 마지막 칸이 그것.
+// 번개악마맛은 모든 베기가 흡혈 베기다. 차례를 세지 않는다.
 function isVampireSwing(character, p) {
-    if (character.attackType !== 'vampire_slash') return false;
-    return ((p.attackSeq || 0) % character.attackVampireEvery) === character.attackVampireEvery - 1;
+    return character.attackType === 'vampire_slash';
 }
 
 function advanceAttackSequence(character, p) {
-    if (character.attackType === 'vampire_slash') {
-        p.attackSeq = ((p.attackSeq || 0) + 1) % character.attackVampireEvery;
-    }
     if (character.attackType === 'combo_two_stage') {
         p.comboStage = ((p.comboStage || 0) + 1) % character.attackStages.length;
     } else if (character.attackType === 'dual_spear') {
@@ -864,10 +861,18 @@ function anyMonsterAliveInRoom(room, roomIndex) {
     return Object.values(room.monsters).some(m => m.alive && m.roomIndex === roomIndex);
 }
 
+// 이 몬스터의 덩치. 케이크처럼 표에 radius가 붙은 적은 잡몹보다 크고, 판정도
+// 그림과 같은 값을 쓴다.
+function mR(m) {
+    return monsterRadiusOf(m && m.type);
+}
+
 function publicMonsters(room) {
     const out = {};
     for (const [id, m] of Object.entries(room.monsters)) {
-        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark,
+        // shieldHp도 같이 보낸다 -- 틱이 몬스터 객체를 통째로 갈아 끼우기
+        // 때문에, 여기 없으면 보호막이 매 틱 사라져 보인다.
+        out[id] = { type: m.type, x: m.x, y: m.y, hp: m.hp, maxHp: m.maxHp, alive: m.alive, state: m.state, room: m.roomIndex, elementMark: m.elementMark, shieldHp: m.shieldHp || 0,
             // Beam angle goes out so the client can draw exactly what the server
             // is judging against (laser_robot only; null otherwise).
             laserAngle: m.laser ? m.laser.angle : null };
@@ -1756,7 +1761,7 @@ function markMonstersInCircle(roomId, room, x, y, radius, element, opts) {
     let marked = 0;
     for (const [mid, m] of Object.entries(room.monsters || {})) {
         if (!m.alive) continue;
-        if (Math.hypot(x - m.x, y - m.y) > radius + MONSTER_RADIUS) continue;
+        if (Math.hypot(x - m.x, y - m.y) > radius + mR(m)) continue;
         if (!applyElementMark(m, element, opts, now)) continue; // another element got there first
         marked++;
         io.to(roomId).emit('monsterMarked', {
@@ -2045,7 +2050,7 @@ function tickStoryRoom(roomId) {
                 if (caster && caster.alive) {
                     for (const [mid, m] of Object.entries(room.monsters)) {
                         if (!m.alive) continue;
-                        const dist = Math.hypot(caster.x - m.x, caster.y - m.y) - MONSTER_RADIUS;
+                        const dist = Math.hypot(caster.x - m.x, caster.y - m.y) - mR(m);
                         if (dist <= buff.radius) {
                             buff.triggered = true;
                             m.hp = Math.max(0, m.hp - buff.damage);
@@ -2067,7 +2072,7 @@ function tickStoryRoom(roomId) {
             } else if (buff.type === 'magma_zone') {
                 for (const [mid, m] of Object.entries(room.monsters)) {
                     if (!m.alive) continue;
-                    if (Math.hypot(buff.x - m.x, buff.y - m.y) <= buff.radius + MONSTER_RADIUS) {
+                    if (Math.hypot(buff.x - m.x, buff.y - m.y) <= buff.radius + mR(m)) {
                         m.hp = Math.max(0, m.hp - buff.damage);
                         if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
                         else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
@@ -2091,7 +2096,7 @@ function tickStoryRoom(roomId) {
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
                 const d = Math.hypot(m.x - s.x, m.y - s.y);
-                if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: MONSTER_RADIUS, mid, m }; }
+                if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: mR(m), mid, m }; }
             }
             return best;
         },
@@ -2112,7 +2117,7 @@ function tickStoryRoom(roomId) {
     tickPlayerProjectiles(roomId, room, 50, (pr) => {
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
-            if (Math.hypot(pr.x - m.x, pr.y - m.y) > pr.radius + MONSTER_RADIUS) continue;
+            if (Math.hypot(pr.x - m.x, pr.y - m.y) > pr.radius + mR(m)) continue;
             const owner = room.players[pr.ownerId];
             const oc = owner ? charOf(owner) : CHARACTERS[pr.charType];
             landStoryHitOnMonster(roomId, room, mid, m, pr.ownerId, oc, pr.damage, Date.now(),
@@ -2761,7 +2766,7 @@ function guestLineTargets(room, originX, originY, facing, range, width) {
     }
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive) continue;
-        if (meleeLineHitPoint(originX, originY, facing, range, width, m.x, m.y, MONSTER_RADIUS)) out.push({ mid });
+        if (meleeLineHitPoint(originX, originY, facing, range, width, m.x, m.y, mR(m))) out.push({ mid });
     }
     return out;
 }
@@ -2772,7 +2777,7 @@ function guestCircleTargets(room, x, y, radius) {
     if (Math.hypot(x - room.bossX, y - room.bossY) <= radius + def.radius) out.push({ boss: true });
     for (const [mid, m] of Object.entries(room.monsters)) {
         if (!m.alive) continue;
-        if (Math.hypot(x - m.x, y - m.y) <= radius + MONSTER_RADIUS) out.push({ mid });
+        if (Math.hypot(x - m.x, y - m.y) <= radius + mR(m)) out.push({ mid });
     }
     return out;
 }
@@ -3070,7 +3075,7 @@ function tickGuestRoom(roomId) {
                 for (const [mid, m] of Object.entries(room.monsters)) {
                     if (!m.alive) continue;
                     const d = Math.hypot(m.x - s.x, m.y - s.y);
-                    if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: MONSTER_RADIUS, mid }; }
+                    if (d < bestD) { bestD = d; best = { x: m.x, y: m.y, radius: mR(m), mid }; }
                 }
                 if (best) return best;
                 const gdef = GUEST_BOSS_DEFS[room.guestId];
@@ -3589,7 +3594,7 @@ io.on('connection', (socket) => {
         const floorDef = floorDefFor(room.floor);
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
-            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, MONSTER_RADIUS)) {
+            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, m.x, m.y, mR(m))) {
                 anyHit = true;
                 if (landStoryHitOnMonster(roomId, room, mid, m, socket.id, character, baseAttackDamage, now, {
                     knockback: true, floorDef, fromX: p.x, fromY: p.y,
@@ -3641,7 +3646,7 @@ io.on('connection', (socket) => {
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                const dist = Math.hypot(p.x - m.x, p.y - m.y) - MONSTER_RADIUS;
+                const dist = Math.hypot(p.x - m.x, p.y - m.y) - mR(m);
                 if (dist <= character.skillRange) {
                     m.hp = Math.max(0, m.hp - character.skillDamage);
                     if (m.hp <= 0) {
@@ -3670,7 +3675,7 @@ io.on('connection', (socket) => {
         } else if (character.skillType === 'flying_kick') {
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) {
+                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) {
                     m.stunnedUntil = now + character.skillStunMs;
                     io.to(roomId).emit('monsterStunned', { id: mid });
                 }
@@ -3678,7 +3683,7 @@ io.on('connection', (socket) => {
         } else if (character.skillType === 'kick') {
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) {
+                if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) {
                     hurtStoryMonster(roomId, room, mid, m, character.skillDamage);
                 }
             }
@@ -3722,11 +3727,11 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('storyPullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + MONSTER_RADIUS) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + mR(m)) continue;
                 const def = MONSTERS[m.type];
                 if (def && def.speed > 0) {
                     const ang = Math.atan2(m.y - p.y, m.x - p.x);
-                    const at = MONSTER_RADIUS + PLAYER_RADIUS + 6;
+                    const at = mR(m) + PLAYER_RADIUS + 6;
                     const spot = clampToLane(floorDefFor(room.floor),
                         p.x + Math.cos(ang) * at, p.y + Math.sin(ang) * at);
                     m.x = spot.x; m.y = spot.y;
@@ -3742,7 +3747,7 @@ io.on('connection', (socket) => {
             let hitAny = false;
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) continue;
                 hitAny = true;
                 m.hp = Math.max(0, m.hp - character.skillDamage);
                 if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
@@ -3756,11 +3761,11 @@ io.on('connection', (socket) => {
             let best = null, bestId = null, bestDist = Infinity;
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                if (!meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, mR(m))) continue;
                 const d = Math.hypot(m.x - p.x, m.y - p.y);
                 if (d < bestDist) { bestDist = d; best = m; bestId = mid; }
             }
-            const reach = best ? Math.max(0, bestDist - (MONSTER_RADIUS + PLAYER_RADIUS)) : character.skillRange;
+            const reach = best ? Math.max(0, bestDist - (mR(best) + PLAYER_RADIUS)) : character.skillRange;
             const land = clampToLane(floorDefFor(room.floor),
                 p.x + Math.cos(p.facing) * reach, p.y + Math.sin(p.facing) * reach);
             p.x = land.x; p.y = land.y;
@@ -3834,7 +3839,7 @@ io.on('connection', (socket) => {
 
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (Math.hypot(tx - m.x, ty - m.y) <= character.ultimateRadius + MONSTER_RADIUS) {
+                if (Math.hypot(tx - m.x, ty - m.y) <= character.ultimateRadius + mR(m)) {
                     m.hp = Math.max(0, m.hp - character.ultimateDamage);
                     if (m.hp <= 0) {
                         m.alive = false;
@@ -3868,7 +3873,7 @@ io.on('connection', (socket) => {
                 for (const [mid, m] of Object.entries(rm.monsters)) {
                     if (!m.alive) continue;
                     if (!meleeLineHitPoint(pl.x, pl.y, pl.facing, character.ultimateRange,
-                        character.ultimateWidth, m.x, m.y, MONSTER_RADIUS)) continue;
+                        character.ultimateWidth, m.x, m.y, mR(m))) continue;
                     landed = true;
                     m.hp = Math.max(0, m.hp - dmg);
                     if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
@@ -3897,7 +3902,7 @@ io.on('connection', (socket) => {
             if (character.ultimateDamage) {
                 for (const [mid, m] of Object.entries(room.monsters)) {
                     if (!m.alive) continue;
-                    if (Math.hypot(spot.x - m.x, spot.y - m.y) > character.ultimateRadius + MONSTER_RADIUS) continue;
+                    if (Math.hypot(spot.x - m.x, spot.y - m.y) > character.ultimateRadius + mR(m)) continue;
                     m.hp = Math.max(0, m.hp - character.ultimateDamage);
                     if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
                     else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
@@ -3917,7 +3922,7 @@ io.on('connection', (socket) => {
 
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (Math.hypot(tx - m.x, ty - m.y) > character.ultimateRadius + MONSTER_RADIUS) continue;
+                if (Math.hypot(tx - m.x, ty - m.y) > character.ultimateRadius + mR(m)) continue;
                 m.hp = Math.max(0, m.hp - character.ultimateDamage);
                 if (m.hp <= 0) {
                     m.alive = false;
@@ -4590,11 +4595,11 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('guestPullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
-                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + MONSTER_RADIUS) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) > character.skillRange + mR(m)) continue;
                 const def = MONSTERS[m.type];
                 if (def && def.speed > 0) {
                     const ang = Math.atan2(m.y - p.y, m.x - p.x);
-                    const at = MONSTER_RADIUS + PLAYER_RADIUS + 6;
+                    const at = mR(m) + PLAYER_RADIUS + 6;
                     m.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, p.x + Math.cos(ang) * at));
                     m.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, p.y + Math.sin(ang) * at));
                 } else {

@@ -3177,38 +3177,68 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .swap-hp-fill { display: block; height: 100%; background: #2ecc71; }
 
-/* ---- 보스 부활 알림 ---- */
-/* 보스가 쓰러졌다가 다시 일어나면 왜 안 죽었는지 알 수 있게 크게 알린다. */
-.boss-revive-banner {
+/* ---- 보스전 위쪽 체력 바 ---- */
+/* 보스는 잡몹 머리 위의 작은 바로는 알 수가 없다. 화면 위에 길게 붙인다. */
+.story-boss-bar {
     position: absolute;
     left: 50%;
-    top: 18%;
+    top: 12px;
     transform: translateX(-50%);
-    z-index: 8;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px 26px;
-    border-radius: 12px;
-    background: rgba(24, 8, 12, 0.82);
-    border: 2px solid #e74c3c;
-    box-shadow: 0 0 26px rgba(231, 76, 60, 0.55);
+    width: min(620px, 82%);
+    z-index: 7;
     pointer-events: none;
-    animation: brb-in 260ms ease-out;
 }
 
-.brb-title {
-    color: #ff8a7a;
-    font-size: 22px;
+.sbb-name {
+    text-align: center;
+    color: #ffd9e6;
+    font-size: 17px;
     font-weight: bold;
     letter-spacing: 1px;
-    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+    margin-bottom: 4px;
 }
 
-.brb-sub { color: #e8c1bb; font-size: 13px; }
-
-@keyframes brb-in {
-    from { transform: translateX(-50%) scale(0.7); opacity: 0; }
-    to { transform: translateX(-50%) scale(1); opacity: 1; }
+.sbb-track {
+    position: relative;
+    height: 20px;
+    border-radius: 10px;
+    background: rgba(20, 8, 14, 0.85);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    overflow: hidden;
+    box-shadow: 0 0 18px rgba(231, 76, 60, 0.35);
 }
+
+.sbb-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(180deg, #ff6b81, #c0392b);
+    transition: width 120ms linear;
+}
+
+/* 보호막은 체력 위에 겹쳐서 왼쪽부터 덮는다. */
+.sbb-shield {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 0;
+    background: rgba(120, 200, 255, 0.55);
+}
+
+.sbb-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* 모바일에서는 조작 버튼과 겹치지 않게 조금 작게. */
+body.mc-on .story-boss-bar { top: 6px; width: 70%; }
+body.mc-on .sbb-name { font-size: 14px; }
+body.mc-on .sbb-track { height: 16px; }

@@ -356,8 +356,15 @@
         <div id="story-monsters-left" class="story-monsters-left">남은 적: 5</div>
         <!-- 각성모드에서만 보이는 파티 교체 줄. 아무 때나 바꿀 수 있다. -->
         <div id="awaken-swap-bar" class="awaken-swap-bar hidden"></div>
-        <!-- 보스가 다시 일어날 때 크게 알려 주는 띠. -->
-        <div id="boss-revive-banner" class="boss-revive-banner hidden"></div>
+        <!-- 보스전(10층 케이크 등)에서만 보이는 위쪽 보스 체력 바. -->
+        <div id="story-boss-bar" class="story-boss-bar hidden">
+            <div class="sbb-name"></div>
+            <div class="sbb-track">
+                <div class="sbb-fill"></div>
+                <div class="sbb-shield"></div>
+                <div class="sbb-text"></div>
+            </div>
+        </div>
         <div id="story-partner-hp-container" class="hp-container bottom-right hidden">
             <div class="hp-label">파트너</div>
             <div class="hp-bar-bg"><div id="story-partner-hp-bar" class="hp-bar-fill partner"></div><span id="story-partner-shield-badge" class="shield-badge hidden">🛡</span></div>

@@ -1053,7 +1053,7 @@ function guestRender(now) {
             guestCtx.fillRect(0, -mdef.laserWidth / 6, mdef.laserRange, mdef.laserWidth / 3);
             guestCtx.restore();
         }
-        const R = SHARED.MONSTER_RADIUS;
+        const R = SHARED.monsterRadiusOf(m.type);
         guestCtx.beginPath();
         guestCtx.arc(m.x, m.y, R, 0, Math.PI * 2);
         guestCtx.fillStyle = mdef.color;

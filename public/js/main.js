@@ -718,9 +718,9 @@ function describeAbility(stats, kind) {
         }
         if (stats.attackType === 'vampire_slash') {
             return `보라빛 대검으로 전방 ${stats.attackRange}px를 가로로 베어 ${stats.attackDamage}의 피해를 줍니다.`
-                + ` ${stats.attackVampireEvery}번째 공격은 흡혈 베기로 바뀌어 더 넓게(${stats.attackVampireRange}px) 베고,`
-                + ` 그 베기로 적을 쓰러뜨리면 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 회복합니다.`
-                + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+                + ` 모든 베기가 흡혈 베기라, 맞히기만 해도 최대 체력의 ${Math.round(stats.attackVampireHealRatio * 100)}%를 빨아옵니다.`
+                + ` 그 베기로 쓰러뜨렸을 때도 마찬가지이고, 보스에게도 똑같이 적용됩니다.`
+                + ` (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
             return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
@@ -2633,14 +2633,14 @@ let storySearchHandle = null;
 
 storySoloBtn.addEventListener('click', () => {
     storyIsMulti = false;
-    selectedStoryFloor = 1;
+    selectedStoryFloor = resumeStoryFloor();
     resetTowerActions();
     renderTower();
     showScreen('storyTower');
 });
 storyMultiBtn.addEventListener('click', () => {
     storyIsMulti = true;
-    selectedStoryFloor = 1;
+    selectedStoryFloor = resumeStoryFloor();
     resetTowerActions();
     renderTower();
     showScreen('storyTower');
@@ -2652,6 +2652,16 @@ let selectedStoryFloor = 1;
 // What the story engine was actually entered with -- a floor number from the
 // tower, or an event stage id. Decides where 나가기 sends you back to.
 let activeStoryFloor = null;
+
+// 타워를 열면 1층이 아니라 이어서 할 층에서 시작한다. 마지막으로 깬 층의
+// 다음 층 -- 없으면 1층이고, 다 깼으면 마지막 층에 머문다.
+function resumeStoryFloor() {
+    const cleared = (gameData.clearedStoryFloors || [])
+        .filter(f => typeof f === 'number' && f >= 1);
+    if (!cleared.length) return 1;
+    const last = Math.max(...cleared);
+    return Math.min(STORY_TOTAL_FLOORS, last + 1);
+}
 
 function isFloorUnlocked(floor) {
     if (isAdmin()) return true; // 관리자 전용: every difficulty is open
@@ -2980,36 +2990,26 @@ socket.on('bossMinions', ({ monsters }) => {
 });
 socket.on('monsterShield', ({ id, shieldHp }) => {
     if (storyMonsters && storyMonsters[id]) storyMonsters[id].shieldHp = shieldHp;
+    updateStoryBossBar();
 });
 // 10층 케이크: 때릴 때마다 조금씩 자란다. 회복분만 반영하면 된다.
 socket.on('monsterGrew', ({ id, hp }) => {
     if (storyMonsters && storyMonsters[id]) storyMonsters[id].hp = hp;
+    updateStoryBossBar();
 });
-// 체력이 바닥나기 직전에 딱 한 번 버틴다.
-socket.on('monsterGuard', ({ id, hp, shieldHp, x, y, name }) => {
+// 체력이 바닥나기 직전에 딱 한 번 버틴다. 글씨는 띄우지 않는다 -- 보호막이
+// 그대로 보이고 고리가 터지는 것으로 충분하다.
+socket.on('monsterGuard', ({ id, hp, shieldHp, x, y }) => {
     if (storyMonsters && storyMonsters[id]) {
         storyMonsters[id].hp = hp;
         storyMonsters[id].shieldHp = shieldHp;
     }
     const now = performance.now();
     [60, 120].forEach((r, i) => storyImpactEffects.push({ x, y, radius: r, until: now + 450 + i * 200 }));
-    showBossBanner(`🛡 ${name || '보스'}가 버텼다!`, `체력을 채우고 보호막 ${shieldHp}을 둘렀습니다`);
+    updateStoryBossBar();
 });
-// 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 화면에도
-// 크게 알린다 -- 아니면 왜 안 죽었는지 알 수가 없다.
-const bossReviveBanner = document.getElementById('boss-revive-banner');
-let bossReviveBannerHandle = null;
-// 보스가 무언가 크게 했을 때 화면 위에 잠깐 띄우는 띠. 부활과 버티기가 같이 쓴다.
-function showBossBanner(title, sub) {
-    bossReviveBanner.innerHTML = `<span class="brb-title">${title}</span>`
-        + (sub ? `<span class="brb-sub">${sub}</span>` : '');
-    bossReviveBanner.classList.remove('hidden');
-    if (bossReviveBannerHandle) clearTimeout(bossReviveBannerHandle);
-    bossReviveBannerHandle = setTimeout(() => {
-        bossReviveBanner.classList.add('hidden');
-        bossReviveBannerHandle = null;
-    }, 2200);
-}
+// 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 그 자리에서
+// 크게 터뜨린다.
 socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     if (monsters) storyMonsters = monsters;
     // 겹겹의 고리로 크게 터뜨린다.
@@ -3019,12 +3019,6 @@ socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     });
     storyQuakeUntil = now + 600;
     updateStoryMonstersLeft();
-
-    const m = storyMonsters && storyMonsters[id];
-    const def = m && SHARED.MONSTERS[m.type];
-    const name = (def && def.name) || '보스';
-    showBossBanner(`💀 ${name} 부활!`,
-        left > 0 ? `아직 ${left}번 더 일어납니다` : '이번이 마지막입니다');
 });
 // 일어나면서 터지는 충격파 (번개지옥맛).
 socket.on('bossReviveBlast', ({ x, y }) => {
@@ -3076,6 +3070,7 @@ socket.on('monsterTelegraph', ({ id }) => {
 
 socket.on('monsterDamaged', ({ id, hp }) => {
     if (storyMonsters[id]) storyMonsters[id].hp = hp;
+    updateStoryBossBar();
 });
 
 socket.on('monsterDefeated', ({ id }) => {
@@ -3105,7 +3100,12 @@ socket.on('storyPlayerRevived', ({ hp }) => {
     if (!storyPlayer) return;
     storyPlayer.hp = hp;
     storyPlayer.alive = true;
-    storyPlayer.healEffectUntil = performance.now() + 900; // brighter, longer flash
+    const at = performance.now();
+    storyPlayer.healEffectUntil = at + 900; // brighter, longer flash
+    // 내 쿠키가 다시 일어난 것은 쿠키 자체에서 보여야 한다 -- 자기 색 고리가
+    // 겹겹이 퍼지고 화면이 짧게 흔들린다.
+    storyPlayer.reviveEffectUntil = at + REVIVE_EFFECT_MS;
+    storyQuakeUntil = Math.max(storyQuakeUntil, at + 450);
     updateStoryHpBar();
 });
 
@@ -3178,6 +3178,7 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     storySummons = {};
     awakenFightParty = null;
     renderAwakenSwapBar();
+    storyBossBarEl.classList.add('hidden');
     resetTowerActions();
     resultRewardsEl.innerHTML = '';
     // 각성모드는 판 이름이 'awaken:쿠키:레벨'이라 여기서 갈라진다.
@@ -3247,6 +3248,37 @@ function updateStoryHpBar() {
 function updateStoryMonstersLeft() {
     const remaining = Object.values(storyMonsters).filter(m => m.alive).length;
     storyMonstersLeftEl.textContent = `남은 적: ${remaining}`;
+    updateStoryBossBar();
+}
+
+// ---- 보스전 위쪽 체력 바 ----
+// 몬스터 표에 bossBar가 붙은 적이 살아 있으면 화면 위에 길게 띄운다. 머리
+// 위의 작은 바로는 체력 1000짜리 보스가 얼마나 남았는지 알 수가 없다.
+const storyBossBarEl = document.getElementById('story-boss-bar');
+const storyBossBarName = storyBossBarEl.querySelector('.sbb-name');
+const storyBossBarFill = storyBossBarEl.querySelector('.sbb-fill');
+const storyBossBarShield = storyBossBarEl.querySelector('.sbb-shield');
+const storyBossBarText = storyBossBarEl.querySelector('.sbb-text');
+
+function updateStoryBossBar() {
+    let boss = null;
+    for (const m of Object.values(storyMonsters || {})) {
+        if (!m.alive) continue;
+        const def = SHARED.MONSTERS[m.type];
+        if (def && def.bossBar) { boss = { m, def }; break; }
+    }
+    if (!boss) { storyBossBarEl.classList.add('hidden'); return; }
+    const { m, def } = boss;
+    const shield = Math.round(m.shieldHp || 0);
+    storyBossBarEl.classList.remove('hidden');
+    storyBossBarName.textContent = def.name;
+    storyBossBarFill.style.width = `${Math.max(0, Math.min(1, m.hp / m.maxHp)) * 100}%`;
+    storyBossBarShield.style.width = shield
+        ? `${Math.min(100, (shield / m.maxHp) * 100)}%` : '0';
+    // 케이크는 체력이 0.5씩 차올라서 소수가 된다. 올림해서 보여 준다.
+    storyBossBarText.textContent = shield
+        ? `${Math.ceil(m.hp)} / ${m.maxHp}  🛡${shield}`
+        : `${Math.ceil(m.hp)} / ${m.maxHp}`;
 }
 
 storyCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -3425,6 +3457,7 @@ function startStoryLoop() {
 function stopStoryLoop() {
     if (storyLoopHandle) cancelAnimationFrame(storyLoopHandle);
     storyLoopHandle = null;
+    storyBossBarEl.classList.add('hidden');
 }
 
 function updateStoryCooldownDisplay(now) {
@@ -3667,11 +3700,13 @@ function storyRender(now) {
     Object.values(storyMonsters).forEach(m => {
         if (!m.alive) return;
         const def = SHARED.MONSTERS[m.type];
+        // 케이크 같은 보스는 잡몹보다 덩치가 크다. 판정도 같은 값을 쓴다.
+        const mRad = SHARED.monsterRadiusOf(m.type);
         storyCtx.save();
         storyCtx.translate(m.x, m.y);
         if (m.state === 'telegraph') {
             storyCtx.beginPath();
-            storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS + 10, 0, Math.PI * 2);
+            storyCtx.arc(0, 0, mRad + 10, 0, Math.PI * 2);
             storyCtx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
             storyCtx.lineWidth = 3;
             storyCtx.stroke();
@@ -3694,7 +3729,7 @@ function storyRender(now) {
         if (def.laser) {
             // A boxy turret instead of the usual blob, with a barrel pointing
             // wherever the beam is (or will be) aimed.
-            const r = SHARED.MONSTER_RADIUS;
+            const r = mRad;
             storyCtx.save();
             storyCtx.rotate(m.laserAngle || 0);
             storyCtx.fillStyle = '#7f8c8d';
@@ -3712,17 +3747,27 @@ function storyRender(now) {
             storyCtx.fill();
         } else {
             storyCtx.beginPath();
-            storyCtx.arc(0, 0, SHARED.MONSTER_RADIUS, 0, Math.PI * 2);
+            storyCtx.arc(0, 0, mRad, 0, Math.PI * 2);
             storyCtx.fillStyle = def.color;
             storyCtx.fill();
             storyCtx.strokeStyle = '#2c3e50';
             storyCtx.lineWidth = 2;
             storyCtx.stroke();
+            // 스스로 두른 보호막은 몸 바깥에 파란 테로 보인다 (케이크의 버티기).
+            if (m.shieldHp > 0) {
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, mRad + 7, 0, Math.PI * 2);
+                storyCtx.strokeStyle = 'rgba(120, 200, 255, 0.9)';
+                storyCtx.lineWidth = 3;
+                storyCtx.stroke();
+            }
         }
         storyCtx.restore();
 
-        const barW = 32, barH = 4;
-        const barTop = m.y - SHARED.MONSTER_RADIUS - 8 - barH;
+        // 덩치가 크면 머리 위 체력 바도 같이 길어진다.
+        const barW = Math.max(32, mRad * 2);
+        const barH = mRad > SHARED.MONSTER_RADIUS ? 6 : 4;
+        const barTop = m.y - mRad - 8 - barH;
         storyCtx.fillStyle = '#c0392b';
         storyCtx.fillRect(m.x - barW / 2, barTop, barW, barH);
         storyCtx.fillStyle = '#2ecc71';
@@ -3892,6 +3937,11 @@ function storyRender(now) {
             storyCtx.strokeStyle = 'rgba(46, 204, 113, 0.9)';
             storyCtx.lineWidth = 3;
             storyCtx.stroke();
+        }
+
+        if (now < (storyPlayer.reviveEffectUntil || 0)) {
+            drawReviveAura(storyCtx, R, stats,
+                1 - (storyPlayer.reviveEffectUntil - now) / REVIVE_EFFECT_MS);
         }
 
         drawCookieBody(storyCtx, R, stats, storyPlayer.alive);
@@ -4251,7 +4301,10 @@ socket.on('playerRevived', ({ id, hp }) => {
     if (!p) return;
     p.hp = hp;
     p.alive = true;
-    p.healEffectUntil = performance.now() + 900; // brighter, longer flash
+    const at = performance.now();
+    p.healEffectUntil = at + 900; // brighter, longer flash
+    p.reviveEffectUntil = at + REVIVE_EFFECT_MS; // 쿠키에서 바로 티가 나게
+    if (p.isLocal) raidQuakeUntil = Math.max(raidQuakeUntil, at + 450);
     updateHpBars();
 });
 

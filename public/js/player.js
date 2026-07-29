@@ -67,12 +67,45 @@ function drawSweepSlash(c, R, range, width, t, vampire) {
     c.restore();
 }
 
-// 몇 번째 공격인지 세서 흡혈 차례를 미리 안다. 서버도 같은 규칙으로 센다.
+// '#e67e22' 같은 쿠키 색을 반투명하게 쓴다.
+function cookieColorAlpha(hex, a) {
+    const h = String(hex || '#ffffff').replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(full, 16) || 0xffffff;
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// 쓰러졌다 다시 일어난 순간. 화면 위에 글씨를 띄우는 대신 쿠키 자기 색으로
+// 고리가 겹겹이 퍼지고 몸이 잠깐 환해진다 -- 부활은 자기 쿠키에서 보여야 한다.
+const REVIVE_EFFECT_MS = 1400;
+function drawReviveAura(c, R, stats, t) {
+    const fade = Math.max(0, 1 - t);
+    for (let i = 0; i < 3; i++) {
+        const w = t * 1.6 - i * 0.22;
+        if (w <= 0 || w >= 1) continue;
+        c.beginPath();
+        c.arc(0, 0, R + 6 + w * 80, 0, Math.PI * 2);
+        c.strokeStyle = cookieColorAlpha(i % 2 ? stats.colorRight : stats.colorLeft, (1 - w) * 0.9);
+        c.lineWidth = 5;
+        c.stroke();
+    }
+    // 몸을 감싸고 두근거리는 빛.
+    c.beginPath();
+    c.arc(0, 0, R + 5 + Math.sin(t * Math.PI * 6) * 3, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(255, 246, 205, ${0.9 * fade})`;
+    c.lineWidth = 4;
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 0, R, 0, Math.PI * 2);
+    c.fillStyle = `rgba(255, 255, 255, ${0.35 * fade})`;
+    c.fill();
+}
+
+// 번개악마맛은 모든 베기가 흡혈 베기라 언제나 붉게 그린다. 서버도 같다.
 function advanceSweepCount(o, stats) {
     if (stats.attackType !== 'vampire_slash') return;
     o.attackSeq = (o.attackSeq || 0) + 1;
-    o.attackVampire = !!stats.attackVampireEvery
-        && o.attackSeq % stats.attackVampireEvery === 0;
+    o.attackVampire = true;
 }
 
 // 흡혈 베기는 조금 더 크게 벤다.
@@ -335,6 +368,10 @@ class Player {
             ctx.strokeStyle = 'rgba(46, 204, 113, 0.9)';
             ctx.lineWidth = 3;
             ctx.stroke();
+        }
+
+        if (now < (this.reviveEffectUntil || 0)) {
+            drawReviveAura(ctx, R, this.stats, 1 - (this.reviveEffectUntil - now) / REVIVE_EFFECT_MS);
         }
 
         ctx.globalAlpha = this.alive ? 1 : 0.5;
