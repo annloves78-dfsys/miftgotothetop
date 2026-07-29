@@ -7,7 +7,7 @@ const path = require('path');
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
-    equipBonusFor, formStat, reviveCountFor } = require('./public/js/shared.js');
+    equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -142,6 +142,22 @@ function bonusFrom(equip, charType) {
 }
 function bonusOf(p) { return (p && p.bonus) || NO_EQUIP_BONUS; }
 
+// 각성 장비를 낀 쿠키는 발차기 피해나 궁극기 보호막처럼 "더하기"로 표현할 수
+// 없는 수치가 통째로 바뀐다. 방에 들어올 때 합쳐 둔 사본을 p.character에
+// 넣어 두고, 그 뒤로는 CHARACTERS를 직접 읽지 않고 늘 이것을 읽는다.
+function charFrom(charType, equip) {
+    const resolved = CHARACTERS[charType] ? charType : 'kicker';
+    return characterWithGear(resolved, (equip && typeof equip === 'object') ? equip : null);
+}
+function gearFrom(charType, equip) {
+    if (!CHARACTERS[charType] || !equip || typeof equip !== 'object') return null;
+    return awakenGearFor(charType, equip);
+}
+function charOf(p) {
+    if (p && p.character) return p.character;
+    return (p && CHARACTERS[p.charType]) || null;
+}
+
 // 각성한 쿠키는 몇몇 수치가 통째로 바뀜다. 지금 각성 상태인지는 p가 들고 있다.
 function stat(character, p, key) { return formStat(character, !!(p && p.awakened), key); }
 
@@ -204,7 +220,7 @@ function butterflyActive(character, p) {
 function tickButterflyMode(room, now, hurt) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive || !p.butterflyOn) continue;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character || character.ultimateType !== 'butterfly_mode') continue;
         if (now - (p.butterflyLastTickAt || 0) < character.ultimateSelfDamageIntervalMs) continue;
         p.butterflyLastTickAt = now;
@@ -289,7 +305,9 @@ function resolveAlternatingPunchDamage(character, p, rapid) {
         }
     }
     p.punchSequence = (p.punchSequence || 0) + 1;
-    return (p.punchSequence % 2 === 1) ? character.attackDamageRight : character.attackDamageLeft;
+    // 주먹도 다른 쿠키의 기본공격처럼 장비 공격력이 얹힌다.
+    return ((p.punchSequence % 2 === 1) ? character.attackDamageRight : character.attackDamageLeft)
+        + bonusOf(p).attack;
 }
 
 // Resolves the reach, width, damage and origin of the swing about to happen.
@@ -430,7 +448,7 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
-    const character = CHARACTERS[p.charType];
+    const character = charOf(p);
     // Every caller of this is boss damage, so the boss's own lightning_strike
     // damage debuff applies here rather than at each pattern's call site.
     const bossDebuff = (room.bossDamageDebuffUntil && Date.now() < room.bossDamageDebuffUntil)
@@ -501,7 +519,7 @@ function tickRoom(roomId) {
         }
         const owner = room.players[pr.ownerId];
         if (!owner) return true;
-        landRaidHitOnBoss(roomId, room, pr.ownerId, owner, CHARACTERS[owner.charType], pr.damage, Date.now());
+        landRaidHitOnBoss(roomId, room, pr.ownerId, owner, charOf(owner), pr.damage, Date.now());
         return true;
     }, 'dropGone');
     if (!rooms[roomId]) return;
@@ -965,7 +983,7 @@ function spawnSummons(roomId, room, ownerId, character, now) {
 
 function summonDefOf(room, s) {
     const owner = room.players[s.ownerId];
-    const character = owner && CHARACTERS[owner.charType];
+    const character = owner && charOf(owner);
     return (character && character.ultimateSummon) || null;
 }
 
@@ -1285,7 +1303,7 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
-    const character = CHARACTERS[p.charType];
+    const character = charOf(p);
     dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), sourceElementMark));
     if (p.shieldHp > 0) {
         const absorbed = Math.min(p.shieldHp, dmg);
@@ -1415,6 +1433,19 @@ function skillMarkOpts(character) {
 }
 function ultimateMarkOpts(character) {
     return { durationMs: character.ultimateMarkDurationMs, multiplier: character.ultimateMarkMultiplier };
+}
+
+// 레몬갑옷: 궁극기를 쓰면 주변의 모든 적이 그 쿠키의 속성 표식을 여러 번
+// 받는다. 표식 규칙은 마그마맛/물방울맛의 것과 똑같다 -- 다른 속성이 이미
+// 붙어 있으면 거절되고, 같은 속성이면 횟수가 쌓인다.
+function applyAwakenUltimateMark(roomId, room, p, character, bossEvent) {
+    const spec = p && p.awakenGear && p.awakenGear.awakenUltimateMark;
+    if (!spec) return;
+    const opts = { charges: spec.charges, multiplier: spec.multiplier };
+    markMonstersInCircle(roomId, room, p.x, p.y, spec.radius, character.element, opts);
+    if (bossEvent) {
+        markBossInCircle(roomId, room, p.x, p.y, spec.radius, character.element, opts, bossEvent);
+    }
 }
 
 function elementMarkExpired(mark, now) {
@@ -1681,7 +1712,7 @@ function tickStoryRoom(roomId) {
             if (!m.alive) continue;
             if (Math.hypot(pr.x - m.x, pr.y - m.y) > pr.radius + MONSTER_RADIUS) continue;
             const owner = room.players[pr.ownerId];
-            const oc = owner ? CHARACTERS[owner.charType] : CHARACTERS[pr.charType];
+            const oc = owner ? charOf(owner) : CHARACTERS[pr.charType];
             landStoryHitOnMonster(roomId, room, mid, m, pr.ownerId, oc, pr.damage, Date.now(),
                 { knockback: false, marks: pr.marks });
             if (owner && owner.alive) {
@@ -1795,6 +1826,9 @@ function activateGuestSlot(p, index) {
     p.hp = p.partyHp[index];
     p.maxHp = p.partyMaxHp[index];
     p.bonus = (p.partyBonus && p.partyBonus[index]) || NO_EQUIP_BONUS;
+    // 각성 장비도 쿠키마다 다르므로 슬롯을 바꿀 때 같이 갈아 끼운다.
+    p.character = (p.partyCharacter && p.partyCharacter[index]) || CHARACTERS[p.charType];
+    p.awakenGear = (p.partyAwakenGear && p.partyAwakenGear[index]) || null;
     const slot = p.partySlotTimers[index];
     GUEST_SLOT_TIMERS.forEach(f => { p[f] = slot[f] || 0; });
 }
@@ -1802,10 +1836,14 @@ function activateGuestSlot(p, index) {
 function makeGuestPlayer(party, slotIndex, equipParty) {
     // 게스트 레이드는 쿠키 4명을 번갈아 쓰므로 장비도 슬롯마다 따로 가진다.
     const bonuses = party.map((id, i) => bonusFrom(equipParty && equipParty[i], id));
-    const maxHp = party.map((id, i) => CHARACTERS[id].health + bonuses[i].health);
+    const characters = party.map((id, i) => charFrom(id, equipParty && equipParty[i]));
+    const gears = party.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
+    const maxHp = party.map((id, i) => characters[i].health + bonuses[i].health);
     const p = {
         party,
         partyBonus: bonuses,
+        partyCharacter: characters,
+        partyAwakenGear: gears,
         partyHp: maxHp.slice(),
         partyMaxHp: maxHp.slice(),
         partyAlive: party.map(() => true),
@@ -1895,7 +1933,7 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
     if (!room || room.state !== 'fighting') return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
-    const character = CHARACTERS[p.charType];
+    const character = charOf(p);
     dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), null));
     if (p.shieldHp > 0) {
         const absorbed = Math.min(p.shieldHp, dmg);
@@ -2606,7 +2644,7 @@ function tickGuestRoom(roomId) {
         if (!rooms[roomId]) return true;
         const owner = room.players[pr.ownerId];
         if (owner && owner.alive) {
-            const oc = CHARACTERS[owner.charType];
+            const oc = charOf(owner);
             const selfHeal = passiveHitHeal(oc, owner);
             if (selfHeal) {
                 owner.hp = Math.min(owner.maxHp, owner.hp + selfHeal);
@@ -2882,7 +2920,7 @@ function guestTickPayload(room) {
 io.on('connection', (socket) => {
     socket.on('joinRaid', ({ bossId, charType, solo, equip }) => {
         if (!BOSS_DEFS[bossId]) return;
-        const character = CHARACTERS[charType] || CHARACTERS.kicker;
+        const character = charFrom(charType, equip);
         const bonus = bonusFrom(equip, charType);
 
         let roomId = solo ? null : findOpenRoom(bossId);
@@ -2894,6 +2932,7 @@ io.on('connection', (socket) => {
         room.players[socket.id] = {
             x: pos.x, y: pos.y,
             bonus,
+            character, awakenGear: gearFrom(charType, equip),
             hp: character.health + bonus.health, maxHp: character.health + bonus.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: 0, alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
@@ -2938,7 +2977,7 @@ io.on('connection', (socket) => {
     socket.on('joinStoryFloor', ({ floor, charType, equip, solo }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
-        const character = CHARACTERS[charType] || CHARACTERS.kicker;
+        const character = charFrom(charType, equip);
         const bonus = bonusFrom(equip, charType);
 
         // 멀티면 먼저 기다리는 방을 찾고, 없으면 새로 판다.
@@ -2955,6 +2994,7 @@ io.on('connection', (socket) => {
         room.players[socket.id] = {
             x: spot.x, y: spot.y,
             bonus,
+            character, awakenGear: gearFrom(charType, equip),
             hp: character.health + bonus.health, maxHp: character.health + bonus.health,
             charType: charType && CHARACTERS[charType] ? charType : 'kicker',
             facing: Math.PI, // faces left, toward the bridge
@@ -3051,7 +3091,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid);
@@ -3117,7 +3157,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.skillType) return;
         const now = Date.now();
         if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
@@ -3297,7 +3337,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'story' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.ultimateType) return;
         const now = Date.now();
         // 나비모드 is a toggle: while it is running the press means "switch
@@ -3463,6 +3503,13 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'awakening_rapid') {
             p.rapidStrikeUntil = now + character.ultimateDurationMs;
             p.rapidAttackCount = 0;
+            if (p.awakenGear && p.awakenGear.awakenUltimateMark) {
+                io.to(roomId).emit('storyUltimateMark', {
+                    id: socket.id, x: p.x, y: p.y,
+                    radius: p.awakenGear.awakenUltimateMark.radius, element: character.element
+                });
+                applyAwakenUltimateMark(roomId, room, p, character, null);
+            }
         } else if (character.ultimateType === 'team_shield') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
         } else if (character.ultimateType === 'undying_soul') {
@@ -3497,7 +3544,7 @@ io.on('connection', (socket) => {
         if (!room || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid);
@@ -3526,7 +3573,7 @@ io.on('connection', (socket) => {
         if (!room || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.skillType) return;
         const now = Date.now();
         if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
@@ -3642,7 +3689,7 @@ io.on('connection', (socket) => {
         if (!room || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.ultimateType) return;
         const now = Date.now();
         // 나비모드 is a toggle: while it is running the press means "switch
@@ -3790,6 +3837,13 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'awakening_rapid') {
             p.rapidStrikeUntil = now + character.ultimateDurationMs;
             p.rapidAttackCount = 0;
+            if (p.awakenGear && p.awakenGear.awakenUltimateMark) {
+                io.to(roomId).emit('ultimateMark', {
+                    id: socket.id, x: p.x, y: p.y,
+                    radius: p.awakenGear.awakenUltimateMark.radius, element: character.element
+                });
+                applyAwakenUltimateMark(roomId, room, p, character, 'bossMarked');
+            }
         } else if (character.ultimateType === 'team_shield') {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
         } else if (character.ultimateType === 'undying_soul') {
@@ -3978,7 +4032,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
         if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid)) return;
@@ -4022,7 +4076,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.skillType) return;
         const now = Date.now();
         if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
@@ -4136,7 +4190,7 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'guest' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        const character = CHARACTERS[p.charType];
+        const character = charOf(p);
         if (!character.ultimateType) return;
         const now = Date.now();
         // 나비모드: while it is on, the press means "switch off".
@@ -4256,6 +4310,13 @@ io.on('connection', (socket) => {
         } else if (character.ultimateType === 'awakening_rapid') {
             p.rapidStrikeUntil = now + character.ultimateDurationMs;
             p.rapidAttackCount = 0;
+            if (p.awakenGear && p.awakenGear.awakenUltimateMark) {
+                io.to(roomId).emit('guestUltimateMark', {
+                    id: socket.id, x: p.x, y: p.y,
+                    radius: p.awakenGear.awakenUltimateMark.radius, element: character.element
+                });
+                applyAwakenUltimateMark(roomId, room, p, character, 'guestBossMarked');
+            }
         } else if (character.ultimateType === 'team_shield') {
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
         } else if (character.ultimateType === 'undying_soul') {

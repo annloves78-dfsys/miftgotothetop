@@ -463,6 +463,14 @@ function equipBonusOf(charType) {
     return SHARED.equipBonusFor(equipPayload(charType), charType);
 }
 
+// 각성 장비를 낀 상태의 수치. 각성 장비는 능력치를 더하는 게 아니라 발차기
+// 피해나 궁극기 보호막을 통째로 바꾸기도 해서, 상세 화면은 이걸 읽어야
+// 실제로 싸울 때의 숫자가 그대로 보인다.
+function statsWithGear(charType) {
+    return SHARED.characterWithGear(charType, equipPayload(charType))
+        || SHARED.CHARACTERS.kicker;
+}
+
 // 장비 하나의 능력치를 사람이 읽을 수 있는 한 줄로.
 function equipStatText(src) {
     const parts = [];
@@ -473,6 +481,23 @@ function equipStatText(src) {
     if (src.bonusCooldown) parts.push(`재사용 대기시간 ${Math.round((1 - src.bonusCooldown) * 100)}% 감소`);
     if (src.bonusRevive) parts.push(`부활 횟수 +${src.bonusRevive}`);
     return parts.join(' · ');
+}
+
+// 목록에 적을 능력치. 전용 효과가 지금 이 쿠키에게 발동하면 그 몫까지 합쳐서
+// 보여준다 -- 각성 장비는 능력치가 전부 전용 효과 쪽에 들어 있어서, 합치지
+// 않으면 "능력치 없음"으로 보인다.
+function mergedEquipStats(item, level, charType) {
+    const out = SHARED.equipStatsAtLevel(item, level);
+    if (!SHARED.ownerBonusActive(item, charType)) return out;
+    const extra = SHARED.equipStatsAtLevel(item.ownerBonus, level);
+    Object.keys(extra).forEach(k => {
+        if (k === 'bonusDamageTaken' || k === 'bonusCooldown') {
+            out[k] = (out[k] == null ? 1 : out[k]) * extra[k];
+        } else {
+            out[k] = (out[k] || 0) + extra[k];
+        }
+    });
+    return out;
 }
 
 // 보스전에서만 나오는 레전더리 장비 안내 칸. 무엇이 나올지는 무작위라
@@ -773,7 +798,7 @@ function charIconBackground(stats) {
 }
 
 function selectCharDetailAbility(kind) {
-    const stats = SHARED.CHARACTERS[viewingCharacterId];
+    const stats = statsWithGear(viewingCharacterId);
     charDetailDesc.textContent = describeAbility(stats, kind);
     [
         [charDetailAttackIcon, 'attack'],
@@ -1428,7 +1453,9 @@ function renderEquipPicker() {
         const otherOwner = !isOn && wornBy(entry.uid);
         let ownerLine = '';
         if (item.ownerChar) {
-            const active = SHARED.ownerBonusActive(item, charType);
+            // 각성 장비처럼 능력치가 아니라 수치를 바꾸는 전용 효과도 있으므로
+            // ownerBonus가 있는지가 아니라 "주인이 맞는지"로 판단한다.
+            const active = item.ownerChar === charType;
             const ownerName = (SHARED.CHARACTERS[item.ownerChar] || {}).name || item.ownerChar;
             ownerLine = `<div class="equip-item-owner${active ? '' : ' inactive'}">${
                 active ? item.ownerText : `${ownerName} 전용 — 이 쿠키에게는 발동하지 않습니다`
@@ -1448,7 +1475,7 @@ function renderEquipPicker() {
                 <span class="equip-item-icon">${item.icon}</span>
                 <span class="equip-item-main">
                     <div class="equip-item-name">${item.name} <span class="equip-item-lv">Lv${lv}</span> <span class="${gradeClass(item.grade)}">${item.grade}</span></div>
-                    <div class="equip-item-stats">${equipStatText(SHARED.equipStatsAtLevel(item, lv)) || '능력치 없음'}</div>
+                    <div class="equip-item-stats">${equipStatText(mergedEquipStats(item, lv, charType)) || '능력치 없음'}</div>
                     ${ownerLine}${wornLine}
                     ${upgradeLine}
                 </span>
@@ -1507,7 +1534,7 @@ function renderCharDetailEquipment(charType) {
 
 function openCharacterDetail(id) {
     viewingCharacterId = id;
-    const stats = SHARED.CHARACTERS[id];
+    const stats = statsWithGear(id);
     charDetailIcon.style.background = charIconBackground(stats);
     charDetailName.textContent = stats.name;
     charDetailGrade.textContent = stats.grade || '-';
