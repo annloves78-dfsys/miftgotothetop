@@ -7,7 +7,8 @@ const path = require('path');
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
-    equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor } = require('./public/js/shared.js');
+    equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
+    awakenFloorKey, AWAKEN_PARTY_SIZE, AWAKEN_BOSS_LEVELS } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -1104,8 +1105,27 @@ function tickPlayerProjectiles(roomId, room, dtMs, resolveHit, goneEv) {
 // One landed player hit on a story monster: mark bonus, burn, knockback and the
 // ultimate's mark window. Written once so the melee swing and the thrown drop
 // can never drift apart.
+// 각성모드 보스는 레벨에 따라 받는 피해가 줄어든다 (4·10레벨의 90%).
+// 몬스터 표에 적힌 값이므로 어떤 몬스터에든 붙일 수 있다.
+function monsterDamageTaken(m) {
+    const def = m && MONSTERS[m.type];
+    return (def && def.damageTaken) || 1;
+}
+// 몬스터에게 피해를 준다. 죽었으면 true.
+function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
+    const dmg = Math.max(1, Math.round(rawDamage * monsterDamageTaken(m)));
+    m.hp = Math.max(0, m.hp - dmg);
+    if (m.hp <= 0) {
+        m.alive = false;
+        io.to(roomId).emit('monsterDefeated', { id: mid });
+        return true;
+    }
+    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+    return false;
+}
+
 function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
-    const dmg = Math.round(baseDamage * consumeElementMark(m, character, now));
+    const dmg = Math.round(baseDamage * consumeElementMark(m, character, now) * monsterDamageTaken(m));
     m.hp = Math.max(0, m.hp - dmg);
     if (m.hp <= 0) {
         m.alive = false;
@@ -1298,6 +1318,30 @@ function endStoryRoom(roomId, result) {
     delete rooms[roomId];
 }
 
+// 각성모드 파티: 쓰러진 쿠키 대신 아직 살아 있는 다음 쿠키를 세운다.
+// 파티가 없거나 남은 쿠키가 없으면 null.
+function swapToNextPartyCookie(p) {
+    if (!p.party || !p.party.length) return null;
+    p.partyAlive[p.active] = false;
+    const next = p.partyAlive.findIndex(a => a);
+    if (next < 0) return null;
+    p.active = next;
+    p.charType = p.party[next];
+    p.character = p.partyCharacter[next];
+    p.awakenGear = p.partyAwakenGear[next];
+    p.bonus = p.partyBonus[next];
+    p.maxHp = p.partyMaxHp[next];
+    p.hp = p.partyMaxHp[next];
+    p.shieldHp = 0;
+    p.revivesUsed = 0;
+    p.awakened = false;
+    // 새로 들어온 쿠키는 쿨다운을 처음부터 쓴다.
+    p.lastAttackTime = 0; p.lastSkillTime = 0; p.lastUltimateTime = 0;
+    p.undyingSoulUntil = 0; p.rapidStrikeUntil = 0; p.awakenUntil = 0;
+    p.guardStanceUntil = 0; p.elementMarkUntil = 0; p.attackHealBoostUntil = 0;
+    return next;
+}
+
 function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     const room = rooms[roomId];
     if (!room) return;
@@ -1312,14 +1356,25 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     }
     p.hp = Math.max(0, p.hp - dmg);
     let revived = false;
+    let swapped = null;
     if (p.hp <= 0) {
         revived = tryRevive(p, character, bonusOf(p).revive);
-        if (!revived) p.alive = false;
+        // 각성모드는 쿠키 3명을 데려간다. 하나가 쓰러지면 다음 쿠키가 들어오고,
+        // 셋이 다 쓰러져야 진다.
+        if (!revived) swapped = swapToNextPartyCookie(p);
+        if (!revived && !swapped) p.alive = false;
     }
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
     if (revived) {
         io.to(roomId).emit('storyPlayerRevived', { id: playerId, hp: p.hp });
         applyReviveBlastToMonsters(roomId, room, character, playerId);
+        return;
+    }
+    if (swapped) {
+        io.to(roomId).emit('storyPlayerSwapped', {
+            id: playerId, charType: p.charType, hp: p.hp, maxHp: p.maxHp,
+            active: p.active, partyAlive: p.partyAlive
+        });
         return;
     }
     if (!p.alive && Object.values(room.players).every(pl => !pl.alive)) {
@@ -1630,6 +1685,26 @@ function tickStoryRoom(roomId) {
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
+
+    // 각성모드에는 별이 없다. 보스를 쓰러뜨리는 것이 곧 클리어다.
+    const tickFloorDef = floorDefFor(room.floor);
+    if (tickFloorDef && tickFloorDef.winOnClear) {
+        // 보스가 스스로 회복하는 레벨(7~10).
+        for (const [mid, m] of Object.entries(room.monsters)) {
+            if (!m.alive) continue;
+            const def = MONSTERS[m.type];
+            if (!def || !def.regenAmount || !def.regenIntervalMs) continue;
+            if (now - (m.lastRegenAt || 0) < def.regenIntervalMs) continue;
+            m.lastRegenAt = now;
+            if (m.hp >= m.maxHp) continue;
+            m.hp = Math.min(m.maxHp, m.hp + def.regenAmount);
+            io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+        }
+        if (!Object.values(room.monsters).some(m => m.alive)) {
+            endStoryRoom(roomId, 'win');
+            return;
+        }
+    }
 
     if (room.activeBuffs && room.activeBuffs.length) {
         room.activeBuffs = room.activeBuffs.filter(buff => now < buff.endAt);
@@ -2950,6 +3025,54 @@ io.on('connection', (socket) => {
         // player must explicitly click "ready" (playerReady) once matched.
     });
 
+    // ---- 각성모드 ----
+    // 스토리 방을 그대로 쓴다. 판(floor)이 'awaken:쿠키:레벨' 꼴이면
+    // floorDefFor가 넓은 마당과 보스 한 마리를 만들어 준다. 다른 점은
+    // 쿠키 3명을 데려가고, 하나가 쓰러지면 다음 쿠키가 들어온다는 것뿐이다.
+    socket.on('joinAwakenBoss', ({ charType, level, party, equipParty }) => {
+        // 레벨은 여기서 자르지 않고 그대로 본다. awakenFloorKey는 범위를 넘는
+        // 값을 10으로 맞추는데, 그러면 99를 보낸 사람이 10레벨을 받게 된다.
+        if (!AWAKEN_BOSS_LEVELS[Number(level)]) return;
+        const floor = awakenFloorKey(charType, level);
+        const floorDef = floorDefFor(floor);
+        if (!floorDef) return;
+
+        const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
+        const chosen = wanted.slice(0, AWAKEN_PARTY_SIZE);
+        while (chosen.length < AWAKEN_PARTY_SIZE) chosen.push('kicker');
+
+        const roomId = createStoryRoom(floor, true);
+        const room = rooms[roomId];
+        spawnStoryMonsters(room, floorDef);
+
+        const bonuses = chosen.map((id, i) => bonusFrom(equipParty && equipParty[i], id));
+        const characters = chosen.map((id, i) => charFrom(id, equipParty && equipParty[i]));
+        const gears = chosen.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
+        const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
+        room.players[socket.id] = {
+            x: 0, y: 0,
+            facing: Math.PI,
+            party: chosen,
+            partyBonus: bonuses,
+            partyCharacter: characters,
+            partyAwakenGear: gears,
+            partyMaxHp: maxHp.slice(),
+            partyAlive: chosen.map(() => true),
+            active: 0,
+            charType: chosen[0],
+            character: characters[0],
+            awakenGear: gears[0],
+            bonus: bonuses[0],
+            hp: maxHp[0], maxHp: maxHp[0],
+            alive: true,
+            lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+            ready: true
+        };
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        startStoryFight(roomId);
+    });
+
     socket.on('startRaid', () => {
         const roomId = socket.data.roomId;
         if (roomId) startFight(roomId);
@@ -3207,13 +3330,7 @@ io.on('connection', (socket) => {
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
                 if (meleeLineHitPoint(p.x, p.y, p.facing, character.skillRange, character.skillWidth, m.x, m.y, MONSTER_RADIUS)) {
-                    m.hp = Math.max(0, m.hp - character.skillDamage);
-                    if (m.hp <= 0) {
-                        m.alive = false;
-                        io.to(roomId).emit('monsterDefeated', { id: mid });
-                    } else {
-                        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
-                    }
+                    hurtStoryMonster(roomId, room, mid, m, character.skillDamage);
                 }
             }
         } else if (character.skillType === 'self_heal') {

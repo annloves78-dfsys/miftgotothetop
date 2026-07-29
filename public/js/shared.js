@@ -1042,7 +1042,14 @@ const EVENT_STAGE_DEFS = allEventPlayable().reduce((acc, s) => { acc[s.id] = s.d
 // The one place that turns whatever a story room was entered with -- a floor
 // number or an event stage id -- into its level layout.
 function floorDefFor(floor) {
-    return STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor] || null;
+    const known = STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor];
+    if (known) return known;
+    const parsed = parseAwakenFloorKey(floor);
+    if (!parsed) return null;
+    if (!AWAKEN_FLOOR_CACHE[floor]) {
+        AWAKEN_FLOOR_CACHE[floor] = awakenFloorDef(parsed.charType, parsed.level);
+    }
+    return AWAKEN_FLOOR_CACHE[floor];
 }
 function isEventStage(floor) {
     return Object.prototype.hasOwnProperty.call(EVENT_STAGE_DEFS, floor);
@@ -2631,6 +2638,93 @@ function awakenLevelReward(level) {
     return bag;
 }
 
+// 각성모드 한 판은 스토리 층과 같은 모양의 "판"으로 만든다. 그래야 이미 있는
+// 스토리 전투(이동·공격·스킬·궁극기·부하·표식)를 그대로 쓸 수 있다.
+// 다만 길이 아니라 넓은 마당이고, 안에는 보스 하나뿐이며, 별 대신 보스를
+// 쓰러뜨리면 이긴다(winOnClear).
+const AWAKEN_FLOOR_PREFIX = 'awaken';
+const AWAKEN_ARENA_LENGTH = 900;
+const AWAKEN_ARENA_HALF_WIDTH = 260;
+function awakenFloorKey(charType, level) {
+    return `${AWAKEN_FLOOR_PREFIX}:${charType}:${awakenLevelOf(level)}`;
+}
+function parseAwakenFloorKey(key) {
+    const m = /^awaken:([a-z_]+):(\d+)$/.exec(String(key || ''));
+    if (!m) return null;
+    const base = CHARACTERS[m[1]];
+    // 각성 칸이 있는 쿠키만 보스가 된다. 아무 쿠키 이름이나 보내도 판이
+    // 열리지 않게 여기서 막는다 -- 안 막으면 등록되지 않은 몬스터를 만들려다
+    // 서버가 죽는다.
+    if (!base || !hasAwakenSlot(base.grade) || !AWAKEN_BOSS_LEVELS[Number(m[2])]) return null;
+    return { charType: m[1], level: Number(m[2]) };
+}
+
+// 보스를 몬스터 한 마리로 적는다. 쿠키를 그대로 쓰고 레벨 스탯만 얹는다.
+function awakenBossMonsterType(charType, level) {
+    return `awakenboss_${charType}_${awakenLevelOf(level)}`;
+}
+function awakenBossMonsterDef(charType, level) {
+    const base = CHARACTERS[charType];
+    const stats = awakenLevelStats(level);
+    if (!base || !stats) return null;
+    const def = {
+        name: `${base.name} 보스`,
+        color: base.color,
+        colorLeft: base.colorLeft,
+        colorRight: base.colorRight,
+        health: base.health + (stats.health || 0),
+        speed: (base.speed || 2) + (stats.speed || 0),
+        aggroRange: 900,
+        preferredDistance: Math.max(40, (base.attackRange || 90) - 20),
+        attackRange: (base.attackRange || 90) + 20,
+        attackDamage: awakenBossAttackDamage(charType, level),
+        attackCooldown: Math.max(400, base.attackCooldown || 500),
+        telegraphMs: 350,
+        // 레벨 표에서 오는 것들.
+        damageTaken: stats.damageTaken || 1,
+        regenAmount: stats.regenAmount || 0,
+        regenIntervalMs: stats.regenIntervalMs || 0,
+        // 화면에 이 쿠키의 얼굴로 그리라고 알려 준다.
+        awakenCharType: charType,
+        awakenLevel: awakenLevelOf(level)
+    };
+    const burn = awakenBossBurnTotal(charType, level);
+    if (burn) {
+        const ticks = base.attackBurnTicks || 2;
+        def.burnDamage = Math.max(1, Math.round(burn / ticks));
+        def.burnTicks = ticks;
+        def.burnIntervalMs = base.attackBurnIntervalMs || 1000;
+    }
+    return def;
+}
+
+// 다섯 보스 × 10레벨을 미리 몬스터 표에 넣어 둔다. 서버와 화면이 같은 표를
+// 읽어야 이름과 색이 어긋나지 않는다.
+(function registerAwakenBosses() {
+    awakenBossCharTypes().forEach(charType => {
+        for (let lv = 1; lv <= AWAKEN_MAX_LEVEL; lv++) {
+            const def = awakenBossMonsterDef(charType, lv);
+            if (def) MONSTERS[awakenBossMonsterType(charType, lv)] = def;
+        }
+    });
+})();
+
+function awakenFloorDef(charType, level) {
+    return {
+        levelType: 'bridge',
+        levelLength: AWAKEN_ARENA_LENGTH,
+        laneHalfWidth: AWAKEN_ARENA_HALF_WIDTH,
+        gates: [],
+        // 보스는 마당 안쪽에 서서 기다린다.
+        monsters: [{ type: awakenBossMonsterType(charType, level), x: -600, y: 0, room: 0 }],
+        // 별이 없다. 보스를 쓰러뜨리는 것이 곧 클리어다.
+        winOnClear: true,
+        awaken: { charType, level: awakenLevelOf(level) }
+    };
+}
+
+const AWAKEN_FLOOR_CACHE = {};
+
 // ==================== 아이템 ====================
 // 재화(currencies)와 달리 "쓰는" 것들. 아이템창에 이 표대로 그려진다.
 // goal이 있으면 그만큼 모였을 때 becomes로 바뀐다 (자동).
@@ -2679,7 +2773,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }

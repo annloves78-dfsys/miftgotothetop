@@ -1950,9 +1950,48 @@ awakenPlayBtn.addEventListener('click', () => {
         showAwakenMsg('파티 3명을 모두 채워 주세요.');
         return;
     }
-    // 전투는 아직 만드는 중이다. 여기까지가 이번에 들어간 부분.
-    showAwakenMsg('전투는 아직 준비 중입니다. 보스와 레벨, 파티는 그대로 저장돼 있습니다.');
+    showAwakenMsg('');
+    socket.emit('joinAwakenBoss', {
+        charType: awakenBossId,
+        level: awakenLevel,
+        party: awakenParty,
+        equipParty: awakenParty.map(id => equipPayload(id))
+    });
 });
+
+// 한 판이 끝났을 때. 이겼으면 그 레벨의 드랍을 굴려 조각이나 각성 장비를 준다.
+function showAwakenResult(awaken, result) {
+    const stats = SHARED.CHARACTERS[awaken.charType] || SHARED.CHARACTERS.kicker;
+    if (result !== 'win') {
+        resultTitle.textContent = '패배...';
+        resultTitle.style.color = '#e74c3c';
+        resultDesc.textContent = `${stats.name} 보스 ${awaken.level}레벨에게 졌습니다.`;
+        showScreen('result');
+        return;
+    }
+    resultTitle.textContent = '보스 격파!';
+    resultTitle.style.color = '#2ecc71';
+
+    const bag = SHARED.awakenLevelReward(awaken.level);
+    grantCurrencies(bag);
+    const drop = SHARED.rollAwakenDrop(awaken.level);
+    const lines = [`${stats.name} 보스 ${awaken.level}레벨을 잡았습니다.`];
+    let chips = rewardChipsHtml(bag);
+    if (drop.gearId) {
+        const item = SHARED.equipmentFor(drop.gearId);
+        grantEquipment(drop.gearId);
+        lines.push(`${item.icon} ${item.name}을(를) 얻었습니다!`);
+    }
+    if (drop.fragments > 0) {
+        const made = grantItems({ [SHARED.AWAKEN_FRAGMENT_KEY]: drop.fragments });
+        lines.push(`🧩 각성 장비 조각 ${drop.fragments}개를 받았습니다.`);
+        if (made > 0) lines.push(`조각이 다 모여 🎁 랜덤 각성 장비 ${made}개가 됐습니다!`);
+    }
+    resultDesc.textContent = lines.join(' ');
+    resultRewardsEl.innerHTML = chips;
+    renderItemsBadge();
+    showScreen('result');
+}
 
 // ---- Event: 레전더리 이벤트 ----
 // Laid out like the shop -- categories down the left, the selected one on the
@@ -2842,6 +2881,33 @@ socket.on('storyFloorStarted', (data) => {
     startStoryLoop();
 });
 
+// 각성모드: 쿠키 하나가 쓰러지면 다음 쿠키가 들어온다. 셋이 다 쓰러져야 진다.
+socket.on('storyPlayerSwapped', ({ id, charType, hp, maxHp }) => {
+    if (id !== socket.id || !storyPlayer) return;
+    storyPlayer.charType = charType;
+    storyPlayer.hp = hp;
+    storyPlayer.maxHp = maxHp;
+    storyPlayer.alive = true;
+    storyPlayer.shieldHp = 0;
+    // 새 쿠키는 자기 쿨다운을 처음부터 쓴다.
+    storyPlayer.lastAttackClientTime = -Infinity;
+    storyPlayer.lastSkillClientTime = -Infinity;
+    storyPlayer.lastUltimateClientTime = -Infinity;
+    storyPlayer.attackEffectUntil = 0;
+    storyPlayer.skillEffectUntil = 0;
+    storyPlayer.ultimateEffectUntil = 0;
+    storyPlayer.speedBoostUntil = 0;
+    storyPlayer.awakenUntil = 0;
+    storyPlayer.rapidStrikeUntil = 0;
+    storyPlayer.comboStage = 0;
+    storyPlayer.spearSide = 0;
+    const bonus = equipBonusOf(charType);
+    storyPlayer.equipSpeed = bonus.speed;
+    storyPlayer.equipCooldown = bonus.cooldown;
+    updateStoryHpBar();
+    syncMobileButtonIcons(charType, true);
+});
+
 // 사탕 폭탄병이 터진 자리. 기존 충격 효과(storyImpactEffects)를 그대로 쓴다.
 socket.on('monsterExploded', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 320 });
@@ -2985,6 +3051,9 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     storySummons = {};
     resetTowerActions();
     resultRewardsEl.innerHTML = '';
+    // 각성모드는 판 이름이 'awaken:쿠키:레벨'이라 여기서 갈라진다.
+    const awaken = SHARED.parseAwakenFloorKey(floor);
+    if (awaken) { showAwakenResult(awaken, result); return; }
     const stage = eventStageById(floor);
     if (!stage) selectedStoryFloor = floor;
     if (result === 'win') {
