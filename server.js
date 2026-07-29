@@ -1115,6 +1115,43 @@ function monsterDamageTaken(m) {
     const def = m && MONSTERS[m.type];
     return (def && def.damageTaken) || 1;
 }
+// 케이크 보스처럼 때릴 때마다 자라는 몬스터. growOnAttack이 없으면 아무 일도
+// 없으므로 다른 몬스터는 지금까지와 똑같이 움직인다.
+function monsterAttackDamage(m, def) {
+    return (def.attackDamage || 0) + ((m && m.growAttack) || 0);
+}
+function monsterSpeed(m, def) {
+    return (def.speed || 0) + ((m && m.growSpeed) || 0);
+}
+// 한 대 때릴 때마다 공격력·속도가 오르고 스스로 조금 회복한다.
+function growMonsterOnAttack(roomId, mid, m, def) {
+    const grow = def.growOnAttack;
+    if (!grow || !m.alive) return;
+    if (grow.attack) m.growAttack = (m.growAttack || 0) + grow.attack;
+    if (grow.speed) m.growSpeed = (m.growSpeed || 0) + grow.speed;
+    if (grow.heal && m.hp < m.maxHp) {
+        m.hp = Math.min(m.maxHp, m.hp + grow.heal);
+        io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+    }
+    io.to(roomId).emit('monsterGrew', {
+        id: mid, attack: monsterAttackDamage(m, def), speed: monsterSpeed(m, def), hp: m.hp
+    });
+}
+
+// 체력이 어느 선 아래로 떨어지면 딱 한 번 회복하고 보호막을 두른다.
+function checkMonsterLowHpGuard(roomId, room, mid, m, def) {
+    const guard = def && def.lowHpGuard;
+    if (!guard || !m.alive || m.lowHpGuardUsed) return;
+    if (m.hp > guard.atHp) return;
+    m.lowHpGuardUsed = true;
+    if (guard.heal) m.hp = Math.min(m.maxHp, m.hp + guard.heal);
+    if (guard.shield) m.shieldHp = (m.shieldHp || 0) + guard.shield;
+    io.to(roomId).emit('monsterGuard', {
+        id: mid, hp: m.hp, shieldHp: m.shieldHp || 0, x: m.x, y: m.y,
+        name: def.name
+    });
+}
+
 // 각성모드 보스의 각성(awakening_rapid)처럼 공격이 빨라지는 동안에만 짧아진다.
 function monsterAttackCooldown(m, def, now) {
     if (m && m.rapidUntil && now < m.rapidUntil && m.rapidCooldown) return m.rapidCooldown;
@@ -1873,7 +1910,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
             // Kites the nearest player: closes in if too far, backs off if the
             // player gets right up next to it, hovering at preferredDistance
             // instead of standing adjacent like a melee mob would.
-            const step = def.speed * 3; // ~px per 50ms tick
+            const step = monsterSpeed(m, def) * 3; // ~px per 50ms tick
             if (nearestDist > def.preferredDistance) {
                 const dx = nearest.x - m.x, dy = nearest.y - m.y;
                 const dist = Math.hypot(dx, dy) || 1;
@@ -1944,8 +1981,9 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                     spawnMonsterProjectile(ctx, mid, m, def, nearest.x, nearest.y);
                 } else if (d <= def.attackRange) {
                     io.to(roomId).emit(ctx.ev.attack, { id: mid });
-                    ctx.damageTarget(nearest, def.attackDamage * outgoingDamageMultiplier(m, now), m.elementMark);
+                    ctx.damageTarget(nearest, monsterAttackDamage(m, def) * outgoingDamageMultiplier(m, now), m.elementMark);
                     if (!rooms[roomId]) return;
+                    growMonsterOnAttack(roomId, mid, m, def);
                 }
             }
         }
@@ -1963,6 +2001,13 @@ function tickStoryRoom(roomId) {
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
+
+    // 체력이 바닥나기 직전에 한 번만 버티는 몬스터(10층 케이크). 죽는 길이
+    // 여럿이라 때리는 자리마다 붙이지 않고 여기서 한 번에 본다.
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        checkMonsterLowHpGuard(roomId, room, mid, m, MONSTERS[m.type]);
+    }
 
     // 각성모드에는 별이 없다. 보스를 쓰러뜨리는 것이 곧 클리어다.
     const tickFloorDef = floorDefFor(room.floor);

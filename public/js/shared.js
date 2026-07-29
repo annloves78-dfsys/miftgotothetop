@@ -1467,6 +1467,27 @@ const MONSTERS = {
         laserTrackSpeed: 70
     },
     // 9층: 마지막 층을 지키는 정예. 멀리서 세게 쏘고 발도 빠르다.
+    // 10층 보스. 다가와서 때리는 것뿐이지만, 한 대 때릴 때마다 공격력과
+    // 속도가 오르고 스스로 조금씩 회복해서 끌수록 감당이 안 된다.
+    // 체력이 200 아래로 떨어지면 딱 한 번 버틴다.
+    cake_boss: {
+        name: '케이크',
+        color: '#f6a9c9',
+        colorLeft: '#ffd9e6',
+        colorRight: '#c96a95',
+        health: 1000,
+        speed: 2,
+        aggroRange: 1000,
+        preferredDistance: 60,
+        attackRange: 130,
+        attackDamage: 12,
+        attackCooldown: 1400,
+        telegraphMs: 500,
+        // 때릴 때마다 자란다.
+        growOnAttack: { attack: 0.5, speed: 0.1, heal: 0.5 },
+        // 딱 한 번: 체력 100 회복 + 보호막 100.
+        lowHpGuard: { atHp: 200, heal: 100, shield: 100 }
+    },
     dark_cookie: {
         name: '어둠의 쿠키',
         color: '#4a1d7a',
@@ -1905,7 +1926,21 @@ const STORY_FLOOR_DEFS = {
             { type: 'candy_bomber', at: -3800, off: 30, room: 3 }
         ],
         star: { at: -4060 }
-    })
+    }),
+    // 10층: 첫 보스전. 잡몹 없이 케이크 한 마리와만 붙는다. 다리도 짧고
+    // 넓게 -- 피할 자리가 있어야 자라나는 보스를 상대할 수 있다.
+    10: {
+        levelType: 'bridge',
+        levelLength: 1100,
+        laneHalfWidth: 220,
+        gates: [],
+        monsters: [
+            { type: 'cake_boss', x: -800, y: 0, room: 0 }
+        ],
+        // 별이 없다. 케이크를 쓰러뜨리는 것이 곧 클리어다.
+        winOnClear: true,
+        bossFloor: true
+    }
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of

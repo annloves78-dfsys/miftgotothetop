@@ -2981,10 +2981,35 @@ socket.on('bossMinions', ({ monsters }) => {
 socket.on('monsterShield', ({ id, shieldHp }) => {
     if (storyMonsters && storyMonsters[id]) storyMonsters[id].shieldHp = shieldHp;
 });
+// 10층 케이크: 때릴 때마다 조금씩 자란다. 회복분만 반영하면 된다.
+socket.on('monsterGrew', ({ id, hp }) => {
+    if (storyMonsters && storyMonsters[id]) storyMonsters[id].hp = hp;
+});
+// 체력이 바닥나기 직전에 딱 한 번 버틴다.
+socket.on('monsterGuard', ({ id, hp, shieldHp, x, y, name }) => {
+    if (storyMonsters && storyMonsters[id]) {
+        storyMonsters[id].hp = hp;
+        storyMonsters[id].shieldHp = shieldHp;
+    }
+    const now = performance.now();
+    [60, 120].forEach((r, i) => storyImpactEffects.push({ x, y, radius: r, until: now + 450 + i * 200 }));
+    showBossBanner(`🛡 ${name || '보스'}가 버텼다!`, `체력을 채우고 보호막 ${shieldHp}을 둘렀습니다`);
+});
 // 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 화면에도
 // 크게 알린다 -- 아니면 왜 안 죽었는지 알 수가 없다.
 const bossReviveBanner = document.getElementById('boss-revive-banner');
 let bossReviveBannerHandle = null;
+// 보스가 무언가 크게 했을 때 화면 위에 잠깐 띄우는 띠. 부활과 버티기가 같이 쓴다.
+function showBossBanner(title, sub) {
+    bossReviveBanner.innerHTML = `<span class="brb-title">${title}</span>`
+        + (sub ? `<span class="brb-sub">${sub}</span>` : '');
+    bossReviveBanner.classList.remove('hidden');
+    if (bossReviveBannerHandle) clearTimeout(bossReviveBannerHandle);
+    bossReviveBannerHandle = setTimeout(() => {
+        bossReviveBanner.classList.add('hidden');
+        bossReviveBannerHandle = null;
+    }, 2200);
+}
 socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     if (monsters) storyMonsters = monsters;
     // 겹겹의 고리로 크게 터뜨린다.
@@ -2998,15 +3023,8 @@ socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     const m = storyMonsters && storyMonsters[id];
     const def = m && SHARED.MONSTERS[m.type];
     const name = (def && def.name) || '보스';
-    bossReviveBanner.innerHTML = `<span class="brb-title">💀 ${name} 부활!</span>`
-        + `<span class="brb-sub">${left > 0 ? `아직 ${left}번 더 일어납니다` : '이번이 마지막입니다'}</span>`;
-    bossReviveBanner.classList.remove('hidden');
-    // 다시 일어나면 타이머를 새로 잡는다 (겹쳐도 2초는 보이게).
-    if (bossReviveBannerHandle) clearTimeout(bossReviveBannerHandle);
-    bossReviveBannerHandle = setTimeout(() => {
-        bossReviveBanner.classList.add('hidden');
-        bossReviveBannerHandle = null;
-    }, 2200);
+    showBossBanner(`💀 ${name} 부활!`,
+        left > 0 ? `아직 ${left}번 더 일어납니다` : '이번이 마지막입니다');
 });
 // 일어나면서 터지는 충격파 (번개지옥맛).
 socket.on('bossReviveBlast', ({ x, y }) => {
