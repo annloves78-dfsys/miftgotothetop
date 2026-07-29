@@ -2380,6 +2380,17 @@ function awakenEquipmentIds() {
 // ---- 보스마다의 특수스킬 · 궁극기 · 움직임 ----
 // 유누가 보스를 하나씩 정해서 준다. 아직 안 받은 보스는 null로 비워 두고,
 // 그때까지는 그 쿠키의 기본공격만 한다 (이벤트 보스를 비워 둔 것과 같은 방식).
+// 구간으로 적은 것을 레벨 -> 값 표로 편다. [{upTo, value}, ...]는 위에서부터
+// 처음 맞는 칸을 쓴다. 열 줄짜리 표를 손으로 적지 않으려고 둔 것.
+function levelRamp(steps) {
+    const out = {};
+    for (let lv = 1; lv <= AWAKEN_MAX_LEVEL; lv++) {
+        const step = steps.find(s => lv <= s.upTo) || steps[steps.length - 1];
+        out[lv] = step.value;
+    }
+    return out;
+}
+
 const AWAKEN_BOSSES = {
     lightningdevil: {
         // 순간이동(blink_heal)은 레벨이 올라도 그대로다 -- 강해지지 않는다.
@@ -2388,13 +2399,36 @@ const AWAKEN_BOSSES = {
         ultimate: { damagePerLevel: 5 },
         movement: null
     },
+    lightninghell: {
+        // 지진도 번개악마의 궁극기와 똑같이 레벨마다 5씩. 10레벨이면 15 -> 65.
+        skill: { damagePerLevel: 5 },
+        ultimate: {
+            // 궁극기 중의 기본공격이 오르는 폭. 1~5레벨 +2, 6~10레벨 +4.
+            attackDamageBonus: levelRamp([{ upTo: 5, value: 2 }, { upTo: 10, value: 4 }]),
+            // 부하 수: 4레벨까지는 원래대로 4마리, 5~9레벨 5마리, 10레벨 6마리.
+            summonCount: levelRamp([{ upTo: 4, value: 4 }, { upTo: 9, value: 5 }, { upTo: 10, value: 6 }]),
+            // 부하 체력: 1~5레벨 40, 6~10레벨 50 (원래는 30).
+            summonHealth: levelRamp([{ upTo: 5, value: 40 }, { upTo: 10, value: 50 }])
+        },
+        movement: null
+    },
+    blacksugar: {
+        // 끌어오기(pull_in)는 그대로 -- 레벨이 올라도 안 세진다.
+        skill: { perLevel: null },
+        // 보호막과 즉시 회복이 둘 다 레벨마다 5씩 오른다 (번개악마 궁극기와
+        // 같은 방식). 10레벨이면 회복 20 -> 70, 보호막 70 -> 120.
+        ultimate: { healAmountPerLevel: 5, shieldAmountPerLevel: 5 },
+        movement: null
+    },
     orangelemon: { skill: null, ultimate: null, movement: null },
-    dragonfruit: { skill: null, ultimate: null, movement: null },
-    blacksugar: { skill: null, ultimate: null, movement: null },
-    lightninghell: { skill: null, ultimate: null, movement: null }
+    dragonfruit: { skill: null, ultimate: null, movement: null }
 };
 function awakenBossSpec(charType) {
     return AWAKEN_BOSSES[charType] || null;
+}
+function awakenLevelOf(level) {
+    const lv = Math.max(0, Math.floor(Number(level) || 0));
+    return Math.min(AWAKEN_MAX_LEVEL, lv);
 }
 
 // 그 레벨에서 보스의 궁극기 피해. damagePerLevel이 없으면 쿠키 원래 값 그대로.
@@ -2404,8 +2438,64 @@ function awakenBossUltimateDamage(charType, level) {
     const spec = AWAKEN_BOSSES[charType];
     const per = spec && spec.ultimate && spec.ultimate.damagePerLevel;
     if (!per) return base.ultimateDamage;
-    const lv = Math.max(0, Number(level) || 0);
-    return base.ultimateDamage + per * lv;
+    return base.ultimateDamage + per * awakenLevelOf(level);
+}
+
+// 특수스킬 피해도 같은 방식.
+function awakenBossSkillDamage(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.skillDamage == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const per = spec && spec.skill && spec.skill.damagePerLevel;
+    if (!per) return base.skillDamage;
+    return base.skillDamage + per * awakenLevelOf(level);
+}
+
+// 궁극기를 쓰는 동안의 기본공격 피해 (번개지옥맛의 죽지않는 영혼 같은 것).
+function awakenBossUltimateAttackDamage(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.ultimateAttackDamage == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const table = spec && spec.ultimate && spec.ultimate.attackDamageBonus;
+    if (!table) return base.ultimateAttackDamage;
+    return base.ultimateAttackDamage + (table[awakenLevelOf(level)] || 0);
+}
+
+// 궁극기의 즉시 회복량과 보호막 (블랙 슈거맛의 guard_surge 같은 것).
+function awakenBossUltimateHealAmount(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.ultimateHealAmount == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const per = spec && spec.ultimate && spec.ultimate.healAmountPerLevel;
+    if (!per) return base.ultimateHealAmount;
+    return base.ultimateHealAmount + per * awakenLevelOf(level);
+}
+function awakenBossUltimateShield(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.ultimateShieldAmount == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const per = spec && spec.ultimate && spec.ultimate.shieldAmountPerLevel;
+    if (!per) return base.ultimateShieldAmount;
+    return base.ultimateShieldAmount + per * awakenLevelOf(level);
+}
+
+// 궁극기가 부르는 부하의 수와 체력.
+function awakenBossSummonCount(charType, level) {
+    const base = CHARACTERS[charType];
+    if (!base || base.ultimateSummonCount == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const table = spec && spec.ultimate && spec.ultimate.summonCount;
+    if (!table) return base.ultimateSummonCount;
+    return table[awakenLevelOf(level)] || base.ultimateSummonCount;
+}
+function awakenBossSummonHealth(charType, level) {
+    const base = CHARACTERS[charType];
+    const summon = base && base.ultimateSummon;
+    if (!summon || summon.health == null) return null;
+    const spec = AWAKEN_BOSSES[charType];
+    const table = spec && spec.ultimate && spec.ultimate.summonHealth;
+    if (!table) return summon.health;
+    return table[awakenLevelOf(level)] || summon.health;
 }
 
 // ---- 각성모드 보상 ----
@@ -2513,7 +2603,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, awakenBossCharTypes, awakenEquipmentIds, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }
