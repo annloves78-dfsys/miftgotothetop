@@ -3342,11 +3342,16 @@ socket.on('storyPlayerRevived', ({ hp }) => {
     updateStoryHpBar();
 });
 
-socket.on('storyPlayerHealed', ({ hp }) => {
+socket.on('storyPlayerHealed', ({ hp, partyHp }) => {
     if (!storyPlayer) return;
     storyPlayer.hp = hp;
     storyPlayer.healEffectUntil = performance.now() + 250;
     updateStoryHpBar();
+    // 팀 회복은 쉬고 있는 쿠키에게도 들어가므로 교체 줄의 체력 바도 같이 찬다.
+    if (partyHp && awakenFightParty) {
+        awakenFightParty.partyHp = partyHp;
+        renderAwakenSwapBar();
+    }
 });
 
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {

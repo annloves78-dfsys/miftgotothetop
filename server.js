@@ -959,6 +959,22 @@ function publicProjectiles(room) {
 // differ only in how damage reaches a player, where a monster may stand, what
 // can block its line of fire, and which events go on the wire -- so those four
 // things are handed in and the behaviour itself is written once.
+// 파란 벽(에너지 방벽)은 사람만 막는 게 아니다 -- 그 방의 적도 벽을 넘어
+// 따라 나오지 못한다. 살아 있는 적이 있는 동안 벽은 서 있으므로, 결국
+// 살아 있는 적은 늘 자기 방 안에 갇혀 있는 셈이다.
+// 방(gate)이 없는 판(10층 케이크, 각성모드 마당)은 그대로 둔다.
+function clampMonsterToRoom(floorDef, m) {
+    if (!floorDef || !floorDef.gates || !floorDef.gates.length) return;
+    const gate = floorDef.gates.find(g => (g.room || 0) === (m.roomIndex || 0));
+    if (!gate) return;
+    const along = alongOf(floorDef, m.x, m.y);
+    // exit가 더 멀리(작은 값), entrance가 시작 쪽(큰 값)이다.
+    const kept = Math.max(gate.exit, Math.min(gate.entrance, along));
+    if (kept === along) return;
+    const pos = fromAlongAcross(floorDef, kept, acrossOf(floorDef, m.x, m.y));
+    m.x = pos.x; m.y = pos.y;
+}
+
 function storyMonsterCtx(roomId, room) {
     const floorDef = floorDefFor(room.floor);
     return {
@@ -966,7 +982,12 @@ function storyMonsterCtx(roomId, room) {
         damagePlayer: (playerId, dmg, mark) => applyDamageToStoryPlayer(roomId, playerId, dmg, mark),
         damageTarget: (ref, dmg, mark) => damageTargetRef(roomId, room, ref, dmg, mark,
             (pid, d, mk) => applyDamageToStoryPlayer(roomId, pid, d, mk)),
-        clamp: (m) => { if (floorDef) { const k = clampToLane(floorDef, m.x, m.y); m.x = k.x; m.y = k.y; } },
+        clamp: (m) => {
+            if (!floorDef) return;
+            const k = clampToLane(floorDef, m.x, m.y);
+            m.x = k.x; m.y = k.y;
+            clampMonsterToRoom(floorDef, m);
+        },
         // A raised shield stops an EMPLACEMENT firing through it; see shieldBetween.
         sightBlocked: (m, target, def) => def.speed === 0 && !!floorDef && shieldBetween(room, floorDef, m, target),
         outOfBounds: (pr) => !!floorDef && (pr.x > 200 || pr.x < -floorDef.levelLength - 200
@@ -1223,13 +1244,21 @@ function spawnStoryMonster(room, type, x, y, roomIndex) {
     const def = MONSTERS[type];
     if (!def) return null;
     const id = `sm${room.nextSpawnId = (room.nextSpawnId || 0) + 1}`;
-    room.monsters[id] = {
+    const m = {
         type, x, y,
         hp: def.health, maxHp: def.health,
         alive: true, state: 'idle', roomIndex: roomIndex || 0,
         elementMark: null, laser: null,
         stunnedUntil: 0, telegraphStartAt: 0, nextAttackAt: 0
     };
+    // 갈라져 나온 것도, 불려 나온 것도 길 밖이나 벽 너머로는 못 나간다.
+    const floorDef = floorDefFor(room.floor);
+    if (floorDef) {
+        const k = clampToLane(floorDef, m.x, m.y);
+        m.x = k.x; m.y = k.y;
+        clampMonsterToRoom(floorDef, m);
+    }
+    room.monsters[id] = m;
     return id;
 }
 
@@ -1384,6 +1413,7 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
             m.x + (dx / kdist) * character.attackKnockback,
             m.y + (dy / kdist) * character.attackKnockback);
         m.x = knocked.x; m.y = knocked.y;
+        clampMonsterToRoom(floorDef, m); // 벽 너머로는 밀려나지 않는다
     }
 
     // While the ultimate window is open, a landed attack marks the target --
@@ -1493,9 +1523,36 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
 }
 
 function healStoryPlayer(room, roomId, amount) {
+    healStoryTeamBy(room, roomId, () => amount);
+}
+
+// 팀 회복은 쉬고 있는 쿠키에게도 들어간다. 11층부터는 쿠키를 두 명 데려가는데,
+// p.hp는 지금 나와 있는 쿠키의 것뿐이라 파티 전체를 따로 돌아야 한다
+// (게스트 레이드의 healGuestTeam과 같은 규칙).
+// amountFor(maxHp, index)로 받는 이유는 밀물처럼 쿠키마다 회복량이 다른
+// 것(최대 체력의 몇 %)도 같은 길로 보내기 위해서다.
+function healStoryTeamBy(room, roomId, amountFor) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
-        const healed = Math.min(p.maxHp, p.hp + amount);
+        if (p.party && p.partyHp) {
+            // 싸우는 동안 최신값은 p.hp 쪽이다 (partyHp는 교체할 때만 맞춰진다).
+            p.partyHp[p.active] = p.hp;
+            let changed = false;
+            for (let i = 0; i < p.party.length; i++) {
+                if (p.partyAlive && !p.partyAlive[i]) continue; // 쓰러진 쿠키는 회복으로 못 일으킨다
+                const add = amountFor(p.partyMaxHp[i], i);
+                if (!add) continue;
+                const healed = Math.min(p.partyMaxHp[i], p.partyHp[i] + add);
+                if (healed !== p.partyHp[i]) { p.partyHp[i] = healed; changed = true; }
+            }
+            if (!changed) continue;
+            p.hp = p.partyHp[p.active];
+            io.to(roomId).emit('storyPlayerHealed', { id, hp: p.hp, partyHp: p.partyHp });
+            continue;
+        }
+        const add = amountFor(p.maxHp, 0);
+        if (!add) continue;
+        const healed = Math.min(p.maxHp, p.hp + add);
         if (healed !== p.hp) {
             p.hp = healed;
             io.to(roomId).emit('storyPlayerHealed', { id, hp: p.hp });
@@ -4044,9 +4101,11 @@ io.on('connection', (socket) => {
                 if (def && def.speed > 0) {
                     const ang = Math.atan2(m.y - p.y, m.x - p.x);
                     const at = mR(m) + PLAYER_RADIUS + 6;
-                    const spot = clampToLane(floorDefFor(room.floor),
+                    const lane = floorDefFor(room.floor);
+                    const spot = clampToLane(lane,
                         p.x + Math.cos(ang) * at, p.y + Math.sin(ang) * at);
                     m.x = spot.x; m.y = spot.y;
+                    clampMonsterToRoom(lane, m); // 끌어와도 벽은 못 넘는다
                 } else {
                     m.hp = Math.max(0, m.hp - character.skillDamage);
                     if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
@@ -4160,14 +4219,8 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('storyUltimateMark',
                         { x: t.x, y: t.y, radius: character.skillRadius });
                 }
-                for (const [id, tp] of Object.entries(rm.players)) {
-                    if (!tp.alive) continue;
-                    const healed = Math.min(tp.maxHp, tp.hp + tideHealFor(stage, tp.maxHp));
-                    if (healed !== tp.hp) {
-                        tp.hp = healed;
-                        io.to(roomId).emit('storyPlayerHealed', { id, hp: tp.hp });
-                    }
-                }
+                // 회복은 쿠키마다 자기 최대 체력의 비율만큼. 쉬고 있는 쿠키도 받는다.
+                healStoryTeamBy(rm, roomId, maxHp => tideHealFor(stage, maxHp));
                 shieldStoryTeam(rm, roomId, stage.shieldAmount);
                 advanceTideStage(character, pl, hit);
                 io.to(roomId).emit('storyTideStage',
