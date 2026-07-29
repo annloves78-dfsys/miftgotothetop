@@ -35,6 +35,9 @@ const defaultData = {
     inventory: [], // [{ uid, itemId, level }] -- 같은 장비 여러 개는 항목 여러 개
     equipped: {}, // charType -> { weapon: uid, helmet: uid, ... }
     nextEquipUid: 1, // 가방 항목을 구분하는 번호
+    // 아이템창. 재화와 달리 "쓰는" 것들 (랜덤 각성 장비, 각성 장비 조각 등).
+    // key -> 개수. 표는 shared.js의 ITEMS에 있다.
+    items: {},
     admin: false // 관리자 전용; see admin_gate.js
 };
 
@@ -73,6 +76,8 @@ function loadGameData() {
             data.eventClaimed = data.eventClaimed || [];
             // 장비가 없던 시절의 세이브: 빈 가방으로 시작한다.
             data.inventory = Array.isArray(data.inventory) ? data.inventory : [];
+            // 아이템창이 없던 시절의 세이브: 빈 아이템창으로 시작한다.
+            data.items = (data.items && typeof data.items === 'object') ? data.items : {};
             data.equipped = data.equipped || {};
             // uid는 가방에 이미 있는 번호보다 반드시 커야 한다 -- 안 그러면
             // 새 장비가 기존 장비와 같은 번호를 받아 섞인다.

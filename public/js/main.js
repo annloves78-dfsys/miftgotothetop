@@ -4,6 +4,7 @@ const socket = io();
 const screens = {
     lobby: document.getElementById('lobby-screen'),
     shop: document.getElementById('shop-screen'),
+    items: document.getElementById('items-screen'),
     gacha: document.getElementById('gacha-screen'),
     gachaPull: document.getElementById('gacha-pull-screen'),
     legendary: document.getElementById('legendary-screen'),
@@ -31,7 +32,7 @@ function showScreen(name) {
     applyMobileControlsVisibility();
     // The lobby is where the currency bar lives; redraw it on the way in so a
     // reward taken on the result screen is already reflected.
-    if (name === 'lobby') renderCurrencyBar();
+    if (name === 'lobby') { renderCurrencyBar(); renderItemsBadge(); }
 }
 
 const lobbyCurrencyBar = document.getElementById('lobby-currency-bar');
@@ -382,6 +383,57 @@ function grantEquipment(itemId) {
     inventoryItems().push({ uid, itemId, level: 0 });
     saveGameData(gameData);
     return { uid, itemId, item };
+}
+
+// ---- 아이템창 ----
+// 재화와 달리 "쓰는" 것들. 개수만 세면 되므로 가방(inventory)과 달리 key -> 수다.
+function itemBag() {
+    if (!gameData.items || typeof gameData.items !== 'object') gameData.items = {};
+    return gameData.items;
+}
+function itemCount(key) { return itemBag()[key] || 0; }
+
+// 조각처럼 goal이 있는 아이템은 그만큼 모이면 becomes로 자동으로 바뀐다.
+// 60개면 두 개 -- 남는 것은 그대로 둔다.
+function convertFullItems() {
+    let made = 0;
+    Object.entries(SHARED.ITEMS).forEach(([key, def]) => {
+        if (!def.goal || !def.becomes) return;
+        const bag = itemBag();
+        while ((bag[key] || 0) >= def.goal) {
+            bag[key] -= def.goal;
+            bag[def.becomes] = (bag[def.becomes] || 0) + 1;
+            made++;
+        }
+    });
+    return made;
+}
+
+// 아이템을 준다. { key: 개수 } 꼴. 조각이 가득 차면 바로 바뀐다.
+function grantItems(bag) {
+    if (!bag) return 0;
+    const store = itemBag();
+    Object.entries(bag).forEach(([key, n]) => {
+        if (!SHARED.ITEMS[key] || !n) return;
+        store[key] = (store[key] || 0) + n;
+    });
+    const made = convertFullItems();
+    saveGameData(gameData);
+    return made;
+}
+
+// 랜덤 각성 장비 한 개를 쓴다. 각성 장비 5종 중 하나가 무작위로 나온다.
+function useRandomAwakenGear() {
+    if (itemCount(SHARED.AWAKEN_GEAR_ITEM_KEY) <= 0) {
+        return { ok: false, msg: '랜덤 각성 장비가 없습니다.' };
+    }
+    const pool = SHARED.awakenEquipmentIds();
+    if (!pool.length) return { ok: false, msg: '나올 수 있는 각성 장비가 없습니다.' };
+    itemBag()[SHARED.AWAKEN_GEAR_ITEM_KEY] -= 1;
+    const got = grantEquipment(pool[Math.floor(Math.random() * pool.length)]);
+    saveGameData(gameData);
+    const item = got && SHARED.equipmentFor(got.itemId);
+    return { ok: true, got, msg: item ? `${item.icon} ${item.name} 획득!` : '' };
 }
 
 // 클리어할 때마다 그 출처의 드랍 표에서 하나를 뽑는다.
@@ -1607,6 +1659,85 @@ shopBtn.addEventListener('click', () => {
     showScreen('shop');
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- 아이템창 ----
+// 재화 바에는 안 들어가는, "쓰는" 것들이 사는 곳. 표(SHARED.ITEMS)에 한 줄
+// 넣으면 여기에 저절로 나온다.
+const itemsBtn = document.getElementById('items-btn');
+const itemsBadge = document.getElementById('items-badge');
+const itemsListEl = document.getElementById('items-list');
+const itemsMsgEl = document.getElementById('items-msg');
+const backFromItemsBtn = document.getElementById('back-from-items-btn');
+
+function showItemsMsg(text, good) {
+    if (!itemsMsgEl) return;
+    itemsMsgEl.textContent = text || '';
+    itemsMsgEl.classList.toggle('hidden', !text);
+    itemsMsgEl.classList.toggle('good', !!good);
+}
+
+// 로비 버튼의 빨간 점: 지금 바로 쓸 수 있는 아이템이 몇 개인지.
+function usableItemCount() {
+    return SHARED.ITEM_KEYS.reduce((n, key) =>
+        n + (SHARED.ITEMS[key].usable ? itemCount(key) : 0), 0);
+}
+
+function renderItemsBadge() {
+    if (!itemsBadge) return;
+    const n = usableItemCount();
+    itemsBadge.textContent = String(n);
+    itemsBadge.classList.toggle('hidden', n <= 0);
+}
+
+function renderItems() {
+    renderItemsBadge();
+    if (!itemsListEl) return;
+    const rows = SHARED.ITEM_KEYS
+        .map(key => ({ key, def: SHARED.ITEMS[key], n: itemCount(key) }))
+        .filter(r => r.n > 0);
+    if (!rows.length) {
+        itemsListEl.innerHTML = '<p class="shop-empty">가지고 있는 아이템이 없습니다. 각성모드를 깨면 들어옵니다.</p>';
+        return;
+    }
+    itemsListEl.innerHTML = rows.map(({ key, def, n }) => {
+        // 조각처럼 모으는 것은 개수 대신 진행도로 보여준다.
+        const amount = def.goal
+            ? `<span class="item-progress">${n} / ${def.goal}</span>`
+            : `<span class="item-amount">x${n}</span>`;
+        const bar = def.goal
+            ? `<div class="item-bar"><div class="item-bar-fill" style="width:${Math.min(100, Math.round(n / def.goal * 100))}%"></div></div>`
+            : '';
+        const btn = def.usable
+            ? `<button class="item-use-btn" data-key="${key}">사용</button>`
+            : '';
+        return `
+            <div class="item-row">
+                <span class="item-icon">${def.icon}</span>
+                <span class="item-main">
+                    <div class="item-name">${def.name} ${amount}</div>
+                    <div class="item-desc">${def.desc}</div>
+                    ${bar}
+                </span>
+                ${btn}
+            </div>`;
+    }).join('');
+}
+
+itemsListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.item-use-btn');
+    if (!btn) return;
+    if (btn.dataset.key !== SHARED.AWAKEN_GEAR_ITEM_KEY) return;
+    const res = useRandomAwakenGear();
+    showItemsMsg(res.msg, res.ok);
+    renderItems();
+});
+
+itemsBtn.addEventListener('click', () => {
+    showItemsMsg('');
+    renderItems();
+    showScreen('items');
+});
+backFromItemsBtn.addEventListener('click', () => showScreen('lobby'));
 
 // ---- Event: 레전더리 이벤트 ----
 // Laid out like the shop -- categories down the left, the selected one on the

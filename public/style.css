@@ -2010,6 +2010,8 @@ body.mc-on .gacha-odds-row {
 .lobby-left-actions {
     display: flex;
     gap: 16px;
+    /* 아이템 버튼이 붙어 네 개가 되면서 좁은 화면에서는 한 줄에 안 들어간다. */
+    flex-wrap: wrap;
 }
 
 .char-select-btn {
@@ -2813,3 +2815,72 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     background: linear-gradient(180deg, #7d4a12, #4a2a08);
     border-color: #e67e22;
 }
+
+/* ---- 아이템창 ---- */
+/* 재화 바에 없는, "쓰는" 것들. 조각처럼 모으는 아이템은 개수 대신 진행 막대로 */
+/* 보여줘서 얼마나 남았는지 한눈에 보이게 한다. */
+.items-list {
+    width: min(560px, 92vw);
+    margin: 0 auto 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #22303f;
+    border: 1px solid #34495e;
+    text-align: left;
+}
+
+.item-icon { font-size: 30px; flex: 0 0 auto; }
+.item-main { flex: 1 1 auto; min-width: 0; }
+
+.item-name {
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.item-amount { color: #f1c40f; margin-left: 6px; }
+.item-progress { color: #f1c40f; margin-left: 6px; font-size: 13px; }
+
+.item-desc {
+    color: #9fb1c1;
+    font-size: 12px;
+    margin-top: 3px;
+}
+
+.item-bar {
+    margin-top: 7px;
+    height: 7px;
+    border-radius: 4px;
+    background: #16212c;
+    overflow: hidden;
+}
+
+.item-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #f39c12, #f1c40f);
+}
+
+.item-use-btn {
+    flex: 0 0 auto;
+    padding: 9px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #27ae60;
+    color: #fff;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.item-use-btn:hover { background: #2ecc71; }

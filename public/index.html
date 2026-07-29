@@ -39,6 +39,7 @@
                 <button id="character-select-btn" class="char-select-btn">🧑 <span id="selected-char-name">캐릭터</span></button>
                 <button id="shop-btn" class="char-select-btn">🛒 상점</button>
                 <button id="gacha-btn" class="char-select-btn">🎲 뽑기</button>
+                <button id="items-btn" class="char-select-btn">🎒 아이템<span id="items-badge" class="event-badge hidden">0</span></button>
             </div>
         </div>
         <button id="play-btn" class="play-btn">▶ 플레이</button>
@@ -69,6 +70,14 @@
             <div id="shop-content" class="shop-content"></div>
         </div>
         <button id="back-from-shop-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 아이템창: 재화와 달리 "쓰는" 것들 -->
+    <div id="items-screen" class="screen hidden">
+        <h2>아이템</h2>
+        <div id="items-msg" class="equip-picker-msg hidden"></div>
+        <div id="items-list" class="items-list"></div>
+        <button id="back-from-items-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Gacha: banner list -->
