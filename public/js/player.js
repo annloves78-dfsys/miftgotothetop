@@ -93,6 +93,33 @@ function cookieColorAlpha(hex, a) {
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+// ---- 바다펄맛 패시브 (체력 50 아래) ----
+// 서버와 같은 규칙을 클라이언트에서도 따라 센다: 50 아래에서 켜지고, 체력이
+// 다시 꽉 차면 꺼진다. 켜져 있는 것을 눈으로 보여 주려면 여기서도 알아야 한다.
+function refreshLowHpAura(stats, o) {
+    if (!o || !stats || !stats.lowHpAt || !o.alive) { if (o) o.lowHpOn = false; return false; }
+    if (o.hp >= o.maxHp) o.lowHpOn = false;
+    else if (o.hp <= stats.lowHpAt) o.lowHpOn = true;
+    return !!o.lowHpOn;
+}
+
+// 켜져 있는 동안 몸 둘레에 파란 물결이 돈다.
+function drawLowHpAura(c, R, now) {
+    const pulse = Math.sin(now / 180) * 3;
+    c.beginPath();
+    c.arc(0, 0, R + 9 + pulse, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(46, 134, 222, 0.18)';
+    c.fill();
+    c.strokeStyle = 'rgba(120, 200, 255, 0.95)';
+    c.lineWidth = 3;
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 0, R + 17 + pulse * 1.5, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(46, 134, 222, 0.5)';
+    c.lineWidth = 2;
+    c.stroke();
+}
+
 // 쓰러졌다 다시 일어난 순간. 화면 위에 글씨를 띄우는 대신 쿠키 자기 색으로
 // 고리가 겹겹이 퍼지고 몸이 잠깐 환해진다 -- 부활은 자기 쿠키에서 보여야 한다.
 const REVIVE_EFFECT_MS = 1400;
@@ -391,6 +418,9 @@ class Player {
         if (now < (this.reviveEffectUntil || 0)) {
             drawReviveAura(ctx, R, this.stats, 1 - (this.reviveEffectUntil - now) / REVIVE_EFFECT_MS);
         }
+
+        // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
+        if (refreshLowHpAura(this.stats, this)) drawLowHpAura(ctx, R, now);
 
         ctx.globalAlpha = this.alive ? 1 : 0.5;
         drawCookieBody(ctx, R, this.stats, this.alive);

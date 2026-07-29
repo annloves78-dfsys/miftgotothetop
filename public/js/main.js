@@ -54,6 +54,8 @@ function equipSlotsFor(charType) {
         : SHARED.EQUIP_SLOTS;
 }
 const towerRewardsEl = document.getElementById('tower-rewards');
+// 11층부터 데려갈 쿠키 두 칸 (그 아래 층에서는 숨는다).
+const towerPartyEl = document.getElementById('tower-party');
 const detailBossRewardsEl = document.getElementById('detail-boss-rewards');
 const detailBossContact = document.getElementById('detail-boss-contact');
 const resultRewardsEl = document.getElementById('result-rewards');
@@ -324,6 +326,7 @@ const adminErrorEl = document.getElementById('admin-error');
 const adminSubmitBtn = document.getElementById('admin-submit-btn');
 const adminOffBtn = document.getElementById('admin-off-btn');
 const adminCurrencyListEl = document.getElementById('admin-currency-list');
+const adminPowerListEl = document.getElementById('admin-power-list');
 
 const CURRENCY_LABELS = {
     coins: '코인',
@@ -333,6 +336,7 @@ const CURRENCY_LABELS = {
     materialRare: '고급 장비강화 재료',
     potion: '강화포션',
     potionRare: '고급 강화포션',
+    ticketDemon: '악마 뽑기 티켓',
     ticketWaterdrop: '물방울맛 뽑기 티켓',
     ticketMagma: '마그마맛 뽑기 티켓',
     ticketLightning: '번개전사맛 뽑기 티켓'
@@ -346,6 +350,7 @@ const CURRENCY_ICONS = {
     materialRare: '💊',
     potion: '🧪',
     potionRare: '⚗️',
+    ticketDemon: '😈',
     ticketWaterdrop: '🎫',
     ticketMagma: '🎫',
     ticketLightning: '🎫'
@@ -489,7 +494,7 @@ function upgradeEquip(uid, usePotion) {
     if (usePotion && currencyAmount(cost.potionKey) < cost.potion) missing.push(CURRENCY_LABELS[cost.potionKey]);
     if (missing.length) return { ok: false, msg: `${missing.join(', ')}이(가) 모자랍니다.` };
 
-    if (!isAdmin()) {
+    if (!adminPowerOn('currencies')) {
         const spend = { coins: -cost.coins };
         spend[cost.materialKey] = (spend[cost.materialKey] || 0) - cost.material;
         if (usePotion) spend[cost.potionKey] = (spend[cost.potionKey] || 0) - cost.potion;
@@ -580,10 +585,28 @@ function isAdmin() {
     return !!gameData.admin;
 }
 
+// 관리자 전용의 힘은 항목마다 따로 끌 수 있다. gameData.adminOff에 적힌 것만
+// 꺼진 것으로 보므로, 예전 세이브는 전부 켜진 상태 그대로다.
+const ADMIN_POWERS = [
+    { key: 'currencies', label: '재화 무한', hint: '코인·다이아·재료·티켓이 ∞가 되고 쓸 때 줄지 않아요.' },
+    { key: 'characters', label: '캐릭터 전부 해제', hint: '뽑지 않은 쿠키도 전부 고를 수 있어요.' },
+    { key: 'stages', label: '층·보스·스테이지 전부 해제', hint: '앞을 안 깨도 아무 층이나 들어갈 수 있어요.' }
+];
+function adminPowerOn(key) {
+    if (!isAdmin()) return false;
+    return !(gameData.adminOff && gameData.adminOff[key]);
+}
+function setAdminPower(key, on) {
+    if (!gameData.adminOff) gameData.adminOff = {};
+    if (on) delete gameData.adminOff[key];
+    else gameData.adminOff[key] = true;
+    saveGameData(gameData);
+}
+
 // The single place anything should read a currency from: admin mode makes every
 // balance unlimited, so callers never have to special-case it.
 function currencyAmount(key) {
-    if (isAdmin()) return Infinity;
+    if (adminPowerOn('currencies')) return Infinity;
     return (gameData.currencies && gameData.currencies[key]) || 0;
 }
 function currencyText(key) {
@@ -592,7 +615,7 @@ function currencyText(key) {
 }
 
 function isCharacterUnlocked(id) {
-    return isAdmin() || gameData.unlockedCharacters.includes(id);
+    return adminPowerOn('characters') || gameData.unlockedCharacters.includes(id);
 }
 
 function renderAdminCurrencies() {
@@ -602,6 +625,29 @@ function renderAdminCurrencies() {
     ).join('');
 }
 
+// 항목마다 따로 켜고 끈다. 하나를 꺼도 관리자 전용 자체는 켜진 채로 남는다.
+function renderAdminPowers() {
+    adminPowerListEl.innerHTML = ADMIN_POWERS.map(p => {
+        const on = adminPowerOn(p.key);
+        return `<div class="admin-power-row">
+            <span class="admin-power-text">
+                <span class="admin-power-label">${p.label}</span>
+                <span class="admin-power-hint">${p.hint}</span>
+            </span>
+            <button class="admin-power-btn${on ? ' on' : ''}" data-power="${p.key}">${on ? '켜짐' : '꺼짐'}</button>
+        </div>`;
+    }).join('');
+}
+
+adminPowerListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.admin-power-btn');
+    if (!btn) return;
+    setAdminPower(btn.dataset.power, !adminPowerOn(btn.dataset.power));
+    renderAdminPowers();
+    renderAdminCurrencies();
+    renderCurrencyBar();
+});
+
 function updateAdminUI() {
     const on = isAdmin();
     adminStatusEl.textContent = on ? '켜짐' : '꺼짐';
@@ -609,6 +655,7 @@ function updateAdminUI() {
     adminActiveEl.classList.toggle('hidden', !on);
     if (on) {
         adminFormEl.classList.add('hidden');
+        renderAdminPowers();
         renderAdminCurrencies();
     }
 }
@@ -706,21 +753,25 @@ function passiveText(stats) {
     return parts.length ? parts.join(' ') : '없음';
 }
 
-// 밀물은 단계마다 값이 전부 달라서 표처럼 늘어놓는다.
+// 밀물은 단계마다 값이 전부 다르다. 문장으로 늘어놓으면 너무 기니까 단계별로
+// 한 줄씩만 끊어서 보여 준다.
 function tideCycleText(stats, sec) {
     const pct = v => `${Math.round(v * 100)}%`;
     const lines = (stats.skillStages || []).map((st, i) => {
         const bits = [];
         if (st.windupMs) bits.push(`예열 ${sec(st.windupMs)}초`);
-        if (st.damageRatio) bits.push(`지정한 자리 반경 ${stats.skillRadius}px 안의 적에게 그 적이 지금 가진 체력의 ${pct(st.damageRatio)}만큼 피해`);
-        bits.push(`팀 전체 최대 체력의 ${pct(st.healRatio)} 회복`);
+        if (st.damageRatio) bits.push(`적 체력 ${pct(st.damageRatio)}`);
+        bits.push(`회복 ${pct(st.healRatio)}`);
         bits.push(`보호막 ${st.shieldAmount}`);
-        return `${i + 1}단계 — ${bits.join(', ')}.`;
+        return `${i + 1}단계 · ${bits.join(' · ')}`;
     });
-    return `궁극기가 없는 대신 이 자리가 궁극기입니다. 쓸 때마다 1 → 2 → 3 → 4단계로 올라갔다가 다시 1단계로 돌아갑니다.`
-        + ` ${lines.join(' ')}`
-        + ` 4단계는 2단계와 3단계를 모두 맞혔을 때만 나오며, 하나라도 빗나가면 곧바로 1단계로 되돌아갑니다.`
-        + ` 예열 시간은 재사용 대기시간에 포함되지 않습니다 — 물결이 터진 순간부터 ${sec(stats.skillCooldown)}초를 셉니다.`;
+    return [
+        '쓸 때마다 1→2→3→4단계, 그다음 다시 1단계.',
+        ...lines,
+        '피해는 적의 지금 체력, 회복은 팀 최대 체력 기준.',
+        '4단계는 2·3단계를 모두 맞혀야 나오고, 빗나가면 1단계로.',
+        `예열은 재사용 대기시간에 포함되지 않습니다 (터진 뒤부터 ${sec(stats.skillCooldown)}초).`
+    ].join('\n');
 }
 
 function describeAbility(stats, kind) {
@@ -2066,13 +2117,13 @@ function eventStageCleared(id) {
 }
 // The boss only opens once its whole side is done.
 function eventBossUnlocked(side) {
-    if (isAdmin()) return true;
+    if (adminPowerOn('stages')) return true;
     return eventStages(side).every(s => eventStageCleared(s.id));
 }
 // Stages open one at a time, like tower floors: you have to clear the one
 // before it on the same side.
 function eventStageUnlocked(side, index) {
-    if (isAdmin()) return true; // 관리자 전용: every stage is open
+    if (adminPowerOn('stages')) return true; // 관리자 전용: every stage is open
     if (index === 0) return true;
     const prev = eventStages(side)[index - 1];
     return !!prev && eventStageCleared(prev.id);
@@ -2255,7 +2306,7 @@ function renderEventScreen() {
     const sideKeyForTickets = EV.stages[eventCategory] ? eventCategory : 'water';
     const tkey = ticketKeyOf(sideKeyForTickets);
     eventTicketNameEl.textContent = CURRENCY_LABELS[tkey].replace(' 뽑기 티켓', '');
-    eventTicketAmountEl.textContent = isAdmin() ? '∞' : String(ticketAmount(tkey));
+    eventTicketAmountEl.textContent = adminPowerOn('currencies') ? '∞' : String(ticketAmount(tkey));
 
     eventCategoriesEl.innerHTML = '';
     Object.entries(EV.stages).forEach(([key, side]) => {
@@ -2309,6 +2360,9 @@ const gachaPullBackBtn = document.getElementById('gacha-pull-back-btn');
 const gachaResultEl = document.getElementById('gacha-result');
 const gachaTicketEl = document.getElementById('gacha-ticket-count');
 const gachaNormalDescEl = document.getElementById('gacha-normal-desc');
+const gachaDemonBtn = document.getElementById('gacha-demon-btn');
+const gachaDemonDescEl = document.getElementById('gacha-demon-desc');
+const gachaPullTitleEl = document.getElementById('gacha-pull-title');
 const gachaPull1Btn = document.getElementById('gacha-pull-1-btn');
 const gachaPull10Btn = document.getElementById('gacha-pull-10-btn');
 const gachaSoulListEl = document.getElementById('gacha-soul-list');
@@ -2318,7 +2372,7 @@ const gachaOddsListEl = document.getElementById('gacha-odds-list');
 // the odds actually rolled.
 function renderGachaOdds() {
     const soulKey = SHARED.GACHA_SOUL_STONE_KEY;
-    gachaOddsListEl.innerHTML = Object.entries(SHARED.GACHA_TABLE).map(([key, pct]) => {
+    gachaOddsListEl.innerHTML = Object.entries(gachaBannerDef().table()).map(([key, pct]) => {
         const isSoul = key === soulKey;
         const noCookieYet = !isSoul && charactersOfGrade(key).length === 0;
         const label = isSoul
@@ -2334,7 +2388,7 @@ function renderGachaOdds() {
 // Draws one outcome key from GACHA_TABLE by walking its cumulative weight, so
 // the table can be edited freely without the code assuming any particular sum.
 function pickGachaOutcome() {
-    const entries = Object.entries(SHARED.GACHA_TABLE);
+    const entries = Object.entries(gachaBannerDef().table());
     const total = entries.reduce((sum, [, w]) => sum + w, 0);
     let r = Math.random() * total;
     for (const [key, w] of entries) {
@@ -2454,15 +2508,32 @@ gachaSoulListEl.addEventListener('click', (e) => {
     if (btn && !btn.disabled) claimCharacterFromSoulStones(btn.dataset.char);
 });
 
-// 일반 뽑기는 한 번에 티켓 한 장. 모자라면 아예 뽑히지 않는다.
+// 뽑기 화면은 일반 배너와 악마 배너가 같이 쓴다. 표와 티켓만 갈아 끼운다.
+let gachaBanner = 'normal';
+const GACHA_BANNERS = {
+    normal: {
+        title: '일반 뽑기', icon: '🏷️', ticket: 'ticketNormal',
+        table: () => SHARED.GACHA_TABLE,
+        hint: '스토리를 깔 때마다 한 장씩 들어옵니다.'
+    },
+    demon: {
+        title: '악마 뽑기', icon: '😈', ticket: SHARED.DEMON_GACHA_KEY,
+        table: () => SHARED.demonGachaTable(),
+        hint: '게스트 레이드를 깰 때마다 들어옵니다.'
+    }
+};
+function gachaBannerDef() { return GACHA_BANNERS[gachaBanner] || GACHA_BANNERS.normal; }
+
+// 한 번에 티켓 한 장. 모자라면 아예 뽑히지 않는다.
 function doGachaPull(count) {
-    const have = currencyAmount('ticketNormal');
+    const b = gachaBannerDef();
+    const have = currencyAmount(b.ticket);
     if (have < count) {
-        gachaResultEl.innerHTML = `<p class="gacha-result-empty">일반 뽑기 티켓이 모자랍니다.`
-            + ` (${currencyText('ticketNormal')} / ${count}장 필요) 스토리를 깔 때마다 한 장씩 들어옵니다.</p>`;
+        gachaResultEl.innerHTML = `<p class="gacha-result-empty">${b.title} 티켓이 모자랍니다.`
+            + ` (${currencyText(b.ticket)} / ${count}장 필요) ${b.hint}</p>`;
         return;
     }
-    if (!isAdmin()) grantCurrencies({ ticketNormal: -count });
+    if (!adminPowerOn('currencies')) grantCurrencies({ [b.ticket]: -count });
     const results = [];
     for (let i = 0; i < count; i++) results.push(rollGachaOnce());
     applyGachaResults(results);
@@ -2473,25 +2544,32 @@ function doGachaPull(count) {
 
 // 티켓이 몇 장 남았는지를 뽑기 화면과 배너에 같이 보여준다.
 function updateGachaTicketLabel() {
-    if (gachaTicketEl) gachaTicketEl.textContent = `🏷️ ${currencyText('ticketNormal')}장`;
+    const b = gachaBannerDef();
+    if (gachaTicketEl) gachaTicketEl.textContent = `${b.icon} ${currencyText(b.ticket)}장`;
+    if (gachaPullTitleEl) gachaPullTitleEl.firstChild.textContent = b.title + ' ';
     if (gachaNormalDescEl) gachaNormalDescEl.textContent = `일반 뽑기 티켓 ${currencyText('ticketNormal')}장 보유 (1회당 1장)`;
+    if (gachaDemonDescEl) gachaDemonDescEl.textContent = `악마 뽑기 티켓 ${currencyText(SHARED.DEMON_GACHA_KEY)}장 보유 (1회당 1장)`;
 }
 
 gachaPull1Btn.addEventListener('click', () => doGachaPull(1));
 gachaPull10Btn.addEventListener('click', () => doGachaPull(10));
 
 gachaBtn.addEventListener('click', () => {
+    gachaBanner = 'normal';
     updateGachaTicketLabel();
     showScreen('gacha');
 });
 backFromGachaBtn.addEventListener('click', () => showScreen('lobby'));
-gachaNormalBtn.addEventListener('click', () => {
+function openGachaBanner(which) {
+    gachaBanner = which;
     gachaResultEl.innerHTML = '<p class="gacha-result-empty">뽑기 버튼을 눌러보세요.</p>';
     updateGachaTicketLabel();
     renderGachaOdds();
     renderSoulStones();
     showScreen('gachaPull');
-});
+}
+gachaNormalBtn.addEventListener('click', () => openGachaBanner('normal'));
+gachaDemonBtn.addEventListener('click', () => openGachaBanner('demon'));
 gachaPullBackBtn.addEventListener('click', () => showScreen('gacha'));
 
 // ---- 레전더리 뽑기 ----
@@ -2543,7 +2621,7 @@ function doLegendaryPull(count) {
     if (!banner || !bannerCookie(banner)) return;
     const have = bannerTickets(banner);
     if (have < count) return;
-    if (!isAdmin()) {
+    if (!adminPowerOn('currencies')) {
         gameData.currencies[banner.ticketKey] = have - count;
         saveGameData(gameData);
     }
@@ -2572,7 +2650,7 @@ function renderLegendaryScreen(resultHtml) {
         btn.dataset.banner = b.id;
         btn.innerHTML = `<span class="ev-cat-icon">${b.icon}</span>`
             + `<span class="ev-cat-body"><span class="ev-cat-label">${bannerName(b)}</span>`
-            + `<span class="ev-cat-count">🎫 ${isAdmin() ? '∞' : bannerTickets(b)}장${ready ? '' : ' · 준비중'}</span></span>`;
+            + `<span class="ev-cat-count">🎫 ${adminPowerOn('currencies') ? '∞' : bannerTickets(b)}장${ready ? '' : ' · 준비중'}</span></span>`;
         btn.addEventListener('click', () => { selectedBanner = b.id; renderLegendaryScreen(); });
         legendaryListEl.appendChild(btn);
     });
@@ -2581,7 +2659,7 @@ function renderLegendaryScreen(resultHtml) {
     const cookie = bannerCookie(banner);
     if (!cookie) {
         legendaryContentEl.innerHTML = `<div class="lg-soon-note">${bannerName(banner)}는 아직 준비중입니다.<br>`
-            + `모아둔 🎫 ${isAdmin() ? '∞' : bannerTickets(banner)}장은 그대로 남아 있어요.</div>`;
+            + `모아둔 🎫 ${adminPowerOn('currencies') ? '∞' : bannerTickets(banner)}장은 그대로 남아 있어요.</div>`;
         return;
     }
     const tickets = bannerTickets(banner);
@@ -2593,7 +2671,7 @@ function renderLegendaryScreen(resultHtml) {
         + `<div class="lg-head-main"><div class="lg-name">${cookie.name}`
         + `${owned ? ' <span class="lg-owned">보유중</span>' : ''}</div>`
         + `<div class="lg-tickets">🎫 ${CURRENCY_LABELS[banner.ticketKey]} `
-        + `<b>${isAdmin() ? '∞' : tickets}</b>장 · 1회당 1장</div>`
+        + `<b>${adminPowerOn('currencies') ? '∞' : tickets}</b>장 · 1회당 1장</div>`
         + `<div class="ev-mission-bar big"><div class="ev-mission-fill" style="width:${Math.min(100, (stones / need) * 100)}%"></div>`
         + `<span class="ev-mission-count">영혼석 ${stones}/${need}</span></div></div></div>`
         // Results scroll inside their own box and the buttons live in a column
@@ -2680,7 +2758,8 @@ storyMultiBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-const STORY_TOTAL_FLOORS = 10; // floors 4+ are placeholders until they get real content (see STORY_FLOOR_DEFS)
+// 19층까지 만들어져 있다. 20층 보스는 아직 없다 -- 유누가 주면 20으로 올린다.
+const STORY_TOTAL_FLOORS = 19;
 let selectedStoryFloor = 1;
 // What the story engine was actually entered with -- a floor number from the
 // tower, or an event stage id. Decides where 나가기 sends you back to.
@@ -2696,8 +2775,48 @@ function resumeStoryFloor() {
     return Math.min(STORY_TOTAL_FLOORS, last + 1);
 }
 
+// 11층부터 데려가는 두 번째 쿠키. 첫 칸은 늘 로비에서 고른 쿠키다.
+let storyPartySecond = null;
+function storyPartyIds() {
+    const first = gameData.selectedCharacter || 'kicker';
+    let second = storyPartySecond;
+    if (!second || !SHARED.CHARACTERS[second] || !isCharacterUnlocked(second) || second === first) {
+        second = Object.keys(SHARED.CHARACTERS)
+            .find(id => id !== first && isCharacterUnlocked(id)) || first;
+    }
+    return [first, second];
+}
+
+function renderTowerParty() {
+    const size = SHARED.storyPartySizeFor(selectedStoryFloor);
+    towerPartyEl.classList.toggle('hidden', size < 2);
+    if (size < 2) return;
+    towerPartyEl.innerHTML = storyPartyIds().map((id, i) => {
+        const st = SHARED.CHARACTERS[id] || SHARED.CHARACTERS.kicker;
+        return `<button class="tower-party-slot" data-slot="${i}">
+            <span class="tps-circle" style="background:${charIconBackground(st)}"></span>
+            <span class="tps-name">${st.shortName || st.name}</span>
+        </button>`;
+    }).join('');
+}
+
+towerPartyEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tower-party-slot');
+    if (!btn) return;
+    const slot = Number(btn.dataset.slot);
+    leaveStoryRoomIfWaiting();
+    openCharacterSelect('storyTower', {
+        selectedId: storyPartyIds()[slot],
+        onPick: (id) => {
+            if (slot === 0) { gameData.selectedCharacter = id; saveGameData(gameData); updateSelectedCharLabel(); }
+            else storyPartySecond = id;
+            renderTower();
+        }
+    });
+});
+
 function isFloorUnlocked(floor) {
-    if (isAdmin()) return true; // 관리자 전용: every difficulty is open
+    if (adminPowerOn('stages')) return true; // 관리자 전용: every difficulty is open
     if (floor === 1) return true;
     return gameData.clearedStoryFloors.includes(floor - 1);
 }
@@ -2738,6 +2857,7 @@ function renderTower() {
     towerCharName.textContent = stats.name;
     towerRewardsEl.innerHTML = rewardChipsHtml(SHARED.clearRewardFor(SHARED.storyRewardKey(selectedStoryFloor)))
         + (SHARED.isTowerBossFloor(selectedStoryFloor) ? legendaryDropChipHtml() : '');
+    renderTowerParty();
     towerPlayBtn.disabled = !isFloorUnlocked(selectedStoryFloor) || !floorDef;
     // 짝을 기다리는 중에는 위 판정과 상관없이 버튼 상태를 건드리지 않는다.
     if (storyPhase === 'searching' || storyMyReady) towerPlayBtn.disabled = true;
@@ -2778,8 +2898,12 @@ towerPlayBtn.addEventListener('click', () => {
     if (towerPlayBtn.disabled) return;
     if (!SHARED.STORY_FLOOR_DEFS[selectedStoryFloor]) return; // no content for this floor yet
     const charType = gameData.selectedCharacter || 'kicker';
+    // 11층부터는 쿠키 두 명을 같이 보낸다. 그 아래 층은 지금까지와 똑같다.
+    const partyPayload = SHARED.storyPartySizeFor(selectedStoryFloor) > 1
+        ? { party: storyPartyIds(), equipParty: storyPartyIds().map(equipPayload) }
+        : {};
     if (!storyIsMulti) {
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: true });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: true, ...partyPayload });
         return;
     }
     if (storyPhase === 'idle') {
@@ -2788,7 +2912,7 @@ towerPlayBtn.addEventListener('click', () => {
         storySearchStartAt = Date.now();
         updateStorySearchLabel();
         storySearchHandle = setInterval(updateStorySearchLabel, 1000);
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: false });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: false, ...partyPayload });
     } else if (storyPhase === 'matched' && !storyMyReady) {
         storyMyReady = true;
         towerPlayBtn.disabled = true;
@@ -2837,6 +2961,15 @@ const storyMyShieldBadge = document.getElementById('story-my-shield-badge');
 const storyMySkillCdEl = document.getElementById('story-my-skill-cd');
 const storyMyUltimateCdEl = document.getElementById('story-my-ultimate-cd');
 const storyMonstersLeftEl = document.getElementById('story-monsters-left');
+// 체력 바 한가운데의 숫자 (남은 체력 / 최대 체력).
+const storyMyHpText = document.getElementById('story-my-hp-text');
+const storyPartnerHpText = document.getElementById('story-partner-hp-text');
+const myHpText = document.getElementById('my-hp-text');
+const partnerHpText = document.getElementById('partner-hp-text');
+// 체력은 회복이 소수로 붙는 곳이 있어서 올림해서 보여 준다.
+function hpBarLabel(hp, maxHp) {
+    return `${Math.max(0, Math.ceil(hp || 0))} / ${Math.round(maxHp || 0)}`;
+}
 const storyPartnerHpContainer = document.getElementById('story-partner-hp-container');
 const storyPartnerHpBar = document.getElementById('story-partner-hp-bar');
 const storyPartnerShieldBadge = document.getElementById('story-partner-shield-badge');
@@ -2852,6 +2985,7 @@ function renderStoryPartnerHp() {
     storyPartnerHpContainer.classList.remove('hidden');
     const pct = Math.max(0, Math.min(1, partner.hp / (partner.maxHp || 1)));
     storyPartnerHpBar.style.width = (pct * 100) + '%';
+    storyPartnerHpText.textContent = hpBarLabel(partner.hp, partner.maxHp);
     storyPartnerShieldBadge.classList.toggle('hidden', !(partner.shieldHp > 0));
 }
 
@@ -3054,6 +3188,25 @@ socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
     storyQuakeUntil = now + 600;
     updateStoryMonstersLeft();
 });
+// 11층부터 나오는 장치들.
+// 분열: 쓰러진 자리에서 작은 것들이 튀어나온다.
+socket.on('monsterSplit', ({ x, y }) => {
+    storyImpactEffects.push({ x, y, radius: 70, until: performance.now() + 380 });
+});
+// 회복 오라: 치유사가 주변을 채울 때 초록 고리가 한 번 돈다.
+socket.on('monsterAura', ({ x, y, radius }) => {
+    storyImpactEffects.push({ x, y, radius, until: performance.now() + 450, heal: true });
+});
+// 소환: 여왕이 부하를 부른 자리.
+socket.on('monsterSummoned', ({ x, y }) => {
+    storyImpactEffects.push({ x, y, radius: 90, until: performance.now() + 400 });
+});
+// 갈라져 나온 것들을 다음 틱까지 기다리지 않고 바로 보여 준다.
+socket.on('storyMonstersChanged', ({ monsters }) => {
+    storyMonsters = monsters;
+    updateStoryMonstersLeft();
+});
+
 // 바다펄맛 밀물. 예열이 있는 단계는 터질 자리에 미리 파란 고리가 뜬다.
 socket.on('storyTideCast', ({ windupMs, x, y, radius }) => {
     if (!windupMs) return;
@@ -3284,6 +3437,7 @@ storyLeaveBtn.addEventListener('click', () => {
 function updateStoryHpBar() {
     if (!storyPlayer) return;
     storyMyHpBar.style.width = `${Math.max(0, (storyPlayer.hp / storyPlayer.maxHp) * 100)}%`;
+    storyMyHpText.textContent = hpBarLabel(storyPlayer.hp, storyPlayer.maxHp);
     storyMyShieldBadge.textContent = `🛡${storyPlayer.shieldHp}`;
     storyMyShieldBadge.classList.toggle('hidden', !storyPlayer.shieldHp);
 }
@@ -3713,7 +3867,8 @@ function storyRender(now) {
     storyImpactEffects.forEach(fx => {
         const t = 1 - Math.max(0, (fx.until - now) / 400);
         // Lightning uses a yellow flash plus a bolt dropping in from above.
-        const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
+        const rgb = fx.heal ? '46, 204, 113'
+            : (fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173'));
         storyCtx.beginPath();
         storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
         storyCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
@@ -3906,6 +4061,7 @@ function storyRender(now) {
         storyCtx.save();
         storyCtx.translate(pl.x, pl.y);
         storyCtx.globalAlpha = pl.alive ? 1 : 0.4;
+        if (refreshLowHpAura(pStats, pl)) drawLowHpAura(storyCtx, R, now);
         drawCookieBody(storyCtx, R, pStats, pl.alive);
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
@@ -3995,6 +4151,9 @@ function storyRender(now) {
                 1 - (storyPlayer.reviveEffectUntil - now) / REVIVE_EFFECT_MS);
         }
 
+        // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
+        if (refreshLowHpAura(stats, storyPlayer)) drawLowHpAura(storyCtx, R, now);
+
         drawCookieBody(storyCtx, R, stats, storyPlayer.alive);
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
@@ -4037,7 +4196,7 @@ function storyRender(now) {
 // would just be a dead end at the waiting screen.
 function isBossUnlocked(b) {
     if (!SHARED.BOSS_DEFS[b.id]) return false;
-    return !b.locked || isAdmin();
+    return !b.locked || adminPowerOn('stages');
 }
 
 function renderBossList() {
@@ -4472,12 +4631,14 @@ function updateHpBars() {
     const me = players[socket.id];
     if (me) {
         myHpBar.style.width = `${Math.max(0, (me.hp / me.maxHp) * 100)}%`;
+        myHpText.textContent = hpBarLabel(me.hp, me.maxHp);
         myShieldBadge.textContent = `🛡${me.shieldHp || 0}`;
         myShieldBadge.classList.toggle('hidden', !me.shieldHp);
     }
     const partner = Object.values(players).find(p => p.id !== socket.id);
     if (partner) {
         partnerHpBar.style.width = `${Math.max(0, (partner.hp / partner.maxHp) * 100)}%`;
+        partnerHpText.textContent = hpBarLabel(partner.hp, partner.maxHp);
         partnerShieldBadge.textContent = `🛡${partner.shieldHp || 0}`;
         partnerShieldBadge.classList.toggle('hidden', !partner.shieldHp);
     }

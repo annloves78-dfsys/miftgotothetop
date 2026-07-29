@@ -99,11 +99,11 @@
                     <span class="gacha-banner-desc">이벤트 티켓으로 지정 레전더리 뽑기</span>
                 </span>
             </button>
-            <button class="gacha-banner locked" disabled>
+            <button id="gacha-demon-btn" class="gacha-banner">
                 <span class="gacha-banner-icon">😈</span>
                 <span class="gacha-banner-text">
                     <span class="gacha-banner-name">악마 뽑기</span>
-                    <span class="gacha-banner-desc">준비중</span>
+                    <span id="gacha-demon-desc" class="gacha-banner-desc">게스트 레이드 티켓으로 비스트·게스트 확률 상승</span>
                 </span>
             </button>
             <button class="gacha-banner locked" disabled>
@@ -120,7 +120,7 @@
     <!-- Gacha: normal banner pull -->
     <div id="gacha-pull-screen" class="screen hidden">
         <button id="gacha-pull-back-btn" class="back-corner-btn">← 뒤로</button>
-        <h2>일반 뽑기 <span id="gacha-ticket-count" class="gacha-ticket-count">🏷️ 0장</span></h2>
+        <h2 id="gacha-pull-title">일반 뽑기 <span id="gacha-ticket-count" class="gacha-ticket-count">🏷️ 0장</span></h2>
         <div class="gacha-odds-section">
             <div id="gacha-odds-list" class="gacha-odds-list"></div>
         </div>
@@ -214,7 +214,8 @@
                     <button id="admin-submit-btn" class="auth-submit-btn">확인</button>
                 </div>
                 <div id="admin-active" class="admin-active hidden">
-                    <p class="settings-hint">관리자 전용이 켜져 있어요. 모든 난이도 해금 / 모든 재화 무한 / 모든 캐릭터 보유.</p>
+                    <p class="settings-hint">관리자 전용이 켜져 있어요. 아래에서 항목마다 따로 끌 수 있어요.</p>
+                    <div id="admin-power-list" class="admin-power-list"></div>
                     <div id="admin-currency-list" class="settings-currency-list"></div>
                     <button id="admin-off-btn" class="menu-item-btn">관리자 전용 끄기</button>
                 </div>
@@ -343,6 +344,8 @@
                         <div id="tower-partner-name" class="char-name"></div>
                     </div>
                 </div>
+                <!-- 11층부터는 쿠키 두 명을 데려간다. 그 아래 층에서는 숨는다. -->
+                <div id="tower-party" class="tower-party hidden"></div>
                 <div id="tower-rewards" class="reward-preview"></div>
                 <button id="tower-play-btn" class="play-btn">플레이</button>
             </div>
@@ -367,13 +370,13 @@
         </div>
         <div id="story-partner-hp-container" class="hp-container bottom-right hidden">
             <div class="hp-label">파트너</div>
-            <div class="hp-bar-bg"><div id="story-partner-hp-bar" class="hp-bar-fill partner"></div><span id="story-partner-shield-badge" class="shield-badge hidden">🛡</span></div>
+            <div class="hp-bar-bg"><div id="story-partner-hp-bar" class="hp-bar-fill partner"></div><span id="story-partner-hp-text" class="hp-bar-text"></span><span id="story-partner-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <div id="story-my-hp-container" class="hp-container bottom-left">
             <div class="hp-label">나</div>
             <div class="cooldown-row"><span class="cooldown-label">스킬</span><span id="story-my-skill-cd">사용가능</span></div>
             <div class="cooldown-row"><span class="cooldown-label">궁극기</span><span id="story-my-ultimate-cd">사용가능</span></div>
-            <div class="hp-bar-bg"><div id="story-my-hp-bar" class="hp-bar-fill mine"></div><span id="story-my-shield-badge" class="shield-badge hidden">🛡</span></div>
+            <div class="hp-bar-bg"><div id="story-my-hp-bar" class="hp-bar-fill mine"></div><span id="story-my-hp-text" class="hp-bar-text"></span><span id="story-my-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <canvas id="storyCanvas" width="900" height="420"></canvas>
         <div id="mobile-controls-story" class="mobile-controls hidden">
@@ -536,11 +539,11 @@
             <div class="hp-label">나</div>
             <div class="cooldown-row"><span class="cooldown-label">스킬</span><span id="guest-my-skill-cd">사용가능</span></div>
             <div class="cooldown-row"><span class="cooldown-label">궁극기</span><span id="guest-my-ultimate-cd">사용가능</span></div>
-            <div class="hp-bar-bg"><div id="guest-my-hp-bar" class="hp-bar-fill mine"></div><span id="guest-my-shield-badge" class="shield-badge hidden">🛡</span></div>
+            <div class="hp-bar-bg"><div id="guest-my-hp-bar" class="hp-bar-fill mine"></div><span id="guest-my-hp-text" class="hp-bar-text"></span><span id="guest-my-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <div id="guest-partner-hp-container" class="hp-container bottom-right hidden">
             <div class="hp-label">파트너</div>
-            <div class="hp-bar-bg"><div id="guest-partner-hp-bar" class="hp-bar-fill partner"></div></div>
+            <div class="hp-bar-bg"><div id="guest-partner-hp-bar" class="hp-bar-fill partner"></div><span id="guest-partner-hp-text" class="hp-bar-text"></span></div>
         </div>
         <canvas id="guestCanvas" width="960" height="680"></canvas>
         <!-- Party bar: click a cookie to swap to it. Its hp carries over. -->
@@ -593,11 +596,11 @@
             <div class="hp-label">나</div>
             <div class="cooldown-row"><span class="cooldown-label">스킬</span><span id="my-skill-cd">사용가능</span></div>
             <div class="cooldown-row"><span class="cooldown-label">궁극기</span><span id="my-ultimate-cd">사용가능</span></div>
-            <div class="hp-bar-bg"><div id="my-hp-bar" class="hp-bar-fill mine"></div><span id="my-shield-badge" class="shield-badge hidden">🛡</span></div>
+            <div class="hp-bar-bg"><div id="my-hp-bar" class="hp-bar-fill mine"></div><span id="my-hp-text" class="hp-bar-text"></span><span id="my-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <div id="partner-hp-container" class="hp-container bottom-right hidden">
             <div class="hp-label">파트너</div>
-            <div class="hp-bar-bg"><div id="partner-hp-bar" class="hp-bar-fill partner"></div><span id="partner-shield-badge" class="shield-badge hidden">🛡</span></div>
+            <div class="hp-bar-bg"><div id="partner-hp-bar" class="hp-bar-fill partner"></div><span id="partner-hp-text" class="hp-bar-text"></span><span id="partner-shield-badge" class="shield-badge hidden">🛡</span></div>
         </div>
         <canvas id="gameCanvas" width="700" height="700"></canvas>
         <div id="mobile-controls-fight" class="mobile-controls hidden">

@@ -8,7 +8,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
-    awakenFloorKey, AWAKEN_PARTY_SIZE, AWAKEN_BOSS_LEVELS,
+    awakenFloorKey, AWAKEN_PARTY_SIZE, storyPartySizeFor, AWAKEN_BOSS_LEVELS,
     awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
     awakenBossSummonCount, awakenBossSummonHealth } = require('./public/js/shared.js');
@@ -1176,11 +1176,21 @@ function monsterDamageTaken(m) {
 }
 // 케이크 보스처럼 때릴 때마다 자라는 몬스터. growOnAttack이 없으면 아무 일도
 // 없으므로 다른 몬스터는 지금까지와 똑같이 움직인다.
+// 격노(enrage): 체력이 어느 선 아래로 떨어지면 공격력과 속도가 배로 오른다.
+// 표에 enrage가 없으면 1이라 다른 몬스터는 그대로다.
+function enrageMult(m, def, key) {
+    const en = def && def.enrage;
+    if (!en || !m || !m.maxHp) return 1;
+    return (m.hp / m.maxHp) <= en.atHpRatio ? (en[key] || 1) : 1;
+}
+// 케이크는 0.5씩 자라므로 여기서 반올림하지 않는다 -- 실제로 때릴 때
+// 한 번만 반올림된다.
 function monsterAttackDamage(m, def) {
-    return (def.attackDamage || 0) + ((m && m.growAttack) || 0);
+    return ((def.attackDamage || 0) + ((m && m.growAttack) || 0))
+        * enrageMult(m, def, 'attackMult');
 }
 function monsterSpeed(m, def) {
-    return (def.speed || 0) + ((m && m.growSpeed) || 0);
+    return ((def.speed || 0) + ((m && m.growSpeed) || 0)) * enrageMult(m, def, 'speedMult');
 }
 // 한 대 때릴 때마다 공격력·속도가 오르고 스스로 조금 회복한다.
 function growMonsterOnAttack(roomId, mid, m, def) {
@@ -1195,6 +1205,95 @@ function growMonsterOnAttack(roomId, mid, m, def) {
     io.to(roomId).emit('monsterGrew', {
         id: mid, attack: monsterAttackDamage(m, def), speed: monsterSpeed(m, def), hp: m.hp
     });
+}
+
+// ---- 11층부터 나오는 장치들. 전부 몬스터 표에 한 줄만 적으면 붙는다. ----
+
+// 방에 몬스터를 하나 새로 세운다 (분열·소환이 같이 쓴다).
+function spawnStoryMonster(room, type, x, y, roomIndex) {
+    const def = MONSTERS[type];
+    if (!def) return null;
+    const id = `sm${room.nextSpawnId = (room.nextSpawnId || 0) + 1}`;
+    room.monsters[id] = {
+        type, x, y,
+        hp: def.health, maxHp: def.health,
+        alive: true, state: 'idle', roomIndex: roomIndex || 0,
+        elementMark: null, laser: null,
+        stunnedUntil: 0, telegraphStartAt: 0, nextAttackAt: 0
+    };
+    return id;
+}
+
+// 분열(splitOnDeath): 쓰러지면 그 자리에서 작은 것 여럿으로 갈라진다.
+// 죽는 길이 여럿이라 때리는 자리마다 붙이지 않고 매 틱 한 번에 본다.
+// 갈라진 것도 표에 splitOnDeath가 있으면 또 갈라지므로, 무한히 갈라지지
+// 않게 하려면 자식 쪽 표에는 넣지 않는다.
+function splitDeadMonsters(roomId, room) {
+    let spawned = false;
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (m.alive || m.splitDone) continue;
+        const split = MONSTERS[m.type] && MONSTERS[m.type].splitOnDeath;
+        if (!split) continue;
+        m.splitDone = true;
+        const count = split.count || 2;
+        const spread = split.spread || 40;
+        for (let i = 0; i < count; i++) {
+            // 한 점에 겹치지 않게 부채꼴로 흩어 놓는다.
+            const ang = (Math.PI * 2 * i) / count;
+            spawnStoryMonster(room, split.type,
+                m.x + Math.cos(ang) * spread, m.y + Math.sin(ang) * spread, m.roomIndex);
+        }
+        spawned = true;
+        io.to(roomId).emit('monsterSplit', { id: mid, x: m.x, y: m.y, count });
+    }
+    return spawned;
+}
+
+// 회복 오라(healAura): 주변의 다른 몬스터를 계속 채워 준다. 자기 자신은
+// 채우지 않으므로, 먼저 잡으라는 신호가 된다.
+function tickHealAuras(roomId, room, now) {
+    for (const [, healer] of Object.entries(room.monsters)) {
+        if (!healer.alive) continue;
+        const aura = MONSTERS[healer.type] && MONSTERS[healer.type].healAura;
+        if (!aura) continue;
+        if (now - (healer.lastAuraAt || 0) < aura.tickMs) continue;
+        healer.lastAuraAt = now;
+        let any = false;
+        for (const [mid, m] of Object.entries(room.monsters)) {
+            if (!m.alive || m === healer || m.hp >= m.maxHp) continue;
+            if (Math.hypot(healer.x - m.x, healer.y - m.y) > aura.radius) continue;
+            m.hp = Math.min(m.maxHp, m.hp + aura.amount);
+            io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+            any = true;
+        }
+        if (any) {
+            io.to(roomId).emit('monsterAura',
+                { x: healer.x, y: healer.y, radius: aura.radius });
+        }
+    }
+}
+
+// 소환(summonOnTimer): 정해진 간격마다 부하를 부른다. max까지만 부르므로
+// 무한히 불어나지는 않는다.
+function tickMonsterSummons(roomId, room, now) {
+    for (const [, boss] of Object.entries(room.monsters)) {
+        if (!boss.alive) continue;
+        const sp = MONSTERS[boss.type] && MONSTERS[boss.type].summonOnTimer;
+        if (!sp) continue;
+        if (!boss.lastSummonAt) { boss.lastSummonAt = now; continue; }
+        if (now - boss.lastSummonAt < sp.everyMs) continue;
+        boss.lastSummonAt = now;
+        if ((boss.summonedTotal || 0) >= sp.max) continue;
+        const room0 = boss.roomIndex;
+        for (let i = 0; i < (sp.count || 1); i++) {
+            if ((boss.summonedTotal || 0) >= sp.max) break;
+            boss.summonedTotal = (boss.summonedTotal || 0) + 1;
+            const ang = (Math.PI * 2 * i) / (sp.count || 1);
+            spawnStoryMonster(room, sp.type,
+                boss.x + Math.cos(ang) * 55, boss.y + Math.sin(ang) * 55, room0);
+        }
+        io.to(roomId).emit('monsterSummoned', { x: boss.x, y: boss.y });
+    }
 }
 
 // 체력이 어느 선 아래로 떨어지면 딱 한 번 회복하고 보호막을 두른다.
@@ -2072,6 +2171,13 @@ function tickStoryRoom(roomId) {
         if (!m.alive) continue;
         checkMonsterLowHpGuard(roomId, room, mid, m, MONSTERS[m.type]);
     }
+    // 분열은 문(gate)이나 클리어 판정보다 먼저 돌려야 한다 -- 안 그러면
+    // 갈라지기 직전 한 틱 동안 "다 잡았다"로 보인다.
+    if (splitDeadMonsters(roomId, room)) {
+        io.to(roomId).emit('storyMonstersChanged', { monsters: publicMonsters(room) });
+    }
+    tickHealAuras(roomId, room, now);
+    tickMonsterSummons(roomId, room, now);
 
     // 각성모드에는 별이 없다. 보스를 쓰러뜨리는 것이 곧 클리어다.
     const tickFloorDef = floorDefFor(room.floor);
@@ -3531,7 +3637,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinStoryFloor', ({ floor, charType, equip, solo }) => {
+    socket.on('joinStoryFloor', ({ floor, charType, equip, solo, party, equipParty }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
         const character = charFrom(charType, equip);
@@ -3548,6 +3654,41 @@ io.on('connection', (socket) => {
         // 둘이 겹쳐서 시작하지 않게 두 번째 사람은 옆으로 조금 비켜 세운다.
         const slot = Object.keys(room.players).length;
         const spot = slot === 0 ? { x: 0, y: 0 } : fromAlongAcross(floorDef, 0, 30);
+        // 11층부터는 쿠키 두 명을 데려간다. 각성모드와 같은 파티 구조를 쓰므로
+        // 교체·죽음·부활이 전부 그대로 돌아간다.
+        const partySize = storyPartySizeFor(floor);
+        if (partySize > 1) {
+            const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
+            const chosen = wanted.slice(0, partySize);
+            // 빈 자리는 고른 쿠키(없으면 자두맛)로 채운다.
+            const fallback = (charType && CHARACTERS[charType]) ? charType : 'kicker';
+            while (chosen.length < partySize) chosen.push(fallback);
+            const equips = Array.isArray(equipParty) ? equipParty : [];
+            const bonuses = chosen.map((id, i) => bonusFrom(equips[i], id));
+            const characters = chosen.map((id, i) => charFrom(id, equips[i]));
+            const gears = chosen.map((id, i) => gearFrom(id, equips[i]));
+            const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
+            room.players[socket.id] = {
+                x: spot.x, y: spot.y,
+                facing: Math.PI,
+                party: chosen,
+                partyBonus: bonuses,
+                partyCharacter: characters,
+                partyAwakenGear: gears,
+                partyMaxHp: maxHp.slice(),
+                partyHp: maxHp.slice(),
+                partyAlive: chosen.map(() => true),
+                active: 0,
+                charType: chosen[0],
+                character: characters[0],
+                awakenGear: gears[0],
+                bonus: bonuses[0],
+                hp: maxHp[0], maxHp: maxHp[0],
+                alive: true,
+                lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+                ready: false
+            };
+        } else {
         room.players[socket.id] = {
             x: spot.x, y: spot.y,
             bonus,
@@ -3558,6 +3699,7 @@ io.on('connection', (socket) => {
             alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
             ready: false
         };
+        }
 
         socket.join(roomId);
         socket.data.roomId = roomId;

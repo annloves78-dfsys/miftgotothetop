@@ -23,6 +23,8 @@ const guestCtx = guestCanvas.getContext('2d');
 const guestBossHpBar = document.getElementById('guest-boss-hp-bar');
 const guestMyHpBar = document.getElementById('guest-my-hp-bar');
 const guestMyShieldBadge = document.getElementById('guest-my-shield-badge');
+const guestMyHpText = document.getElementById('guest-my-hp-text');
+const guestPartnerHpText = document.getElementById('guest-partner-hp-text');
 const guestPartnerHpContainer = document.getElementById('guest-partner-hp-container');
 const guestPartnerHpBar = document.getElementById('guest-partner-hp-bar');
 const guestMySkillCdEl = document.getElementById('guest-my-skill-cd');
@@ -330,11 +332,15 @@ function updateGuestHpBars() {
     const me = guestMe();
     if (me) {
         guestMyHpBar.style.width = `${Math.max(0, me.hp / me.maxHp) * 100}%`;
+        guestMyHpText.textContent = hpBarLabel(me.hp, me.maxHp);
         guestMyShieldBadge.classList.toggle('hidden', !(me.shieldHp > 0));
     }
     const other = Object.entries(guestState.players).find(([id]) => id !== socket.id);
     guestPartnerHpContainer.classList.toggle('hidden', !other);
-    if (other) guestPartnerHpBar.style.width = `${Math.max(0, other[1].hp / other[1].maxHp) * 100}%`;
+    if (other) {
+        guestPartnerHpBar.style.width = `${Math.max(0, other[1].hp / other[1].maxHp) * 100}%`;
+        guestPartnerHpText.textContent = hpBarLabel(other[1].hp, other[1].maxHp);
+    }
     renderGuestPartyBar();
 }
 
@@ -608,6 +614,17 @@ socket.on('guestResult', ({ result }) => {
         lose: '파티가 전멸했습니다.'
     };
     resultDesc.textContent = descs[result] || '';
+    // 악마 뽑기 티켓은 오직 여기서만 나온다. 2차까지 잡으면 3장, 1차만 잡아도 1장.
+    resultRewardsEl.innerHTML = '';
+    const rewardKey = result === 'win' ? 'guest1'
+        : (result === 'phase1' ? 'guest1_phase1' : null);
+    if (rewardKey) {
+        const bag = SHARED.clearRewardFor(rewardKey);
+        if (bag) {
+            grantCurrencies(bag);
+            resultRewardsEl.innerHTML = rewardChipsHtml(bag);
+        }
+    }
     resetGuestActions();
     showScreen('result');
 });

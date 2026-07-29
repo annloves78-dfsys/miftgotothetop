@@ -552,7 +552,7 @@ const CHARACTERS = {
         // 패시브: 체력이 lowHpAt 아래로 떨어지면 켜지고, 체력이 다시 꽉 찰
         // 때까지 유지된다. 켜져 있는 동안 주먹이 약해지는 대신 때릴 때마다
         // 스스로 회복한다. 몇 번이든 다시 켜진다.
-        lowHpAt: 50,
+        lowHpAt: 60,
         lowHpAttackDamage: 2,
         lowHpAttackHealSelf: 2,
         // 밀물: 특수스킬 자리에 있지만 실제로는 궁극기다. 쿨타임 15초는
@@ -561,7 +561,7 @@ const CHARACTERS = {
         // 센다. 2단계부터는 자리를 찍어서 쓴다.
         skillType: 'tide_cycle',
         skillCooldown: 15000,
-        skillRadius: 110, // 2단계부터 찍는 자리의 크기
+        skillRadius: 70, // 2단계부터 찍는 자리의 크기. 좁게 -- 정확히 찍어야 한다
         // damageRatio는 '맞은 적이 지금 가진 체력'의 비율, healRatio는
         // '받는 쿠키의 최대 체력'의 비율이다.
         skillStages: [
@@ -1543,6 +1543,168 @@ const MONSTERS = {
         // 딱 한 번: 체력 100 회복 + 보호막 100.
         lowHpGuard: { atHp: 200, heal: 100, shield: 100 }
     },
+    // ---- 11층부터. 여기서부터 적이 한 단계 세진다. ----
+    // 11층: 쓰러뜨리면 둘로 갈라진다. 한 방에 정리했다고 끝이 아니다.
+    sugar_golem: {
+        name: '설탕 골렘',
+        color: '#d9c39a',
+        colorLeft: '#f3e3c3',
+        colorRight: '#a8895f',
+        health: 260,
+        speed: 2,
+        aggroRange: 700,
+        preferredDistance: 60,
+        attackRange: 160,
+        attackDamage: 18,
+        attackCooldown: 2600,
+        telegraphMs: 500,
+        splitOnDeath: { type: 'sugar_shard', count: 2, spread: 45 }
+    },
+    // 골렘이 갈라져 나오는 조각. 표에 splitOnDeath가 없으므로 여기서 끝난다.
+    sugar_shard: {
+        name: '설탕 조각',
+        color: '#f0dfb8',
+        health: 70,
+        speed: 4.5,
+        aggroRange: 700,
+        preferredDistance: 40,
+        attackRange: 110,
+        attackDamage: 9,
+        attackCooldown: 1800,
+        telegraphMs: 350
+    },
+    // 12층: 주변의 다른 적을 계속 채워 준다. 먼저 잡지 않으면 끝이 안 난다.
+    macaron_healer: {
+        name: '마카롱 치유사',
+        color: '#f7a1c4',
+        colorLeft: '#ffd6e7',
+        colorRight: '#c86b96',
+        health: 190,
+        speed: 2,
+        aggroRange: 700,
+        preferredDistance: 240,
+        projectileSpeed: 420,
+        attackRange: 300,
+        attackDamage: 6,
+        attackCooldown: 2400,
+        telegraphMs: 450,
+        healAura: { radius: 280, amount: 8, tickMs: 1400 }
+    },
+    // 13층: 체력이 40% 아래로 떨어지면 격노해서 더 세지고 빨라진다.
+    frost_lancer: {
+        name: '서리 창병',
+        color: '#5dade2',
+        colorLeft: '#aed6f1',
+        colorRight: '#1f618d',
+        health: 230,
+        speed: 3,
+        aggroRange: 720,
+        preferredDistance: 70,
+        attackRange: 200,
+        attackDamage: 20,
+        attackCooldown: 2400,
+        telegraphMs: 500,
+        enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.5 }
+    },
+    // 14층: 지금까지 나온 포탑 중 가장 빨리 따라오는 빔.
+    thunder_orb: {
+        name: '번개 구슬',
+        color: '#f4d03f',
+        colorLeft: '#fdebd0',
+        colorRight: '#b7950b',
+        health: 150,
+        speed: 0,
+        aggroRange: 560,
+        preferredDistance: 0,
+        attackRange: 560,
+        attackCooldown: 2000,
+        telegraphMs: 350,
+        laser: true,
+        laserDurationMs: 1200,
+        laserDamage: 3,
+        laserTickMs: 100,
+        laserRange: 560,
+        laserWidth: 46,
+        laserTrackSpeed: 130
+    },
+    // 15층: 계속 부하를 부른다. 최대 8마리까지만 부르므로 끝은 있다.
+    choco_queen: {
+        name: '초콜릿 여왕',
+        color: '#6e3b1f',
+        colorLeft: '#c68642',
+        colorRight: '#3e1f0d',
+        health: 340,
+        speed: 2,
+        aggroRange: 760,
+        preferredDistance: 280,
+        projectileSpeed: 500,
+        attackRange: 380,
+        attackDamage: 15,
+        attackCooldown: 2200,
+        telegraphMs: 450,
+        summonOnTimer: { type: 'chocolate_cake_slice', count: 2, everyMs: 6000, max: 8 }
+    },
+    // 16층: 어둠의 쿠키보다 빠르고, 쓰러지면 둘로 갈라진다.
+    shadow_twin: {
+        name: '그림자 쌍둥이',
+        color: '#2c2340',
+        colorLeft: '#6c5ce7',
+        colorRight: '#141018',
+        health: 200,
+        speed: 5,
+        aggroRange: 800,
+        preferredDistance: 60,
+        attackRange: 150,
+        attackDamage: 14,
+        attackCooldown: 1800,
+        telegraphMs: 350,
+        splitOnDeath: { type: 'shadow_wisp', count: 2, spread: 40 }
+    },
+    shadow_wisp: {
+        name: '그림자 조각',
+        color: '#5b4b8a',
+        health: 60,
+        speed: 5.5,
+        aggroRange: 800,
+        preferredDistance: 40,
+        attackRange: 120,
+        attackDamage: 8,
+        attackCooldown: 1500,
+        telegraphMs: 300
+    },
+    // 17층: 때릴수록 자라는 잡몹판. 케이크 보스의 장치를 그대로 쓴다.
+    taffy_brute: {
+        name: '엿 괴수',
+        color: '#e67e22',
+        colorLeft: '#f8c471',
+        colorRight: '#a04000',
+        health: 300,
+        speed: 2.5,
+        aggroRange: 760,
+        preferredDistance: 60,
+        attackRange: 170,
+        attackDamage: 16,
+        attackCooldown: 2400,
+        telegraphMs: 500,
+        growOnAttack: { attack: 0.4, speed: 0.05, heal: 1 }
+    },
+    // 18층: 한 번은 반드시 버틴다. 다 잡았다 싶을 때 되살아나는 느낌.
+    royal_guard: {
+        name: '왕실 근위대',
+        color: '#c0392b',
+        colorLeft: '#f5b7b1',
+        colorRight: '#78281f',
+        health: 320,
+        speed: 3,
+        aggroRange: 760,
+        preferredDistance: 70,
+        attackRange: 180,
+        attackDamage: 22,
+        attackCooldown: 2400,
+        telegraphMs: 500,
+        lowHpGuard: { atHp: 60, heal: 60, shield: 80 },
+        enrage: { atHpRatio: 0.35, attackMult: 1.4, speedMult: 1.3 }
+    },
     dark_cookie: {
         name: '어둠의 쿠키',
         color: '#4a1d7a',
@@ -1995,7 +2157,320 @@ const STORY_FLOOR_DEFS = {
         // 별이 없다. 케이크를 쓰러뜨리는 것이 곧 클리어다.
         winOnClear: true,
         bossFloor: true
-    }
+    },
+    // ==================== 11~19층 ====================
+    // 보스층을 지난 위층. 층마다 새 장치를 하나씩 얹고, 뒤로 갈수록 그것들이
+    // 겹쳐서 나온다. 길도 점점 길고 복잡해진다.
+    // 11층: 설탕 골렘. 쓰러뜨리면 둘로 갈라지므로 "다 잡았다"가 한 번 더 온다.
+    11: makePathFloor({
+        path: [[0, 0], [-900, 0], [-900, -800], [-100, -800]],
+        laneHalfWidth: 80,
+        gates: [
+            { entrance: -600, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2300, room: 1 }
+        ],
+        monsters: [
+            // 방 0: 골렘 둘로 시작. 갈라지는 걸 처음 겪는 자리라 수는 적게.
+            { type: 'sugar_golem', at: -800, off: -40, room: 0 },
+            { type: 'sugar_golem', at: -800, off: 40, room: 0 },
+            { type: 'mint_dart', at: -1050, off: -50, room: 0 },
+            { type: 'mint_dart', at: -1050, off: 50, room: 0 },
+            // 방 1: 골렘 셋 + 크림 기사. 갈라진 조각까지 합치면 열 마리가 넘는다.
+            { type: 'sugar_golem', at: -1600, off: -45, room: 1 },
+            { type: 'sugar_golem', at: -1600, off: 0, room: 1 },
+            { type: 'sugar_golem', at: -1600, off: 45, room: 1 },
+            { type: 'cream_knight', at: -1900, off: -40, room: 1 },
+            { type: 'cream_knight', at: -1900, off: 40, room: 1 },
+            { type: 'frost_turret', at: -2150, off: 0, room: 1 }
+        ],
+        star: { at: -2420 }
+    }),
+    // 12층: 마카롱 치유사. 뒤에서 계속 채워 주므로 치유사부터 잡아야 한다.
+    12: makePathFloor({
+        path: [[0, 0], [0, -900], [900, -900], [900, -200], [1700, -200]],
+        laneHalfWidth: 80,
+        gates: [
+            { entrance: -600, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2100, room: 1 },
+            { entrance: -2100, exit: -3000, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 치유사 하나에 기사 둘. 치유사를 놔두면 기사가 안 죽는다.
+            { type: 'macaron_healer', at: -1100, off: 0, room: 0 },
+            { type: 'cream_knight', at: -850, off: -40, room: 0 },
+            { type: 'cream_knight', at: -850, off: 40, room: 0 },
+            // 방 1: 치유사 둘이 서로를 못 채우게 떨어져 있다.
+            { type: 'macaron_healer', at: -1900, off: -55, room: 1 },
+            { type: 'macaron_healer', at: -1900, off: 55, room: 1 },
+            { type: 'sugar_golem', at: -1600, off: -40, room: 1 },
+            { type: 'sugar_golem', at: -1600, off: 40, room: 1 },
+            { type: 'candy_bomber', at: -1450, off: 0, room: 1 },
+            // 방 2: 치유사 + 포탑. 길목이 좁다.
+            { type: 'frost_turret', at: -2400, off: -50, room: 2 },
+            { type: 'frost_turret', at: -2400, off: 50, room: 2 },
+            { type: 'macaron_healer', at: -2700, off: 0, room: 2 },
+            { type: 'cream_knight', at: -2550, off: -40, room: 2 },
+            { type: 'cream_knight', at: -2550, off: 40, room: 2 },
+            { type: 'sugar_golem', at: -2850, off: 0, room: 2 }
+        ],
+        star: { at: -3140 }
+    }),
+    // 13층: 서리 창병. 체력 40% 아래에서 격노해 더 세지고 빨라진다.
+    13: makePathFloor({
+        path: [[0, 0], [-800, 0], [-800, -700], [0, -700], [0, -1500], [-900, -1500]],
+        laneHalfWidth: 80,
+        gates: [
+            { entrance: -600, exit: -1400, room: 0 },
+            { entrance: -1400, exit: -2300, room: 1 },
+            { entrance: -2300, exit: -3300, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 창병 둘. 반쯤 깎으면 갑자기 달려든다.
+            { type: 'frost_lancer', at: -850, off: -40, room: 0 },
+            { type: 'frost_lancer', at: -850, off: 40, room: 0 },
+            { type: 'mint_dart', at: -1150, off: -50, room: 0 },
+            { type: 'mint_dart', at: -1150, off: 50, room: 0 },
+            // 방 1: 창병 셋 + 치유사. 격노한 창병을 치유사가 채워 준다.
+            { type: 'frost_lancer', at: -1700, off: -45, room: 1 },
+            { type: 'frost_lancer', at: -1700, off: 0, room: 1 },
+            { type: 'frost_lancer', at: -1700, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2050, off: 0, room: 1 },
+            { type: 'candy_bomber', at: -2200, off: -35, room: 1 },
+            { type: 'candy_bomber', at: -2200, off: 35, room: 1 },
+            // 방 2: 창병 벽 뒤에 골렘.
+            { type: 'frost_lancer', at: -2600, off: -45, room: 2 },
+            { type: 'frost_lancer', at: -2600, off: 45, room: 2 },
+            { type: 'sugar_golem', at: -2900, off: -40, room: 2 },
+            { type: 'sugar_golem', at: -2900, off: 40, room: 2 },
+            { type: 'dark_cookie', at: -3150, off: 0, room: 2 }
+        ],
+        star: { at: -3430 }
+    }),
+    // 14층: 번개 구슬. 빔이 훨씬 빨리 따라와서 옆으로 도는 걸로는 못 피한다.
+    14: makePathFloor({
+        path: [[0, 0], [700, 0], [700, -800], [-200, -800], [-200, -1600], [700, -1600]],
+        laneHalfWidth: 85,
+        gates: [
+            { entrance: -500, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2300, room: 1 },
+            { entrance: -2300, exit: -3300, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 구슬 둘을 창병이 지킨다.
+            { type: 'thunder_orb', at: -900, off: -55, room: 0 },
+            { type: 'thunder_orb', at: -1000, off: 55, room: 0 },
+            { type: 'frost_lancer', at: -700, off: -40, room: 0 },
+            { type: 'frost_lancer', at: -700, off: 40, room: 0 },
+            // 방 1: 구슬 셋이 길목을 완전히 덮는다.
+            { type: 'thunder_orb', at: -1700, off: -55, room: 1 },
+            { type: 'thunder_orb', at: -1800, off: 0, room: 1 },
+            { type: 'thunder_orb', at: -1900, off: 55, room: 1 },
+            { type: 'sugar_golem', at: -1550, off: -40, room: 1 },
+            { type: 'sugar_golem', at: -1550, off: 40, room: 1 },
+            { type: 'macaron_healer', at: -2150, off: 0, room: 1 },
+            // 방 2: 구슬 + 어둠의 쿠키. 멀리서 오는 것만 셋 종류다.
+            { type: 'thunder_orb', at: -2600, off: -55, room: 2 },
+            { type: 'thunder_orb', at: -2600, off: 55, room: 2 },
+            { type: 'dark_cookie', at: -2900, off: -45, room: 2 },
+            { type: 'dark_cookie', at: -2900, off: 45, room: 2 },
+            { type: 'frost_lancer', at: -3100, off: -40, room: 2 },
+            { type: 'frost_lancer', at: -3100, off: 40, room: 2 }
+        ],
+        star: { at: -3430 }
+    }),
+    // 15층: 초콜릿 여왕. 부하를 계속 부르므로 여왕을 먼저 끊어야 한다.
+    15: makePathFloor({
+        path: [[0, 0], [0, -1000], [-900, -1000], [-900, -1900], [200, -1900]],
+        laneHalfWidth: 85,
+        gates: [
+            { entrance: -700, exit: -1500, room: 0 },
+            { entrance: -1500, exit: -2500, room: 1 },
+            { entrance: -2500, exit: -3600, room: 2 }
+        ],
+        monsters: [
+            // 방 0: 여왕 하나. 6초마다 초코 둘을 부른다 (최대 8).
+            { type: 'choco_queen', at: -1200, off: 0, room: 0 },
+            { type: 'cream_knight', at: -950, off: -40, room: 0 },
+            { type: 'cream_knight', at: -950, off: 40, room: 0 },
+            // 방 1: 여왕 + 치유사. 부르고 채우는 조합이라 오래 끌면 진다.
+            { type: 'choco_queen', at: -2100, off: -50, room: 1 },
+            { type: 'macaron_healer', at: -2100, off: 50, room: 1 },
+            { type: 'frost_lancer', at: -1800, off: -40, room: 1 },
+            { type: 'frost_lancer', at: -1800, off: 40, room: 1 },
+            { type: 'thunder_orb', at: -2350, off: 0, room: 1 },
+            // 방 2: 여왕 둘.
+            { type: 'choco_queen', at: -3100, off: -55, room: 2 },
+            { type: 'choco_queen', at: -3100, off: 55, room: 2 },
+            { type: 'sugar_golem', at: -2800, off: -45, room: 2 },
+            { type: 'sugar_golem', at: -2800, off: 0, room: 2 },
+            { type: 'sugar_golem', at: -2800, off: 45, room: 2 },
+            { type: 'thunder_orb', at: -3400, off: 0, room: 2 }
+        ],
+        star: { at: -3760 }
+    }),
+    // 16층: 그림자 쌍둥이. 아주 빠른 데다 쓰러지면 둘로 갈라진다.
+    16: makePathFloor({
+        path: [[0, 0], [-700, 0], [-700, -800], [200, -800], [200, -1700], [-800, -1700], [-800, -2400]],
+        laneHalfWidth: 85,
+        gates: [
+            { entrance: -500, exit: -1300, room: 0 },
+            { entrance: -1300, exit: -2400, room: 1 },
+            { entrance: -2400, exit: -3400, room: 2 },
+            { entrance: -3400, exit: -4300, room: 3 }
+        ],
+        monsters: [
+            // 방 0
+            { type: 'shadow_twin', at: -800, off: -40, room: 0 },
+            { type: 'shadow_twin', at: -800, off: 40, room: 0 },
+            { type: 'thunder_orb', at: -1100, off: 0, room: 0 },
+            // 방 1
+            { type: 'shadow_twin', at: -1700, off: -45, room: 1 },
+            { type: 'shadow_twin', at: -1700, off: 0, room: 1 },
+            { type: 'shadow_twin', at: -1700, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2050, off: 0, room: 1 },
+            { type: 'frost_lancer', at: -2250, off: -40, room: 1 },
+            { type: 'frost_lancer', at: -2250, off: 40, room: 1 },
+            // 방 2
+            { type: 'choco_queen', at: -3000, off: 0, room: 2 },
+            { type: 'shadow_twin', at: -2700, off: -45, room: 2 },
+            { type: 'shadow_twin', at: -2700, off: 45, room: 2 },
+            { type: 'thunder_orb', at: -3250, off: -55, room: 2 },
+            { type: 'thunder_orb', at: -3250, off: 55, room: 2 },
+            // 방 3
+            { type: 'shadow_twin', at: -3800, off: -45, room: 3 },
+            { type: 'shadow_twin', at: -3800, off: 0, room: 3 },
+            { type: 'shadow_twin', at: -3800, off: 45, room: 3 },
+            { type: 'sugar_golem', at: -4100, off: -40, room: 3 },
+            { type: 'sugar_golem', at: -4100, off: 40, room: 3 },
+            { type: 'macaron_healer', at: -4250, off: 0, room: 3 }
+        ],
+        star: { at: -4550 }
+    }),
+    // 17층: 엿 괴수. 케이크 보스처럼 때릴수록 자라는 잡몹이라 빨리 잡아야 한다.
+    17: makePathFloor({
+        path: [[0, 0], [900, 0], [900, -900], [0, -900], [0, -1800], [900, -1800], [900, -2600]],
+        laneHalfWidth: 85,
+        gates: [
+            { entrance: -600, exit: -1400, room: 0 },
+            { entrance: -1400, exit: -2500, room: 1 },
+            { entrance: -2500, exit: -3600, room: 2 },
+            { entrance: -3600, exit: -4600, room: 3 }
+        ],
+        monsters: [
+            // 방 0: 괴수 둘. 오래 끌수록 손을 못 댄다.
+            { type: 'taffy_brute', at: -900, off: -45, room: 0 },
+            { type: 'taffy_brute', at: -900, off: 45, room: 0 },
+            { type: 'thunder_orb', at: -1200, off: 0, room: 0 },
+            // 방 1: 괴수 + 치유사. 자라면서 채워지기까지 한다.
+            { type: 'taffy_brute', at: -1800, off: -45, room: 1 },
+            { type: 'taffy_brute', at: -1800, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2100, off: 0, room: 1 },
+            { type: 'shadow_twin', at: -2300, off: -40, room: 1 },
+            { type: 'shadow_twin', at: -2300, off: 40, room: 1 },
+            // 방 2: 여왕이 부하를 붓는 사이 괴수가 자란다.
+            { type: 'choco_queen', at: -3200, off: 0, room: 2 },
+            { type: 'taffy_brute', at: -2900, off: -45, room: 2 },
+            { type: 'taffy_brute', at: -2900, off: 45, room: 2 },
+            { type: 'frost_lancer', at: -3400, off: -40, room: 2 },
+            { type: 'frost_lancer', at: -3400, off: 40, room: 2 },
+            // 방 3
+            { type: 'taffy_brute', at: -4000, off: -45, room: 3 },
+            { type: 'taffy_brute', at: -4000, off: 0, room: 3 },
+            { type: 'taffy_brute', at: -4000, off: 45, room: 3 },
+            { type: 'thunder_orb', at: -4300, off: -55, room: 3 },
+            { type: 'thunder_orb', at: -4300, off: 55, room: 3 },
+            { type: 'macaron_healer', at: -4500, off: 0, room: 3 }
+        ],
+        star: { at: -4800 }
+    }),
+    // 18층: 왕실 근위대. 한 번은 반드시 버티고, 35% 아래에서 격노까지 한다.
+    18: makePathFloor({
+        path: [[0, 0], [-1000, 0], [-1000, -900], [0, -900], [0, -1800], [-1000, -1800], [-1000, -2700], [0, -2700]],
+        laneHalfWidth: 90,
+        gates: [
+            { entrance: -700, exit: -1600, room: 0 },
+            { entrance: -1600, exit: -2700, room: 1 },
+            { entrance: -2700, exit: -3900, room: 2 },
+            { entrance: -3900, exit: -5100, room: 3 }
+        ],
+        monsters: [
+            // 방 0: 근위대 둘. 다 깎았다 싶을 때 한 번 버틴다.
+            { type: 'royal_guard', at: -1000, off: -45, room: 0 },
+            { type: 'royal_guard', at: -1000, off: 45, room: 0 },
+            { type: 'thunder_orb', at: -1350, off: 0, room: 0 },
+            // 방 1: 근위대 + 치유사 + 여왕.
+            { type: 'royal_guard', at: -2000, off: -45, room: 1 },
+            { type: 'royal_guard', at: -2000, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2350, off: -50, room: 1 },
+            { type: 'choco_queen', at: -2350, off: 50, room: 1 },
+            { type: 'shadow_twin', at: -2550, off: 0, room: 1 },
+            // 방 2: 근위대 셋에 괴수까지.
+            { type: 'royal_guard', at: -3200, off: -50, room: 2 },
+            { type: 'royal_guard', at: -3200, off: 0, room: 2 },
+            { type: 'royal_guard', at: -3200, off: 50, room: 2 },
+            { type: 'taffy_brute', at: -3550, off: -45, room: 2 },
+            { type: 'taffy_brute', at: -3550, off: 45, room: 2 },
+            { type: 'thunder_orb', at: -3800, off: 0, room: 2 },
+            // 방 3
+            { type: 'royal_guard', at: -4400, off: -50, room: 3 },
+            { type: 'royal_guard', at: -4400, off: 50, room: 3 },
+            { type: 'choco_queen', at: -4700, off: 0, room: 3 },
+            { type: 'sugar_golem', at: -4600, off: -50, room: 3 },
+            { type: 'sugar_golem', at: -4600, off: 50, room: 3 },
+            { type: 'macaron_healer', at: -4950, off: -45, room: 3 },
+            { type: 'macaron_healer', at: -4950, off: 45, room: 3 }
+        ],
+        star: { at: -5320 }
+    }),
+    // 19층: 20층 보스로 올라가기 직전. 11층부터 나온 것이 전부 섞여 나오고,
+    // 마지막 방은 여왕 둘·근위대 셋으로 사실상 작은 보스전이다.
+    19: makePathFloor({
+        path: [[0, 0], [0, -1000], [1000, -1000], [1000, -2000], [0, -2000], [0, -3000], [1000, -3000]],
+        laneHalfWidth: 90,
+        gates: [
+            { entrance: -700, exit: -1700, room: 0 },
+            { entrance: -1700, exit: -2900, room: 1 },
+            { entrance: -2900, exit: -4200, room: 2 },
+            { entrance: -4200, exit: -5600, room: 3 }
+        ],
+        monsters: [
+            // 방 0: 갈라지는 것들로 시작.
+            { type: 'sugar_golem', at: -1000, off: -50, room: 0 },
+            { type: 'sugar_golem', at: -1000, off: 50, room: 0 },
+            { type: 'shadow_twin', at: -1300, off: -45, room: 0 },
+            { type: 'shadow_twin', at: -1300, off: 45, room: 0 },
+            { type: 'thunder_orb', at: -1550, off: 0, room: 0 },
+            // 방 1: 자라는 것과 격노하는 것.
+            { type: 'taffy_brute', at: -2100, off: -50, room: 1 },
+            { type: 'taffy_brute', at: -2100, off: 50, room: 1 },
+            { type: 'frost_lancer', at: -2400, off: -45, room: 1 },
+            { type: 'frost_lancer', at: -2400, off: 0, room: 1 },
+            { type: 'frost_lancer', at: -2400, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2700, off: -50, room: 1 },
+            { type: 'macaron_healer', at: -2700, off: 50, room: 1 },
+            // 방 2: 멀리서 오는 것만 모아 놓은 방.
+            { type: 'thunder_orb', at: -3300, off: -60, room: 2 },
+            { type: 'thunder_orb', at: -3400, off: 0, room: 2 },
+            { type: 'thunder_orb', at: -3300, off: 60, room: 2 },
+            { type: 'dark_cookie', at: -3700, off: -50, room: 2 },
+            { type: 'dark_cookie', at: -3700, off: 50, room: 2 },
+            { type: 'choco_queen', at: -4000, off: 0, room: 2 },
+            { type: 'royal_guard', at: -3900, off: -50, room: 2 },
+            { type: 'royal_guard', at: -3900, off: 50, room: 2 },
+            // 방 3: 마지막. 여왕 둘 + 근위대 셋 + 치유사 둘.
+            { type: 'royal_guard', at: -4700, off: -55, room: 3 },
+            { type: 'royal_guard', at: -4700, off: 0, room: 3 },
+            { type: 'royal_guard', at: -4700, off: 55, room: 3 },
+            { type: 'choco_queen', at: -5100, off: -55, room: 3 },
+            { type: 'choco_queen', at: -5100, off: 55, room: 3 },
+            { type: 'macaron_healer', at: -5350, off: -50, room: 3 },
+            { type: 'macaron_healer', at: -5350, off: 50, room: 3 },
+            { type: 'taffy_brute', at: -5000, off: -50, room: 3 },
+            { type: 'taffy_brute', at: -5000, off: 50, room: 3 },
+            { type: 'shadow_twin', at: -5500, off: 0, room: 3 }
+        ],
+        star: { at: -5860 }
+    })
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
@@ -2022,6 +2497,23 @@ const GACHA_TABLE = {
 // 깔 때마다 전액. 첫 클리어인지는 보지 않는다 -- 몇 번을 깔든 같은
 // 양을 받으므로 재료가 모자라면 상위 층을 반복해서 파머는 것이 정상 경로다.
 // key는 스토리는 'story<층>', 보스 레이드는 보스 id 그대로.
+// ---- 악마 뽑기 ----
+// 게스트 레이드에서만 나오는 티켓으로 돌린다. 일반 뽑기와 표는 같되 비스트와
+// 게스트 확률만 올라가고, 늘어난 만큼은 영혼석에서 빼 온다.
+const DEMON_GACHA_KEY = 'ticketDemon';
+const DEMON_GACHA_RATES = { '비스트': 0.25, '게스트': 0.1 };
+function demonGachaTable() {
+    const t = { ...GACHA_TABLE };
+    let added = 0;
+    for (const [grade, rate] of Object.entries(DEMON_GACHA_RATES)) {
+        added += rate - (t[grade] || 0);
+        t[grade] = rate;
+    }
+    t[GACHA_SOUL_STONE_KEY] = Math.max(0,
+        Math.round((t[GACHA_SOUL_STONE_KEY] - added) * 1000) / 1000);
+    return t;
+}
+
 const CLEAR_REWARDS = {
     story1: { material: 1, potion: 1, coins: 100, diamonds: 10, ticketNormal: 1 },
     story2: { material: 3, potion: 5, coins: 300, diamonds: 10, ticketNormal: 1 },
@@ -2033,7 +2525,20 @@ const CLEAR_REWARDS = {
     story6: { material: 12, materialRare: 2, potion: 12, coins: 1100, diamonds: 20, ticketNormal: 1 },
     story7: { material: 15, materialRare: 3, potion: 14, potionRare: 2, coins: 1300, diamonds: 20, ticketNormal: 1 },
     story8: { material: 18, materialRare: 5, potion: 16, potionRare: 3, coins: 1600, diamonds: 25, ticketNormal: 1 },
-    story9: { material: 20, materialRare: 8, potion: 20, potionRare: 5, coins: 2000, diamonds: 30, ticketNormal: 2 },
+    story9: { material: 20, materialRare: 8, potion: 20, potionRare: 5, coins: 2000, diamonds: 30, ticketNormal: 1 },
+    // 11층부터는 보스층(10층)을 넘긴 뒤라 한 단계씩 굵어진다.
+    story11: { material: 26, materialRare: 11, potion: 26, potionRare: 8, coins: 3300, diamonds: 30, ticketNormal: 2 },
+    story12: { material: 29, materialRare: 13, potion: 29, potionRare: 9, coins: 3600, diamonds: 32, ticketNormal: 2 },
+    story13: { material: 32, materialRare: 15, potion: 32, potionRare: 10, coins: 3900, diamonds: 34, ticketNormal: 2 },
+    story14: { material: 35, materialRare: 17, potion: 35, potionRare: 11, coins: 4200, diamonds: 36, ticketNormal: 2 },
+    story15: { material: 38, materialRare: 19, potion: 38, potionRare: 12, coins: 4500, diamonds: 38, ticketNormal: 2 },
+    story16: { material: 41, materialRare: 21, potion: 41, potionRare: 13, coins: 4800, diamonds: 40, ticketNormal: 2 },
+    story17: { material: 44, materialRare: 23, potion: 44, potionRare: 14, coins: 5100, diamonds: 42, ticketNormal: 2 },
+    story18: { material: 47, materialRare: 25, potion: 47, potionRare: 15, coins: 5400, diamonds: 44, ticketNormal: 2 },
+    story19: { material: 50, materialRare: 28, potion: 50, potionRare: 17, coins: 5800, diamonds: 46, ticketNormal: 2 },
+    // 게스트 레이드. 악마 뽑기 티켓은 오직 여기서만 나온다.
+    guest1: { materialRare: 15, potionRare: 12, coins: 4000, diamonds: 60, ticketDemon: 3 },
+    guest1_phase1: { materialRare: 5, potionRare: 4, coins: 1500, diamonds: 20, ticketDemon: 1 },
     boss1: { material: 10, coins: 1000, potion: 15 },   // 스톤 골렘
     boss2: { materialRare: 10, coins: 1100, potionRare: 10 } // 시하라얼
 };
@@ -2049,6 +2554,17 @@ const CLEAR_DROPS = {
     story7: ['cream_plate', 'cream_greaves'],
     story8: ['cream_greaves', 'frost_boots'],
     story9: ['cream_plate', 'frost_boots'],
+    // 11~19층은 지금 있는 장비들 중 좋은 쪽이 계속 나온다. 새 장비는 유누가
+    // 만들어 주면 여기 이름만 바꿔 넣으면 된다.
+    story11: ['cream_plate', 'cream_greaves'],
+    story12: ['frost_boots', 'cream_plate'],
+    story13: ['cream_greaves', 'frost_boots'],
+    story14: ['cream_plate', 'mint_blade'],
+    story15: ['frost_boots', 'cream_greaves'],
+    story16: ['cream_plate', 'frost_boots'],
+    story17: ['cream_greaves', 'cream_plate'],
+    story18: ['frost_boots', 'cream_plate', 'cream_greaves'],
+    story19: ['cream_plate', 'cream_greaves', 'frost_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
 };
@@ -2077,6 +2593,12 @@ function storyRewardKey(floor) { return 'story' + floor; }
 // 보스전 층의 재화 보상. 보스 자체는 아직 없으므로 층수에 맞춰 자동으로
 // 계산해 둔다 -- 진짜 보스가 들어오면 CLEAR_REWARDS에 그 층을 적어서
 // 덮어쓰면 된다 (적어 둔 표가 항상 이깁니다).
+// 일반 뽑기 티켓은 층마다 정해진 수만 준다 -- 1~9층 1장, 10층 3장,
+// 11~19층 2장, 20층 4장. 보스층은 여기서, 나머지는 CLEAR_REWARDS에 적혀 있다.
+function towerBossTickets(floor) {
+    return 2 + (floor / TOWER_BOSS_EVERY); // 10층 3, 20층 4, 30층 5...
+}
+
 function towerBossReward(floor) {
     const tier = floor / TOWER_BOSS_EVERY; // 10층=1, 20층=2, ...
     return {
@@ -2086,7 +2608,8 @@ function towerBossReward(floor) {
         potionRare: 8 * tier,
         coins: 3000 * tier,
         diamonds: 50 * tier,
-        ticketNormal: 3 * tier
+        // 티켓만은 배수로 늘리지 않는다: 10층 3장, 20층 4장, 그 뒤로 한 장씩.
+        ticketNormal: towerBossTickets(floor)
     };
 }
 
@@ -2441,6 +2964,15 @@ function equipBonusFor(equipped, charType) {
 // 각성 장비를 얻는 전용 모드. 어떤 쿠키의 각성 장비를 노릴지 고르면 그 쿠키의
 // **보스 버전**과 싸운다 -- 보스는 그 쿠키를 그대로 쓰고 레벨별 스탯만 더한다.
 // 파티는 3명이고 혼자 한다. 레벨은 순서 잠금 없이 아무거나 고를 수 있다.
+// 11층부터는 스토리도 쿠키 두 명을 데려간다 (멀티도 각자 두 명씩).
+// 그 아래 층은 지금까지처럼 한 명이다.
+const STORY_PARTY_FROM_FLOOR = 11;
+const STORY_PARTY_SIZE = 2;
+function storyPartySizeFor(floor) {
+    const n = Number(floor);
+    return Number.isInteger(n) && n >= STORY_PARTY_FROM_FLOOR ? STORY_PARTY_SIZE : 1;
+}
+
 const AWAKEN_PARTY_SIZE = 3;
 const AWAKEN_MAX_LEVEL = 10;
 
@@ -2897,7 +3429,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }
