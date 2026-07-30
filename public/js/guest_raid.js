@@ -510,6 +510,12 @@ socket.on('guestPlayerShielded', (d) => {
     guestState.players[d.id].shieldHp = d.shieldHp;
     updateGuestHpBars();
 });
+// 전기줄맛: 상체 <-> 하체 <-> 합체. 체력 상한 자체가 바뀐다.
+socket.on('guestBodyFormChanged', (d) => {
+    if (!guestState || !guestState.players[d.id]) return;
+    Object.assign(guestState.players[d.id], d);
+    updateGuestHpBars();
+});
 socket.on('guestSwapped', (d) => {
     if (!guestState || !guestState.players[d.id]) return;
     Object.assign(guestState.players[d.id], d);

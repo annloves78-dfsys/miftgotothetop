@@ -248,6 +248,42 @@ const CHARACTERS = {
         ultimateShieldAmount: 20,
         ultimateCooldownMs: 30000
     },
+    // 몸이 두 개다: 기본은 상체, 특수스킬로 하체와 서로 오간다. 두 몸은
+    // 체력을 각각 따로 들고 있어서(80 + 50, 합쳐서 130인 것이나 마찬가지)
+    // 나갔다 들어오면 지금 안 나온 쪽 체력 그대로 다시 나온다. 궁극기(합체)는
+    // 10초 동안 둘을 하나로 합쳐서 체력이 더해지고 공격력이 6이 되며, 풀리면
+    // 다시 상체·풀피로 돌아온다.
+    electriccord: {
+        name: '전기줄맛 쿠키',
+        shortName: '전기줄', // shown on the lobby's character-select button
+        color: '#3ec1e0',
+        colorLeft: '#3ec1e0', // 하늘색 (상체)
+        colorRight: '#8b0000', // 찐한 빨강 (하체)
+        grade: '희귀',
+        element: '물',
+        role: '대미지 딜러',
+        // health는 상체 기준(join 시 기본값)과 같아야 한다 -- 처음 들어올 때는
+        // 늘 상체다.
+        health: 80,
+        upperHealth: 80,
+        upperAttackDamage: 4,
+        lowerHealth: 50,
+        lowerAttackDamage: 6,
+        speed: 2,
+        attackType: 'melee_kick',
+        attackRange: 100,
+        attackWidth: 36,
+        attackDamage: 4, // = upperAttackDamage. 실제 전투 피해는 effectiveAttackDamage가 몸 상태를 보고 정한다
+        attackCooldown: 500,
+        // 특수스킬: 상체 <-> 하체 변신. 피해도 표식도 없다. 합체 중에는 쓸 수 없다.
+        skillType: 'body_swap',
+        skillCooldown: 8000,
+        // 궁극기: 합체. 10초 동안 상체+하체 체력을 하나로 합치고 공격력이 6이 된다.
+        ultimateType: 'body_fuse',
+        ultimateDurationMs: 10000,
+        ultimateAttackDamage: 6,
+        ultimateCooldownMs: 30000
+    },
     lightning: {
         name: '번개전사맛 쿠키',
         shortName: '번개전사', // shown on the lobby's character-select button
@@ -712,6 +748,53 @@ const CHARACTERS = {
             keepsOwnMarks: false,
             markEatBonus: 5
         }
+    },
+    hellflavor: {
+        name: '지옥맛 쿠키',
+        shortName: '지옥',
+        color: '#12081f',
+        colorLeft: '#3d0a66', // 보라
+        colorRight: '#0a0a0a', // 검정
+        grade: '비스트',
+        element: '어둠',
+        role: '대미지 딜러',
+        health: 230,
+        speed: 2,
+        // 검은도끼: 앞으로 한 번 크게 벤다. 다른 근접 무기들과 같은 직선 판정.
+        attackType: 'melee_kick',
+        attackRange: 100,
+        attackWidth: 40,
+        attackDamage: 10,
+        attackCooldown: 500,
+        // 패시브 1: 쓰러지면 딱 한 번, 풀피로 일어난다. 그 순간 반경
+        // passiveReviveBlastRadius 안의 적에게 고정 데미지를 준다 (번개지옥맛과
+        // 달리 상대 체력 비율이 아니라 그냥 숫자다).
+        passiveReviveCount: 1,
+        passiveReviveHpRatio: 1,
+        passiveReviveBlastDamage: 30,
+        passiveReviveBlastRadius: 90,
+        // 패시브 2: 기본공격으로 적을 죽일 때마다 공격력 +1을 15초간 얻는다.
+        // 스택 상한 없음 -- 죽인 만큼 계속 쌓인다.
+        passiveKillAttackBuff: 1,
+        passiveKillAttackBuffDurationMs: 15000,
+        // 특수스킬: 자기 체력을 25%(전체 체력 기준) 채우고, 동시에 반경 안의
+        // 적 전부에게 데미지를 준다. 조준 없이 즉시 발동.
+        skillType: 'life_burst',
+        skillRadius: 150,
+        skillDamage: 10,
+        skillHealRatio: 0.25,
+        skillCooldown: 10000,
+        // 궁극기: 지정한 위치로 날아올랐다가 떨어진다. 도약~착지까지
+        // ultimateWindupMs가 걸리고, 착지 반경 안을 맞히면 공격력이 10초간
+        // 오르고 최대 체력의 25%를 회복한다.
+        ultimateType: 'sky_slam',
+        ultimateRadius: 200,
+        ultimateWindupMs: 1000,
+        ultimateDamage: 40,
+        ultimateHealRatioOnHit: 0.25,
+        ultimateAttackBuff: 3,
+        ultimateAttackBuffDurationMs: 10000,
+        ultimateCooldownMs: 30000
     }
 };
 

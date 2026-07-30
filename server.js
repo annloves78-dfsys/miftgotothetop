@@ -198,31 +198,115 @@ function damageReductionMultiplier(character, p, now, sourceElementMark) {
     return bonusOf(p).damageTaken;
 }
 
+// 지옥맛 패시브 2부: 기본공격으로 적을 죽일 때마다 15초짜리 스택을 하나
+// 쌓는다. 스택마다 자기 만료 시각을 따로 들고 있어서, 죽인 지 오래된 것부터
+// 저절로 빠진다 -- 상한은 없다.
+function gainKillBuffStack(character, p, killed, now) {
+    if (!killed || !character.passiveKillAttackBuff) return;
+    p.killBuffStacks = (p.killBuffStacks || []).filter(exp => exp > now);
+    p.killBuffStacks.push(now + character.passiveKillAttackBuffDurationMs);
+}
+function killBuffBonus(character, p, now) {
+    if (!character.passiveKillAttackBuff || !p.killBuffStacks || !p.killBuffStacks.length) return 0;
+    p.killBuffStacks = p.killBuffStacks.filter(exp => exp > now);
+    return p.killBuffStacks.length * character.passiveKillAttackBuff;
+}
+// 지옥맛 궁극기(하늘낙하)가 적중했을 때 잠깐 붙는 공격력 보너스.
+function ultimateOnHitBuff(character, p, now) {
+    if (character.ultimateType === 'sky_slam' && p.skySlamBuffUntil && now < p.skySlamBuffUntil) {
+        return character.ultimateAttackBuff || 0;
+    }
+    return 0;
+}
+
 // awakening temporarily replaces the basic attack's damage; every other
 // character just uses their flat attackDamage.
 function effectiveAttackDamage(character, p, now) {
+    let base;
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil && character.ultimateAttackDamage != null) {
-        return character.ultimateAttackDamage + bonusOf(p).attack;
-    }
-    // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
-    if (character.ultimateType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
+        base = character.ultimateAttackDamage + bonusOf(p).attack;
+    } else if (character.ultimateType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
         && character.ultimateAttackDamage != null) {
-        return character.ultimateAttackDamage + bonusOf(p).attack;
+        // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
+        base = character.ultimateAttackDamage + bonusOf(p).attack;
+    } else if (butterflyActive(character, p)) {
+        // 나비모드 has no end time -- it is on until it is switched off.
+        base = character.ultimateAttackDamage + bonusOf(p).attack;
+    } else if (character.skillType === 'body_swap') {
+        // 전기줄맛: 상체/하체/합체 중 어느 몸인지에 따라 공격력이 다르다.
+        base = bodyFormAttackDamage(character, p) + bonusOf(p).attack;
+    } else if (character.lowHpAt && p.lowHpOn && character.lowHpAttackDamage != null) {
+        // 바다펄맛: 체력이 바닥나 있는 동안에는 주먹이 약해진다 (대신 때릴 때마다
+        // 스스로 회복한다 -- lowHpSelfHeal 참고).
+        base = character.lowHpAttackDamage + bonusOf(p).attack;
+    } else {
+        base = stat(character, p, 'attackDamage') + bonusOf(p).attack;
     }
-    // 나비모드 has no end time -- it is on until it is switched off.
-    if (butterflyActive(character, p)) return character.ultimateAttackDamage + bonusOf(p).attack;
-    // 바다펄맛: 체력이 바닥나 있는 동안에는 주먹이 약해진다 (대신 때릴 때마다
-    // 스스로 회복한다 -- lowHpSelfHeal 참고).
-    if (character.lowHpAt && p.lowHpOn && character.lowHpAttackDamage != null) {
-        return character.lowHpAttackDamage + bonusOf(p).attack;
-    }
-    return stat(character, p, 'attackDamage') + bonusOf(p).attack;
+    return base + killBuffBonus(character, p, now) + ultimateOnHitBuff(character, p, now);
 }
 
 // 바다펄맛: 약해진 주먹이 적중할 때마다 스스로 회복하는 양.
 function lowHpSelfHeal(character, p) {
     if (!character.lowHpAt || !p.lowHpOn) return 0;
     return character.lowHpAttackHealSelf || 0;
+}
+
+// ==================== 전기줄맛: 상체/하체/합체 ====================
+// 몸이 둘이라 hp/maxHp 하나로는 못 나타낸다. p.bodyForm('upper'|'lower',
+// undefined도 'upper')이 지금 나온 몸, p.restingHp가 반대쪽 몸이 쉬는 동안
+// 들고 있는 체력(null/undefined = 아직 한 번도 안 나와서 풀피), p.fused +
+// p.fusedUntil이 합체 상태다. p.hp/p.maxHp는 항상 "지금 상태의" 값을
+// 그대로 담고 있어서 다른 공용 코드(피해·회복·표시)가 손댈 게 없다.
+function bodyFormAttackDamage(character, p) {
+    if (p.fused) return character.ultimateAttackDamage;
+    return (p.bodyForm || 'upper') === 'lower' ? character.lowerAttackDamage : character.upperAttackDamage;
+}
+
+// 파티 슬롯(11층+ · 각성모드 · 게스트 레이드)에 있을 때도 p.hp/p.maxHp가
+// 지금 나온 슬롯을 그대로 비추므로 같은 필드를 쓰면 되지만, 파티 쪽 배열
+// (partyHp/partyMaxHp)도 같이 맞춰 둬야 교체 줄 UI와 팀 회복이 어긋나지 않는다.
+function syncBodyFormToParty(p) {
+    if (p.party && p.partyHp && p.partyMaxHp) {
+        p.partyHp[p.active] = p.hp;
+        p.partyMaxHp[p.active] = p.maxHp;
+    }
+}
+
+// 벤치에서 쉬다가(파티 교체로) 다시 나오면 늘 상체·풀피로 시작한다. 하체나
+// 합체 상태를 파티 슬롯 사이로 들고 다니지 않는다 -- activatePartyCookie /
+// activateGuestSlot이 다음 슬롯을 세운 직후에 호출한다.
+function resetBodyFormIfNeeded(p) {
+    const character = p.character;
+    if (!character || character.skillType !== 'body_swap') return;
+    const upperMax = character.upperHealth + bonusOf(p).health;
+    p.bodyForm = 'upper';
+    p.fused = false;
+    p.fusedUntil = 0;
+    p.restingHp = null;
+    p.hp = upperMax;
+    p.maxHp = upperMax;
+    syncBodyFormToParty(p);
+}
+
+// 합체 10초가 다 되면 자동으로 풀린다. 매 틱 이 함수를 부른다.
+function tickBodyFusion(room, roomId, now, ev) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive || !p.fused) continue;
+        const character = charOf(p);
+        if (!character || character.ultimateType !== 'body_fuse') continue;
+        if (now < p.fusedUntil) continue;
+        const upperMax = character.upperHealth + bonusOf(p).health;
+        p.fused = false;
+        p.fusedUntil = 0;
+        p.bodyForm = 'upper';
+        p.restingHp = null; // 하체도 다시 풀피로 -- 합체가 풀리며 둘 다 새로 태어난다
+        p.hp = upperMax;
+        p.maxHp = upperMax;
+        syncBodyFormToParty(p);
+        const payload = { id, form: 'upper', hp: p.hp, maxHp: p.maxHp };
+        if (p.party && p.partyHp) { payload.partyHp = p.partyHp; payload.partyMaxHp = p.partyMaxHp; }
+        io.to(roomId).emit(ev, payload);
+    }
 }
 
 // 나비모드 (sugarfly): a toggle rather than a timer, so it is checked by a
@@ -468,23 +552,35 @@ function reviveBlastRatio(character, enemyCount) {
 
 // The boss is always alone in its arena, so the shockwave always uses the
 // solo ratio here.
-function applyReviveBlastToBoss(roomId, room, character, playerId) {
+// 지옥맛은 비율이 아니라 고정 데미지를 쓰고, 반경 안에 있을 때만 맞는다
+// (raid의 보스는 항상 원점에 있다).
+function applyReviveBlastToBoss(roomId, room, character, playerId, p) {
     const ratio = reviveBlastRatio(character, 1);
-    if (!ratio || room.bossHp <= 0) return;
-    const dmg = Math.max(1, Math.round(room.bossHp * ratio));
+    const flatDmg = character.passiveReviveBlastDamage;
+    const flatRadius = character.passiveReviveBlastRadius;
+    const flatHits = !!(flatDmg && flatRadius && p && Math.hypot(p.x, p.y) <= flatRadius + BOSS_RADIUS);
+    if ((!ratio && !flatHits) || room.bossHp <= 0) return;
+    let dmg = ratio ? Math.max(1, Math.round(room.bossHp * ratio)) : 0;
+    if (flatHits) dmg += flatDmg;
     room.bossHp = Math.max(0, room.bossHp - dmg);
     io.to(roomId).emit('reviveBlast', { id: playerId, ratio, damage: dmg });
     io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp });
     if (room.bossHp <= 0) endRoom(roomId, 'win');
 }
 
-function applyReviveBlastToMonsters(roomId, room, character, playerId) {
+function applyReviveBlastToMonsters(roomId, room, character, playerId, p) {
     const alive = Object.entries(room.monsters).filter(([, m]) => m.alive);
     const ratio = reviveBlastRatio(character, alive.length);
-    if (!ratio) return;
+    const flatDmg = character.passiveReviveBlastDamage;
+    const flatRadius = character.passiveReviveBlastRadius;
+    if (!ratio && !(flatDmg && flatRadius && p)) return;
     io.to(roomId).emit('storyReviveBlast', { id: playerId, ratio, count: alive.length });
     for (const [mid, m] of alive) {
-        const dmg = Math.max(1, Math.round(m.hp * ratio));
+        let dmg = ratio ? Math.max(1, Math.round(m.hp * ratio)) : 0;
+        if (flatDmg && flatRadius && p && Math.hypot(p.x - m.x, p.y - m.y) <= flatRadius + mR(m)) {
+            dmg += flatDmg;
+        }
+        if (!dmg) continue;
         m.hp = Math.max(0, m.hp - dmg);
         if (m.hp <= 0) {
             m.alive = false;
@@ -520,7 +616,7 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     io.to(roomId).emit('playerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0, ...(extra || {}) });
     if (revived) {
         io.to(roomId).emit('playerRevived', { id: playerId, hp: p.hp });
-        applyReviveBlastToBoss(roomId, room, character, playerId);
+        applyReviveBlastToBoss(roomId, room, character, playerId, p);
         return; // this player is back up, so the wipe check below cannot fire
     }
 
@@ -566,6 +662,7 @@ function tickRoom(roomId) {
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
+    tickBodyFusion(room, roomId, now, 'bodyFormChanged');
 
     // Thrown drops, against the one thing in this arena worth hitting.
     tickPlayerProjectiles(roomId, room, 50, (pr) => {
@@ -1465,6 +1562,7 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
 
     // Some cookies heal whenever the attack actually connects (only a chance to
     // proc, if attackHealChance is set). The ultimate can raise the amount.
+    gainKillBuffStack(character, p, killedBoss, now);
     const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
             + lowHpSelfHeal(character, p)
         + vampireKillHeal(character, p, swing, killedBoss);
@@ -1892,6 +1990,7 @@ function activatePartyCookie(p, next, fresh) {
     p.lastAttackTime = 0; p.lastSkillTime = 0; p.lastUltimateTime = 0;
     p.undyingSoulUntil = 0; p.rapidStrikeUntil = 0; p.awakenUntil = 0;
     p.guardStanceUntil = 0; p.elementMarkUntil = 0; p.attackHealBoostUntil = 0;
+    resetBodyFormIfNeeded(p);
     return next;
 }
 
@@ -1920,7 +2019,7 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     io.to(roomId).emit('storyPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
     if (revived) {
         io.to(roomId).emit('storyPlayerRevived', { id: playerId, hp: p.hp });
-        applyReviveBlastToMonsters(roomId, room, character, playerId);
+        applyReviveBlastToMonsters(roomId, room, character, playerId, p);
         return;
     }
     if (swapped) {
@@ -2298,6 +2397,7 @@ function tickStoryRoom(roomId) {
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToStoryPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
+    tickBodyFusion(room, roomId, now, 'storyBodyFormChanged');
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
@@ -2547,6 +2647,7 @@ function activateGuestSlot(p, index) {
     p.awakenGear = (p.partyAwakenGear && p.partyAwakenGear[index]) || null;
     const slot = p.partySlotTimers[index];
     GUEST_SLOT_TIMERS.forEach(f => { p[f] = slot[f] || 0; });
+    resetBodyFormIfNeeded(p);
 }
 
 function makeGuestPlayer(party, slotIndex, equipParty) {
@@ -2648,17 +2749,28 @@ function shieldGuestTeam(room, roomId, amount) {
 
 // 번개지옥맛의 부활 충격파, 게스트 레이드판. 보스와 소환된 적이 함께 있으므로
 // 적의 수를 둘 다 세서 단독/다수 비율을 고른다.
-function applyReviveBlastToGuest(roomId, room, character, playerId) {
+// 지옥맛(비율 없음)은 대신 guestCircleTargets로 반경 안의 대상만 고정
+// 데미지로 때린다.
+function applyReviveBlastToGuest(roomId, room, character, playerId, p) {
     const adds = Object.entries(room.monsters).filter(([, m]) => m.alive);
     const bossUp = !room.phaseTransitioned && room.bossHp > 0;
     const ratio = reviveBlastRatio(character, adds.length + (bossUp ? 1 : 0));
-    if (!ratio) return;
-    io.to(roomId).emit('guestReviveBlast', { id: playerId, ratio, count: adds.length + (bossUp ? 1 : 0) });
-    for (const [mid, m] of adds) {
-        damageGuestMonster(roomId, room, mid, Math.max(1, Math.round(m.hp * ratio)));
-        if (!rooms[roomId]) return;
+    if (ratio) {
+        io.to(roomId).emit('guestReviveBlast', { id: playerId, ratio, count: adds.length + (bossUp ? 1 : 0) });
+        for (const [mid, m] of adds) {
+            damageGuestMonster(roomId, room, mid, Math.max(1, Math.round(m.hp * ratio)));
+            if (!rooms[roomId]) return;
+        }
+        if (bossUp) damageGuestBoss(roomId, room, Math.max(1, Math.round(room.bossHp * ratio)), playerId);
+        return;
     }
-    if (bossUp) damageGuestBoss(roomId, room, Math.max(1, Math.round(room.bossHp * ratio)), playerId);
+    const flatDmg = character.passiveReviveBlastDamage;
+    const flatRadius = character.passiveReviveBlastRadius;
+    if (!flatDmg || !flatRadius || !p) return;
+    const targets = guestCircleTargets(room, p.x, p.y, flatRadius);
+    if (!targets.length) return;
+    io.to(roomId).emit('guestReviveBlast', { id: playerId, ratio: 0, count: targets.length });
+    damageGuestTargets(roomId, room, targets, flatDmg, playerId);
 }
 
 function applyDamageToGuestPlayer(roomId, playerId, dmg) {
@@ -2711,7 +2823,7 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
     });
     if (revived) {
         io.to(roomId).emit('guestPlayerRevived', { id: playerId, hp: p.hp });
-        applyReviveBlastToGuest(roomId, room, character, playerId);
+        applyReviveBlastToGuest(roomId, room, character, playerId, p);
         if (!rooms[roomId]) return; // the blast finished the boss off
     }
     if (swappedTo !== null) io.to(roomId).emit('guestForcedSwap', { id: playerId, active: swappedTo, charType: p.charType });
@@ -3380,6 +3492,7 @@ function tickGuestRoom(roomId) {
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToGuestPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
+    tickBodyFusion(room, roomId, now, 'guestBodyFormChanged');
 
     // Team buffs (the healer's ultimate) tick independently of the boss.
     if (room.activeBuffs.length) {
@@ -4001,6 +4114,7 @@ io.on('connection', (socket) => {
         }
 
         if (anyHit) {
+            gainKillBuffStack(character, p, anyKill, now);
             const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
             + lowHpSelfHeal(character, p)
                 + vampireKillHeal(character, p, swing, anyKill);
@@ -4090,6 +4204,19 @@ io.on('connection', (socket) => {
             if (healed !== p.hp) {
                 p.hp = healed;
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            }
+        }
+        // 지옥맛 특수스킬: 조준 없이 즉시 자기 체력을 채우고, 반경 안의 적
+        // 전부에게 데미지를 준다.
+        else if (character.skillType === 'life_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
+            io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) - mR(m) > character.skillRadius) continue;
+                m.hp = Math.max(0, m.hp - character.skillDamage);
+                if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
             }
         } else if (character.skillType === 'earthquake') {
             // No aiming: the whole floor shakes. A small group all takes
@@ -4259,6 +4386,21 @@ io.on('connection', (socket) => {
                     { id: socket.id, stage: (pl.tideStage || 0) + 1, hit });
             });
         }
+        // 전기줄맛: 상체 <-> 하체 변신. 합체 중엔 못 바꾼다.
+        else if (character.skillType === 'body_swap') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const toLower = (p.bodyForm || 'upper') === 'upper';
+            const newForm = toLower ? 'lower' : 'upper';
+            const newMax = (toLower ? character.lowerHealth : character.upperHealth) + bonus.health;
+            const incomingHp = p.restingHp != null ? Math.min(newMax, p.restingHp) : newMax;
+            p.restingHp = p.hp;
+            p.bodyForm = newForm;
+            p.hp = incomingHp;
+            p.maxHp = newMax;
+            syncBodyFormToParty(p);
+            io.to(roomId).emit('storyBodyFormChanged', { id: socket.id, form: newForm, hp: p.hp, maxHp: p.maxHp, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp });
+        }
         // speed_boost is purely client-side; nothing more to do here.
     });
 
@@ -4309,6 +4451,34 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        } else if (character.ultimateType === 'sky_slam') {
+            // 지옥맛 궁극기: 지정한 자리로 날아올랐다가 떨어진다. targeted_aoe와
+            // 텔레그래프는 같지만, 예열 뒤에 자기 자신도 그 자리로 옮겨간다.
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const floorDef = floorDefFor(room.floor);
+            const t = clampToLane(floorDef, targetX, targetY);
+            io.to(roomId).emit('storyUltimateImpact', { id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius });
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                pl.x = t.x; pl.y = t.y;
+                io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: pl.x, y: pl.y });
+                let landed = false;
+                for (const [mid, m] of Object.entries(rm.monsters)) {
+                    if (!m.alive) continue;
+                    if (Math.hypot(t.x - m.x, t.y - m.y) > character.ultimateRadius + mR(m)) continue;
+                    landed = true;
+                    m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+                if (!landed) return;
+                pl.skySlamBuffUntil = Date.now() + character.ultimateAttackBuffDurationMs;
+                if (character.ultimateHealRatioOnHit) {
+                    pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatioOnHit));
+                    io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: pl.hp });
+                }
+            });
         } else if (character.ultimateType === 'guard_surge') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
             healStoryPlayer(room, roomId, character.ultimateHealAmount);
@@ -4456,6 +4626,21 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             }
             spawnSummons(roomId, room, socket.id, character, now);
+        }
+        // 전기줄맛 합체: 10초 동안 상체+하체 체력을 하나로 합치고 공격력이 6이 된다.
+        else if (character.ultimateType === 'body_fuse') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const upperMax = character.upperHealth + bonus.health;
+            const lowerMax = character.lowerHealth + bonus.health;
+            const restingHp = p.restingHp != null ? p.restingHp
+                : ((p.bodyForm || 'upper') === 'upper' ? lowerMax : upperMax);
+            p.fused = true;
+            p.fusedUntil = now + character.ultimateDurationMs;
+            p.maxHp = upperMax + lowerMax;
+            p.hp = Math.min(p.maxHp, p.hp + restingHp);
+            syncBodyFormToParty(p);
+            io.to(roomId).emit('storyBodyFormChanged', { id: socket.id, form: 'fused', hp: p.hp, maxHp: p.maxHp, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp });
         }
     });
 
@@ -4668,6 +4853,17 @@ io.on('connection', (socket) => {
                 p.hp = healed;
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             }
+        }
+        // 지옥맛 특수스킬: 자기 체력을 채우고, 반경 안에 보스가 있으면
+        // 데미지를 준다 (raid는 보스 하나뿐이라 몬스터 루프가 필요 없다).
+        else if (character.skillType === 'life_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            if (Math.hypot(p.x, p.y) - BOSS_RADIUS <= character.skillRadius) {
+                room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
         } else if (character.skillType === 'earthquake') {
             // A raid only ever has one enemy (the boss), so this always takes
             // the small-group branch -- the boss is never one-shot.
@@ -4675,6 +4871,20 @@ io.on('connection', (socket) => {
             room.bossHp = Math.max(0, room.bossHp - character.skillDamage);
             io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
             if (room.bossHp <= 0) endRoom(roomId, 'win');
+        }
+        // 전기줄맛: 상체 <-> 하체 변신. 합체 중엔 못 바꾼다.
+        else if (character.skillType === 'body_swap') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const toLower = (p.bodyForm || 'upper') === 'upper';
+            const newForm = toLower ? 'lower' : 'upper';
+            const newMax = (toLower ? character.lowerHealth : character.upperHealth) + bonus.health;
+            const incomingHp = p.restingHp != null ? Math.min(newMax, p.restingHp) : newMax;
+            p.restingHp = p.hp;
+            p.bodyForm = newForm;
+            p.hp = incomingHp;
+            p.maxHp = newMax;
+            io.to(roomId).emit('bodyFormChanged', { id: socket.id, form: newForm, hp: p.hp, maxHp: p.maxHp });
         }
     });
 
@@ -4770,6 +4980,30 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        } else if (character.ultimateType === 'sky_slam') {
+            // 지옥맛 궁극기: raid는 보스가 항상 원점이라 targeted_aoe의 텔레그래프를
+            // 그대로 쓰고, 예열 뒤에 자기 자신도 그 자리로 옮겨간다.
+            const targetX = payload && payload.targetX;
+            const targetY = payload && payload.targetY;
+            if (typeof targetX !== 'number' || typeof targetY !== 'number' || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+            const dist0 = Math.hypot(targetX, targetY);
+            const clamped0 = Math.min(dist0, ARENA_RADIUS);
+            const scale0 = dist0 > 0 ? clamped0 / dist0 : 0;
+            const tx0 = targetX * scale0, ty0 = targetY * scale0;
+            io.to(roomId).emit('ultimateImpact', { id: socket.id, x: tx0, y: ty0, radius: character.ultimateRadius });
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                pl.x = tx0; pl.y = ty0;
+                io.to(roomId).emit('playerTeleported', { id: socket.id, x: pl.x, y: pl.y });
+                if (Math.hypot(tx0, ty0) > character.ultimateRadius + BOSS_RADIUS) return;
+                rm.bossHp = Math.max(0, rm.bossHp - character.ultimateDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: rm.bossHp, by: socket.id });
+                if (rm.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                pl.skySlamBuffUntil = Date.now() + character.ultimateAttackBuffDurationMs;
+                if (character.ultimateHealRatioOnHit) {
+                    pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatioOnHit));
+                    io.to(roomId).emit('playerHealed', { id: socket.id, hp: pl.hp });
+                }
+            });
         } else if (character.ultimateType === 'lightning_strike') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
@@ -4852,6 +5086,20 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             }
             spawnSummons(roomId, room, socket.id, character, now);
+        }
+        // 전기줄맛 합체: 10초 동안 상체+하체 체력을 하나로 합치고 공격력이 6이 된다.
+        else if (character.ultimateType === 'body_fuse') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const upperMax = character.upperHealth + bonus.health;
+            const lowerMax = character.lowerHealth + bonus.health;
+            const restingHp = p.restingHp != null ? p.restingHp
+                : ((p.bodyForm || 'upper') === 'upper' ? lowerMax : upperMax);
+            p.fused = true;
+            p.fusedUntil = now + character.ultimateDurationMs;
+            p.maxHp = upperMax + lowerMax;
+            p.hp = Math.min(p.maxHp, p.hp + restingHp);
+            io.to(roomId).emit('bodyFormChanged', { id: socket.id, form: 'fused', hp: p.hp, maxHp: p.maxHp });
         }
     });
 
@@ -5068,6 +5316,7 @@ io.on('connection', (socket) => {
         const killedAny = targets.some(t => (t.boss
             ? room.bossHp <= 0
             : !(room.monsters[t.mid] && room.monsters[t.mid].alive)));
+        gainKillBuffStack(character, p, killedAny, now);
         const selfHeal = passiveHitHeal(character, p) + passiveChanceHeal(character, p, swing)
             + lowHpSelfHeal(character, p)
             + vampireKillHeal(character, p, swing, killedAny);
@@ -5134,6 +5383,15 @@ io.on('connection', (socket) => {
             p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
             p.partyHp[p.active] = p.hp;
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+        }
+        // 지옥맛 특수스킬: 자기 체력을 채우고, 반경 안의 대상(보스·부하) 전부를
+        // 때린다.
+        else if (character.skillType === 'life_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.skillHealRatio));
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            const targets = guestCircleTargets(room, p.x, p.y, character.skillRadius);
+            if (targets.length) damageGuestTargets(roomId, room, targets, character.skillDamage, socket.id);
         } else if (character.skillType === 'spin_heal') {
             const hit = guestCircleTargets(room, p.x, p.y, character.skillRadius);
             if (hit.length) {
@@ -5258,6 +5516,21 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
             });
         }
+        // 전기줄맛: 상체 <-> 하체 변신. 합체 중엔 못 바꾼다.
+        else if (character.skillType === 'body_swap') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const toLower = (p.bodyForm || 'upper') === 'upper';
+            const newForm = toLower ? 'lower' : 'upper';
+            const newMax = (toLower ? character.lowerHealth : character.upperHealth) + bonus.health;
+            const incomingHp = p.restingHp != null ? Math.min(newMax, p.restingHp) : newMax;
+            p.restingHp = p.hp;
+            p.bodyForm = newForm;
+            p.hp = incomingHp;
+            p.maxHp = newMax;
+            syncBodyFormToParty(p);
+            io.to(roomId).emit('guestBodyFormChanged', { id: socket.id, form: newForm, hp: p.hp, maxHp: p.maxHp, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp });
+        }
         // speed_boost is client-side only.
     });
 
@@ -5362,6 +5635,25 @@ io.on('connection', (socket) => {
             damageGuestTargets(roomId, room,
                 guestCircleTargets(room, t.x, t.y, character.ultimateRadius),
                 character.ultimateDamage, socket.id);
+        } else if (character.ultimateType === 'sky_slam') {
+            // 지옥맛 궁극기: 지정한 자리로 날아올랐다가 떨어진다.
+            const t = aimed();
+            if (!t) return;
+            io.to(roomId).emit('guestUltimateImpact', { id: socket.id, x: t.x, y: t.y, radius: character.ultimateRadius });
+            afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
+                pl.x = t.x; pl.y = t.y;
+                io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: pl.x, y: pl.y });
+                const hit = guestCircleTargets(rm, t.x, t.y, character.ultimateRadius);
+                if (!hit.length) return;
+                damageGuestTargets(roomId, rm, hit, character.ultimateDamage, socket.id);
+                if (!rooms[roomId]) return;
+                pl.skySlamBuffUntil = Date.now() + character.ultimateAttackBuffDurationMs;
+                if (character.ultimateHealRatioOnHit) {
+                    pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatioOnHit));
+                    pl.partyHp[pl.active] = pl.hp;
+                    io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: pl.hp, partyHp: pl.partyHp });
+                }
+            });
         } else if (character.ultimateType === 'magma_zone' || character.ultimateType === 'dumpling_zone') {
             const t = aimed();
             if (!t) return;
@@ -5404,6 +5696,21 @@ io.on('connection', (socket) => {
             spawnSummons(roomId, room, socket.id, character, now);
         } else if (character.ultimateType === 'element_mark') {
             p.elementMarkUntil = now + character.ultimateDurationMs;
+        }
+        // 전기줄맛 합체: 10초 동안 상체+하체 체력을 하나로 합치고 공격력이 6이 된다.
+        else if (character.ultimateType === 'body_fuse') {
+            if (p.fused) return;
+            const bonus = bonusOf(p);
+            const upperMax = character.upperHealth + bonus.health;
+            const lowerMax = character.lowerHealth + bonus.health;
+            const restingHp = p.restingHp != null ? p.restingHp
+                : ((p.bodyForm || 'upper') === 'upper' ? lowerMax : upperMax);
+            p.fused = true;
+            p.fusedUntil = now + character.ultimateDurationMs;
+            p.maxHp = upperMax + lowerMax;
+            p.hp = Math.min(p.maxHp, p.hp + restingHp);
+            syncBodyFormToParty(p);
+            io.to(roomId).emit('guestBodyFormChanged', { id: socket.id, form: 'fused', hp: p.hp, maxHp: p.maxHp, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp });
         }
     });
 

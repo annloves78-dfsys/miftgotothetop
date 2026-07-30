@@ -801,6 +801,12 @@ function describeAbility(stats, kind) {
     const sec = ms => (ms / 1000).toString().replace(/\.0$/, '');
     if (kind === 'passive') return passiveText(stats);
     if (kind === 'attack') {
+        // 전기줄맛: 몸에 따라 피해가 다르다 (attackType은 그냥 melee_kick).
+        if (stats.skillType === 'body_swap') {
+            return `전방 ${stats.attackRange}px 범위를 공격합니다. 피해는 지금 몸에 따라 다릅니다 —`
+                + ` 상체일 때 ${stats.upperAttackDamage}, 하체일 때 ${stats.lowerAttackDamage}, 합체 중엔 ${stats.ultimateAttackDamage}.`
+                + ` (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
         if (stats.attackType === 'alternating_punch') {
             return `오른손과 왼손을 번갈아 가며 공격합니다. 오른손 피해 ${stats.attackDamageRight}, 왼손 피해 ${stats.attackDamageLeft}. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
@@ -876,6 +882,10 @@ function describeAbility(stats, kind) {
                 ].join('\n');
             case 'tide_cycle':
                 return tideCycleText(stats, sec);
+            case 'body_swap':
+                return `상체와 하체를 서로 바꿉니다. 피해도 표식도 없습니다.`
+                    + ` 상체는 체력 ${stats.upperHealth} · 공격력 ${stats.upperAttackDamage}, 하체는 체력 ${stats.lowerHealth} · 공격력 ${stats.lowerAttackDamage}이고,`
+                    + ` 두 몸은 체력을 각각 따로 가지고 있어 나갔다 들어와도 그대로입니다. 합체 중에는 쓸 수 없습니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -905,6 +915,10 @@ function describeAbility(stats, kind) {
                     + ` 그때마다 ${stats.element} 속성 표식을 ${stats.ultimateZoneMarkUses}개씩 받습니다.${cd}`;
             case 'element_mark':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 대상에게 속성 표식을 남깁니다. 표식이 있는 동안 같은 속성의 캐릭터가 공격하면 피해가 ${stats.ultimateMarkMultiplier}배가 되고, 표식은 ${stats.ultimateMarkUses}회 사용되면 사라집니다. 표식은 중첩됩니다.${cd}`;
+            case 'body_fuse':
+                return `상체와 하체를 하나로 합칩니다. ${sec(stats.ultimateDurationMs)}초 동안 체력이 두 몸을 합친 것이 되고`
+                    + ` (지금 나온 몸의 체력 + 쉬고 있던 몸의 체력), 공격력이 ${stats.ultimateAttackDamage}가 됩니다.`
+                    + ` 시간이 다 되면 저절로 풀리며, 풀리는 순간 상체·풀피로 돌아옵니다.${cd}`;
             case 'awakening_rapid':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
@@ -1031,7 +1045,9 @@ const SKILL_ICONS = {
     great_slash: '⚔️',
     tide_cycle: '🌊',
     mark_punch: '🥊',
-    dumpling_zone: '🥟'
+    dumpling_zone: '🥟',
+    body_swap: '🔄',
+    body_fuse: '🔗'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -3361,6 +3377,21 @@ socket.on('storyPlayerHealed', ({ hp, partyHp }) => {
     }
 });
 
+// 전기줄맛: 상체 <-> 하체 <-> 합체. 체력 상한 자체가 바뀌므로 다른 회복
+// 이벤트와 달리 maxHp도 같이 받아야 한다.
+socket.on('storyBodyFormChanged', ({ id, form, hp, maxHp, partyHp, partyMaxHp }) => {
+    if (id !== socket.id || !storyPlayer) return;
+    storyPlayer.hp = hp;
+    storyPlayer.maxHp = maxHp;
+    storyPlayer.healEffectUntil = performance.now() + 250;
+    updateStoryHpBar();
+    if (awakenFightParty && partyHp && partyMaxHp) {
+        awakenFightParty.partyHp = partyHp;
+        awakenFightParty.partyMaxHp = partyMaxHp;
+        renderAwakenSwapBar();
+    }
+});
+
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
 });
@@ -4576,6 +4607,16 @@ socket.on('playerHealed', ({ id, hp }) => {
     const p = players[id];
     if (!p) return;
     p.hp = hp;
+    p.triggerHealEffect();
+    updateHpBars();
+});
+
+// 전기줄맛: 상체 <-> 하체 <-> 합체. 체력 상한 자체가 바뀐다.
+socket.on('bodyFormChanged', ({ id, hp, maxHp }) => {
+    const p = players[id];
+    if (!p) return;
+    p.hp = hp;
+    p.maxHp = maxHp;
     p.triggerHealEffect();
     updateHpBars();
 });
