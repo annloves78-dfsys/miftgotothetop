@@ -795,6 +795,53 @@ const CHARACTERS = {
         ultimateAttackBuff: 3,
         ultimateAttackBuffDurationMs: 10000,
         ultimateCooldownMs: 30000
+    },
+    flamefairy: {
+        name: '불꽃요정맛 쿠키',
+        shortName: '불꽃요정',
+        color: '#e74c3c',
+        colorLeft: '#e74c3c', // 빨강
+        colorRight: '#ff8a80', // 연한 빨강
+        grade: '게스트',
+        element: '불',
+        role: '대미지 딜러',
+        health: 200,
+        speed: 2,
+        // 불꽃 던지기: 물방울맛과 같은 투사체 매커니즘이지만 훨씬 빠르게 날아간다.
+        attackType: 'throw_projectile',
+        attackProjectileRadius: 15, // 물방울맛(10)의 1.5배
+        attackProjectileSpeed: 700,
+        attackRange: 500,
+        attackDamage: 5,
+        attackCooldown: 500,
+        // 마그마맛처럼 화염 피해가 따로 붙는다: 1초마다 1번씩, 6초 동안.
+        attackBurnDamage: 6,
+        attackBurnTicks: 6,
+        attackBurnIntervalMs: 1000,
+        // 패시브: 전투당 두 번 부활한다(항상 풀피). 부활할 때마다 화염 피해가
+        // 1씩 늘어서 6 -> 7(1차 부활) -> 8(2차 부활)이 된다.
+        passiveReviveCount: 2,
+        passiveReviveHpRatio: 1,
+        passiveBurnGrowthPerRevive: 1,
+        // 특수스킬: 방패로 막는다. 자신의 체력을 80(고정값) 채우고, 100짜리
+        // 보호막을 씌운다. 팀 전체가 아니라 자기 자신만.
+        skillType: 'self_guard_surge',
+        skillHealAmount: 80,
+        skillShieldAmount: 100,
+        skillCooldown: 10000,
+        // 궁극기: 번개악마맛의 크게베기처럼 조준 없이 지금 보고 있는 방향으로
+        // 길고 큰 화염지대를 깐다. 15초 동안 유지되며, 안에 있는 적은 1초마다
+        // 화염 피해를 입고, 자기 자신이 그 안에 있으면 1초마다 체력을 회복한다.
+        // 그 지대 안에 있는 적을 공격하면(기본 공격) 화염 피해가 1 더 붙는다.
+        ultimateType: 'fire_line_zone',
+        ultimateRange: 450,
+        ultimateWidth: 180,
+        ultimateZoneDamagePerTick: 3,
+        ultimateZoneTickMs: 1000,
+        ultimateZoneDurationMs: 15000,
+        ultimateZoneSelfHealPerTick: 8,
+        ultimateZoneAttackBonusBurn: 1,
+        ultimateCooldownMs: 30000
     }
 };
 

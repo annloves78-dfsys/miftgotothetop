@@ -727,6 +727,11 @@ function passiveText(stats) {
         if (stats.passiveReviveBlastDamage) {
             parts.push(`부활하는 순간 반경 ${stats.passiveReviveBlastRadius}px 내의 적에게 ${stats.passiveReviveBlastDamage}의 고정 피해를 줍니다.`);
         }
+        if (stats.passiveBurnGrowthPerRevive) {
+            const growth = Array.from({ length: stats.passiveReviveCount },
+                (_, i) => stats.attackBurnDamage + (i + 1) * stats.passiveBurnGrowthPerRevive);
+            parts.push(`부활할 때마다 기본 공격의 화염 피해가 ${stats.passiveBurnGrowthPerRevive}씩 늘어 ${stats.attackBurnDamage} → ${growth.join(' → ')}가 됩니다.`);
+        }
     }
     if (stats.passiveKillAttackBuff) {
         parts.push(`기본 공격으로 적을 쓰러뜨릴 때마다 ${sec(stats.passiveKillAttackBuffDurationMs)}초 동안 공격력이 ${stats.passiveKillAttackBuff} 오릅니다. 중첩 제한은 없습니다.`);
@@ -831,7 +836,8 @@ function describeAbility(stats, kind) {
                 + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
-            return `물방울(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
+            const noun = stats.element === '불' ? '불꽃' : '물방울';
+            return `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
@@ -895,6 +901,8 @@ function describeAbility(stats, kind) {
             case 'life_burst':
                 return `조준 없이 즉시 발동합니다. 자신의 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 채우고,`
                     + ` 반경 ${stats.skillRadius}px 내의 적 전부에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
+            case 'self_guard_surge':
+                return `방패로 막습니다. 자신의 체력을 ${stats.skillHealAmount}만큼 채우고, 자신에게만 ${stats.skillShieldAmount}짜리 보호막을 씌웁니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -962,6 +970,12 @@ function describeAbility(stats, kind) {
                 return `원하는 지점을 지정하면 그 자리로 날아올랐다가 ${sec(stats.ultimateWindupMs)}초 뒤 떨어집니다.`
                     + ` 착지 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 주고,`
                     + ` 적중하면 ${sec(stats.ultimateAttackBuffDurationMs)}초 동안 공격력이 ${stats.ultimateAttackBuff} 오르며 최대 체력의 ${Math.round(stats.ultimateHealRatioOnHit * 100)}%를 회복합니다.${cd}`;
+            case 'fire_line_zone':
+                return `조준 없이 지금 보고 있는 방향으로 전방 ${stats.ultimateRange}px(가로 ${stats.ultimateWidth}px)`
+                    + ` 화염지대를 깝니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 유지되며,`
+                    + ` 그 안의 적은 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 화염 피해를 입고,`
+                    + ` 자신이 그 안에 있으면 ${sec(stats.ultimateZoneTickMs)}초마다 체력을 ${stats.ultimateZoneSelfHealPerTick}만큼 회복합니다.`
+                    + ` 그 안에 있는 적을 기본 공격으로 맞히면 화염 피해가 ${stats.ultimateZoneAttackBonusBurn} 더 붙습니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -990,6 +1004,24 @@ function zoneColors(look) {
     return look === 'dumpling'
         ? { fill: 'rgba(39, 174, 96, 0.28)', stroke: 'rgba(244, 208, 63, 0.9)' }
         : { fill: 'rgba(230, 81, 0, 0.25)', stroke: 'rgba(255, 152, 0, 0.85)' };
+}
+
+// 불꽃요정맛 궁극기: 원형이 아니라 사각형(길고 넓은) 지대라서 magmaZones와는
+// 따로 그린다. guest_raid.js도 같은 페이지에 얹혀 전역으로 공유되므로 여기
+// 한 곳에만 정의한다.
+function drawFireLineZones(c, zones, now) {
+    zones.forEach(z => {
+        const pulse = Math.sin(now / 150) * 0.05;
+        c.save();
+        c.translate(z.x, z.y);
+        c.rotate(z.facing);
+        c.fillStyle = `rgba(230, 81, 0, ${0.25 + pulse})`;
+        c.fillRect(0, -z.width / 2, z.range, z.width);
+        c.strokeStyle = 'rgba(255, 152, 0, 0.85)';
+        c.lineWidth = 3;
+        c.strokeRect(0, -z.width / 2, z.range, z.width);
+        c.restore();
+    });
 }
 
 // Split-color icon background so similarly-colored cookies stay tellable
@@ -1062,7 +1094,9 @@ const SKILL_ICONS = {
     body_swap: '🔄',
     body_fuse: '🔗',
     life_burst: '🩸',
-    sky_slam: '🌠'
+    sky_slam: '🌠',
+    self_guard_surge: '🔥🛡',
+    fire_line_zone: '🔥'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
@@ -3095,6 +3129,7 @@ let storyGreatSlashes = []; // [{x, y, facing, range, width, windupMs, until}] �
 let storyDrops = {}; // id -> thrown 물방울 in flight
 let storyDropSplashes = []; // [{x, y, until}]
 let storyMagmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
+let storyFireLineZones = []; // [{x, y, facing, range, width, until}] 불꽃요정맛 궁극기 지대
 let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 
 socket.on('storyFloorStarted', (data) => {
@@ -3121,6 +3156,7 @@ socket.on('storyFloorStarted', (data) => {
     isStoryTargetingSkill = false;
     storyImpactEffects = [];
     storyMagmaZones = [];
+    storyFireLineZones = [];
     storyProjectiles = {};
     storyProjectileSparks = [];
     storyDrops = {};
@@ -3447,6 +3483,10 @@ socket.on('storyLightningStrike', ({ x, y, radius }) => {
 
 socket.on('storyMagmaZonePlaced', ({ x, y, radius, durationMs, look }) => {
     storyMagmaZones.push({ x, y, radius, look, until: performance.now() + durationMs });
+});
+
+socket.on('storyFireLineZonePlaced', ({ x, y, facing, range, width, durationMs }) => {
+    storyFireLineZones.push({ x, y, facing, range, width, until: performance.now() + durationMs });
 });
 
 socket.on('storyEarthquake', () => {
@@ -4010,6 +4050,9 @@ function storyRender(now) {
         storyCtx.stroke();
     });
 
+    storyFireLineZones = storyFireLineZones.filter(z => now < z.until);
+    drawFireLineZones(storyCtx, storyFireLineZones, now);
+
     Object.values(storyMonsters).forEach(m => {
         if (!m.alive) return;
         const def = SHARED.MONSTERS[m.type];
@@ -4482,6 +4525,7 @@ let isTargetingUltimate = false; // armed by F for targeted_aoe ultimates, fired
 let isTargetingSkill = false; // same idea for a placed skill (see isTargetedSkill)
 let impactEffects = []; // [{x, y, radius, until}] fading impact markers, in arena space
 let magmaZones = []; // [{x, y, radius, until}] long-lived damage zones (volcano cookie ultimate)
+let fireLineZones = []; // [{x, y, facing, range, width, until}] 불꽃요정맛 궁극기 지대
 let bossMark = null; // { element, charges } | null -- element_mark ultimate (greenapple cookie)
 let raidQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultimate)
 let raidSummons = {}; // 번개지옥맛 궁극기가 부른 부하들
@@ -4519,6 +4563,7 @@ socket.on('raidStarted', (data) => {
     isTargetingUltimate = false;
     impactEffects = [];
     magmaZones = [];
+    fireLineZones = [];
     raidDrops = {};
     raidDropSplashes = [];
     raidGreatSlashes = [];
@@ -4592,6 +4637,10 @@ socket.on('lightningStrike', ({ x, y, radius }) => {
 
 socket.on('magmaZonePlaced', ({ x, y, radius, durationMs, look }) => {
     magmaZones.push({ x, y, radius, look, until: performance.now() + durationMs });
+});
+
+socket.on('fireLineZonePlaced', ({ x, y, facing, range, width, durationMs }) => {
+    fireLineZones.push({ x, y, facing, range, width, until: performance.now() + durationMs });
 });
 
 socket.on('earthquake', () => {
@@ -5069,6 +5118,9 @@ function render(now) {
         ctx.lineWidth = 3;
         ctx.stroke();
     });
+
+    fireLineZones = fireLineZones.filter(z => now < z.until);
+    drawFireLineZones(ctx, fireLineZones, now);
 
     if (isTargetingUltimate && mouseX !== null) {
         const me = players[socket.id];

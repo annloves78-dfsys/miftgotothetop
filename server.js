@@ -719,6 +719,20 @@ function tickRoom(roomId) {
                             });
                         }
                     }
+                } else if (buff.type === 'fire_line_zone') {
+                    // 불꽃요정맛 궁극기 지대: 보스가 사각형 안에 있으면 계속 화염 피해,
+                    // 시전자 본인이 안에 있으면 계속 회복.
+                    if (meleeLineHit(buff.x, buff.y, buff.facing, buff.range, buff.width, BOSS_RADIUS)) {
+                        room.bossHp = Math.max(0, room.bossHp - buff.damage);
+                        io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: buff.casterId });
+                        if (room.bossHp <= 0) { endRoom(roomId, 'win'); continue; }
+                    }
+                    const caster = room.players[buff.casterId];
+                    if (buff.healPerTick && caster && caster.alive
+                        && meleeLineHitPoint(buff.x, buff.y, buff.facing, buff.range, buff.width, caster.x, caster.y, PLAYER_RADIUS)) {
+                        caster.hp = Math.min(caster.maxHp, caster.hp + buff.healPerTick);
+                        io.to(roomId).emit('playerHealed', { id: buff.casterId, hp: caster.hp });
+                    }
                 }
             }
         }
@@ -1474,6 +1488,23 @@ function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
     return false;
 }
 
+// 불꽃요정맛 패시브: 부활할 때마다 화염 피해가 늘어난다 (6 -> 7 -> 8).
+function effectiveBurnDamage(character, p) {
+    if (!character.attackBurnDamage) return 0;
+    const growth = character.passiveBurnGrowthPerRevive
+        ? (p && p.revivesUsed || 0) * character.passiveBurnGrowthPerRevive : 0;
+    return character.attackBurnDamage + growth;
+}
+
+// 불꽃요정맛 궁극기(화염지대) 안에 서 있는 적을 공격하면 화염 피해가 더 붙는다.
+function zoneBurnBonus(character, room, casterId, targetX, targetY, targetRadius) {
+    if (!character.ultimateZoneAttackBonusBurn || !room.activeBuffs) return 0;
+    const zone = room.activeBuffs.find(b => b.type === 'fire_line_zone' && b.casterId === casterId);
+    if (!zone) return 0;
+    return meleeLineHitPoint(zone.x, zone.y, zone.facing, zone.range, zone.width, targetX, targetY, targetRadius)
+        ? character.ultimateZoneAttackBonusBurn : 0;
+}
+
 function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
     let dmg = Math.round(damageWithMark(m, character, baseDamage, now, opts.markUse) * monsterDamageTaken(m));
     dmg = absorbMonsterShield(roomId, mid, m, dmg);
@@ -1486,11 +1517,14 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
     io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
 
     if (character.attackBurnDamage) {
+        const attacker = room.players[attackerId];
+        const burnDmg = effectiveBurnDamage(character, attacker)
+            + zoneBurnBonus(character, room, attackerId, m.x, m.y, mR(m));
         room.activeBuffs.push({
             type: 'attack_burn',
             casterId: attackerId,
             targetMonsterId: mid,
-            damage: character.attackBurnDamage,
+            damage: burnDmg,
             tickMs: character.attackBurnIntervalMs,
             ticksLeft: character.attackBurnTicks,
             lastTickAt: now,
@@ -1577,10 +1611,12 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
 
     // Burn: a couple of small extra ticks after the initial hit.
     if (character.attackBurnDamage) {
+        const burnDmg = effectiveBurnDamage(character, p)
+            + zoneBurnBonus(character, room, attackerId, 0, 0, BOSS_RADIUS);
         room.activeBuffs.push({
             type: 'attack_burn',
             casterId: attackerId,
-            damage: character.attackBurnDamage,
+            damage: burnDmg,
             tickMs: character.attackBurnIntervalMs,
             ticksLeft: character.attackBurnTicks,
             lastTickAt: now,
@@ -2486,6 +2522,22 @@ function tickStoryRoom(roomId) {
                             });
                         }
                     }
+                }
+            } else if (buff.type === 'fire_line_zone') {
+                // 불꽃요정맛 궁극기 지대: 사각형 안의 몬스터는 계속 화염 피해,
+                // 시전자 본인이 안에 있으면 계속 회복.
+                for (const [mid, m] of Object.entries(room.monsters)) {
+                    if (!m.alive) continue;
+                    if (!meleeLineHitPoint(buff.x, buff.y, buff.facing, buff.range, buff.width, m.x, m.y, mR(m))) continue;
+                    m.hp = Math.max(0, m.hp - buff.damage);
+                    if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+                    else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+                const caster = room.players[buff.casterId];
+                if (buff.healPerTick && caster && caster.alive
+                    && meleeLineHitPoint(buff.x, buff.y, buff.facing, buff.range, buff.width, caster.x, caster.y, PLAYER_RADIUS)) {
+                    caster.hp = Math.min(caster.maxHp, caster.hp + buff.healPerTick);
+                    io.to(roomId).emit('storyPlayerHealed', { id: buff.casterId, hp: caster.hp });
                 }
             }
         }
@@ -3510,6 +3562,19 @@ function tickGuestRoom(roomId) {
                     markGuestTargets(roomId, room, inside, buff.markElement,
                         { charges: buff.markCharges, multiplier: buff.markMultiplier });
                 }
+            } else if (buff.type === 'fire_line_zone') {
+                // 불꽃요정맛 궁극기 지대: 사각형 안의 대상(보스·부하)은 계속 화염
+                // 피해, 시전자 본인이 안에 있으면 계속 회복.
+                const inside = guestLineTargets(room, buff.x, buff.y, buff.facing, buff.range, buff.width);
+                if (inside.length) damageGuestTargets(roomId, room, inside, buff.damage, buff.casterId);
+                if (!rooms[roomId]) return;
+                const caster = room.players[buff.casterId];
+                if (buff.healPerTick && caster && caster.alive
+                    && meleeLineHitPoint(buff.x, buff.y, buff.facing, buff.range, buff.width, caster.x, caster.y, PLAYER_RADIUS)) {
+                    caster.hp = Math.min(caster.maxHp, caster.hp + buff.healPerTick);
+                    caster.partyHp[caster.active] = caster.hp;
+                    io.to(roomId).emit('guestPlayerHealed', { id: buff.casterId, hp: caster.hp, partyHp: caster.partyHp });
+                }
             }
         }
     }
@@ -4218,6 +4283,14 @@ io.on('connection', (socket) => {
                 if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
                 else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
             }
+        }
+        // 불꽃요정맛 특수스킬: 방패로 막는다. 고정값 회복 + 자기 자신에게만
+        // 보호막을 씌운다 (팀 전체가 아니다).
+        else if (character.skillType === 'self_guard_surge') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            p.shieldHp = character.skillShieldAmount;
+            io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            io.to(roomId).emit('storyPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
         } else if (character.skillType === 'earthquake') {
             // No aiming: the whole floor shakes. A small group all takes
             // skillDamage; past skillThresholdCount the ground swallows the
@@ -4478,6 +4551,24 @@ io.on('connection', (socket) => {
                     pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatioOnHit));
                     io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: pl.hp });
                 }
+            });
+        } else if (character.ultimateType === 'fire_line_zone') {
+            // 불꽃요정맛 궁극기: 번개악마맛 크게베기처럼 조준 없이 지금 보는
+            // 방향으로 길고 큰 화염지대를 깐다. 15초 동안 유지된다.
+            io.to(roomId).emit('storyFireLineZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                durationMs: character.ultimateZoneDurationMs
+            });
+            room.activeBuffs.push({
+                type: 'fire_line_zone', casterId: socket.id,
+                x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                damage: character.ultimateZoneDamagePerTick,
+                healPerTick: character.ultimateZoneSelfHealPerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs,
+                lastTickAt: now
             });
         } else if (character.ultimateType === 'guard_surge') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
@@ -4864,6 +4955,14 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
             }
+        }
+        // 불꽃요정맛 특수스킬: 방패로 막는다. 고정값 회복 + 자기 자신에게만
+        // 보호막을 씌운다.
+        else if (character.skillType === 'self_guard_surge') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            p.shieldHp = character.skillShieldAmount;
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            io.to(roomId).emit('playerShielded', { id: socket.id, shieldHp: p.shieldHp });
         } else if (character.skillType === 'earthquake') {
             // A raid only ever has one enemy (the boss), so this always takes
             // the small-group branch -- the boss is never one-shot.
@@ -5003,6 +5102,24 @@ io.on('connection', (socket) => {
                     pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.ultimateHealRatioOnHit));
                     io.to(roomId).emit('playerHealed', { id: socket.id, hp: pl.hp });
                 }
+            });
+        } else if (character.ultimateType === 'fire_line_zone') {
+            // 불꽃요정맛 궁극기: 조준 없이 지금 보는 방향으로 길고 큰 화염지대를
+            // 깐다. 15초 동안 유지된다.
+            io.to(roomId).emit('fireLineZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                durationMs: character.ultimateZoneDurationMs
+            });
+            room.activeBuffs.push({
+                type: 'fire_line_zone', casterId: socket.id,
+                x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                damage: character.ultimateZoneDamagePerTick,
+                healPerTick: character.ultimateZoneSelfHealPerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs,
+                lastTickAt: now
             });
         } else if (character.ultimateType === 'lightning_strike') {
             const targetX = payload && payload.targetX;
@@ -5392,6 +5509,15 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
             const targets = guestCircleTargets(room, p.x, p.y, character.skillRadius);
             if (targets.length) damageGuestTargets(roomId, room, targets, character.skillDamage, socket.id);
+        }
+        // 불꽃요정맛 특수스킬: 방패로 막는다. 고정값 회복 + 자기 자신에게만
+        // 보호막을 씌운다.
+        else if (character.skillType === 'self_guard_surge') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            p.shieldHp = character.skillShieldAmount;
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            io.to(roomId).emit('guestPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
         } else if (character.skillType === 'spin_heal') {
             const hit = guestCircleTargets(room, p.x, p.y, character.skillRadius);
             if (hit.length) {
@@ -5653,6 +5779,24 @@ io.on('connection', (socket) => {
                     pl.partyHp[pl.active] = pl.hp;
                     io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: pl.hp, partyHp: pl.partyHp });
                 }
+            });
+        } else if (character.ultimateType === 'fire_line_zone') {
+            // 불꽃요정맛 궁극기: 조준 없이 지금 보는 방향으로 길고 큰 화염지대를
+            // 깐다. 15초 동안 유지된다.
+            io.to(roomId).emit('guestFireLineZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                durationMs: character.ultimateZoneDurationMs
+            });
+            room.activeBuffs.push({
+                type: 'fire_line_zone', casterId: socket.id,
+                x: p.x, y: p.y, facing: p.facing,
+                range: character.ultimateRange, width: character.ultimateWidth,
+                damage: character.ultimateZoneDamagePerTick,
+                healPerTick: character.ultimateZoneSelfHealPerTick,
+                tickMs: character.ultimateZoneTickMs,
+                endAt: now + character.ultimateZoneDurationMs,
+                lastTickAt: now
             });
         } else if (character.ultimateType === 'magma_zone' || character.ultimateType === 'dumpling_zone') {
             const t = aimed();

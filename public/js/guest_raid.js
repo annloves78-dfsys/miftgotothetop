@@ -53,6 +53,7 @@ let guestTelegraphs = [];   // red danger markers
 let guestHitFlashes = [];   // the strike itself
 let guestStuckSpears = [];
 let guestMagmaZones = [];
+let guestFireLineZones = []; // [{x, y, facing, range, width, until}] 불꽃요정맛 궁극기 지대
 let guestImpacts = [];
 let guestIsTargetingUltimate = false;
 let guestIsTargetingSkill = false; // 때파기 / 물방울 터트리기 aim like an ultimate
@@ -361,7 +362,7 @@ socket.on('guestStarted', (data) => {
         ...GUEST_SLOT_DEFAULTS
     } : null;
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
-    guestMagmaZones = []; guestImpacts = [];
+    guestMagmaZones = []; guestFireLineZones = []; guestImpacts = [];
     guestIsTargetingUltimate = false;
     guestIsTargetingSkill = false;
     guestQuakeUntil = 0;
@@ -457,7 +458,7 @@ socket.on('guestPhase2Started', (data) => {
         Object.assign(guestLocal, GUEST_SLOT_DEFAULTS);
     }
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
-    guestMagmaZones = []; guestImpacts = []; guestFallZones = [];
+    guestMagmaZones = []; guestFireLineZones = []; guestImpacts = []; guestFallZones = [];
     guestMonsters = {}; guestProjectiles = {};
     guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
@@ -552,6 +553,9 @@ socket.on('guestUltimateImpact', (d) => {
 });
 socket.on('guestMagmaZonePlaced', (d) => {
     guestMagmaZones.push({ ...d, until: performance.now() + d.durationMs });
+});
+socket.on('guestFireLineZonePlaced', (d) => {
+    guestFireLineZones.push({ ...d, until: performance.now() + d.durationMs });
 });
 socket.on('guestSkillMark', (d) => {
     guestImpacts.push({ ...d, until: performance.now() + 500 });
@@ -962,6 +966,9 @@ function guestRender(now) {
         guestCtx.lineWidth = 3;
         guestCtx.stroke();
     });
+
+    guestFireLineZones = guestFireLineZones.filter(z => now < z.until);
+    drawFireLineZones(guestCtx, guestFireLineZones, now);
 
     // Red danger zones for the telegraphed skills.
     guestTelegraphs = guestTelegraphs.filter(t => now < t.until);
