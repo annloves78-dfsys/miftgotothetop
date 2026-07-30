@@ -790,7 +790,7 @@ const CHARACTERS = {
         ultimateType: 'sky_slam',
         ultimateRadius: 200,
         ultimateWindupMs: 1000,
-        ultimateDamage: 40,
+        ultimateDamage: 60,
         ultimateHealRatioOnHit: 0.25,
         ultimateAttackBuff: 3,
         ultimateAttackBuffDurationMs: 10000,
