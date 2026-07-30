@@ -577,13 +577,14 @@ socket.on('guestButterflyMode', ({ id, on }) => {
     guestLocal.lastUltimateClientTime = on ? Infinity : performance.now();
 });
 
-socket.on('guestDropThrown', ({ id, x, y, vx, vy, radius }) => {
-    guestDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+socket.on('guestDropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
+    guestDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
 });
 
 socket.on('guestDropGone', ({ id, hit, x, y }) => {
+    const charType = guestDrops[id] && guestDrops[id].charType;
     delete guestDrops[id];
-    if (hit) guestDropSplashes.push({ x, y, until: performance.now() + 260 });
+    if (hit) guestDropSplashes.push({ x, y, charType, until: performance.now() + 260 });
 });
 
 socket.on('guestPlayerTeleported', ({ id, x, y }) => {

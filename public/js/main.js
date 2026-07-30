@@ -1095,9 +1095,22 @@ const SKILL_ICONS = {
     body_fuse: '🔗',
     life_burst: '🩸',
     sky_slam: '🌠',
-    self_guard_surge: '🔥🛡',
+    self_guard_surge: '🛡️',
     fire_line_zone: '🔥'
 };
+
+// A few skills need a second small glyph pinned to a corner of the icon
+// (e.g. a fire badge on a shield) rather than two characters crammed into
+// one string. Keyed the same as SKILL_ICONS; only entries that need a badge
+// appear here.
+const SKILL_ICON_BADGES = {
+    self_guard_surge: '🔥'
+};
+function skillIconHtml(key, fallback) {
+    const base = SKILL_ICONS[key] || fallback;
+    const badge = SKILL_ICON_BADGES[key];
+    return badge ? `${base}<span class="skill-icon-badge">${badge}</span>` : base;
+}
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
 const detailChangeCharBtn = document.getElementById('detail-change-char-btn');
@@ -1446,24 +1459,36 @@ function drawGreatSlashes(c, slashes, now) {
     });
 }
 
-// 던져진 물방울. Drawn straight from the throw: its velocity never changes,
-// so the client can place it exactly without a per-tick sync from the server.
+// 던져진 물방울(또는 불꽃). Drawn straight from the throw: its velocity never
+// changes, so the client can place it exactly without a per-tick sync from
+// the server. charType가 불 속성이면(불꽃요정맛) 물방울 대신 불꽃으로 그린다.
+function isFireProjectile(charType) {
+    const stats = charType && SHARED.CHARACTERS[charType];
+    return !!(stats && stats.element === '불');
+}
 function drawThrownDrops(c, drops, now) {
     Object.values(drops).forEach(d => {
         const t = (now - d.at) / 1000;
         const x = d.x + d.vx * t;
         const y = d.y + d.vy * t;
         const r = d.radius || 10;
+        const fire = isFireProjectile(d.charType);
         c.save();
         c.translate(x, y);
         const grad = c.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.2, 0, 0, r);
-        grad.addColorStop(0, '#eaf8ff');
-        grad.addColorStop(1, '#1f6fb2');
+        if (fire) {
+            grad.addColorStop(0, '#fff3c4');
+            grad.addColorStop(0.5, '#ff8a3d');
+            grad.addColorStop(1, '#c0392b');
+        } else {
+            grad.addColorStop(0, '#eaf8ff');
+            grad.addColorStop(1, '#1f6fb2');
+        }
         c.beginPath();
         c.arc(0, 0, r, 0, Math.PI * 2);
         c.fillStyle = grad;
         c.fill();
-        c.strokeStyle = 'rgba(255,255,255,0.85)';
+        c.strokeStyle = fire ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
         c.lineWidth = 2;
         c.stroke();
         c.restore();
@@ -1474,9 +1499,12 @@ function drawThrownDrops(c, drops, now) {
 function drawDropSplashes(c, splashes, now) {
     splashes.forEach(s => {
         const life = (s.until - now) / 260;
+        const fire = isFireProjectile(s.charType);
         c.beginPath();
         c.arc(s.x, s.y, 8 + (1 - life) * 16, 0, Math.PI * 2);
-        c.strokeStyle = `rgba(127, 212, 245, ${Math.max(0, life)})`;
+        c.strokeStyle = fire
+            ? `rgba(255, 138, 61, ${Math.max(0, life)})`
+            : `rgba(127, 212, 245, ${Math.max(0, life)})`;
         c.lineWidth = 3;
         c.stroke();
     });
@@ -1541,13 +1569,13 @@ function syncMobileButtonIcons(charType, isStory) {
     const ultEl = isStory ? mcUltimateStoryEl : mcUltimateFightEl;
     const cdSkill = isStory ? mcSkillCdStoryEl : mcSkillCdFightEl;
     const cdUlt = isStory ? mcUltimateCdStoryEl : mcUltimateCdFightEl;
-    attackEl.textContent = SKILL_ICONS[stats.attackType] || '⚔';
-    skillEl.textContent = SKILL_ICONS[stats.skillType] || '🌀';
+    attackEl.innerHTML = skillIconHtml(stats.attackType, '⚔');
+    skillEl.innerHTML = skillIconHtml(stats.skillType, '🌀');
     skillEl.appendChild(cdSkill);
     // The ultimate control is an aim joystick, so its icon lives on the thumb --
     // writing to the zone itself would wipe the base/thumb elements.
     const ultThumb = ultEl.querySelector('.mc-aim-thumb');
-    ultThumb.textContent = SKILL_ICONS[stats.ultimateType] || '🔥';
+    ultThumb.innerHTML = skillIconHtml(stats.ultimateType, '🔥');
     ultThumb.appendChild(cdUlt);
 }
 
@@ -1799,9 +1827,9 @@ function openCharacterDetail(id) {
         + (stats.health || 0) + bonus.health);
     charDetailAwakenSlot.classList.toggle('hidden', !SHARED.hasAwakenSlot(stats.grade));
     renderCharDetailEquipment(id);
-    charDetailAttackIcon.textContent = SKILL_ICONS[stats.attackType] || '🗡';
-    charDetailSkillIcon.textContent = SKILL_ICONS[stats.skillType] || '❔';
-    charDetailUltimateIcon.textContent = SKILL_ICONS[stats.ultimateType] || '❔';
+    charDetailAttackIcon.innerHTML = skillIconHtml(stats.attackType, '🗡');
+    charDetailSkillIcon.innerHTML = skillIconHtml(stats.skillType, '❔');
+    charDetailUltimateIcon.innerHTML = skillIconHtml(stats.ultimateType, '❔');
     charDetailPassiveIcon.classList.toggle('empty', !hasPassive(stats));
     selectCharDetailAbility('attack');
     showScreen('characterDetail');
@@ -3353,13 +3381,14 @@ socket.on('storyTick', ({ monsters, projectiles, players, summons }) => {
     updateStoryMonstersLeft();
 });
 
-socket.on('storyDropThrown', ({ id, x, y, vx, vy, radius }) => {
-    storyDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+socket.on('storyDropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
+    storyDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
 });
 
 socket.on('storyDropGone', ({ id, hit, x, y }) => {
+    const charType = storyDrops[id] && storyDrops[id].charType;
     delete storyDrops[id];
-    if (hit) storyDropSplashes.push({ x, y, until: performance.now() + 260 });
+    if (hit) storyDropSplashes.push({ x, y, charType, until: performance.now() + 260 });
 });
 
 socket.on('storyProjectileFired', ({ id, x, y, vx, vy, angle }) => {
@@ -4533,13 +4562,14 @@ let raidGreatSlashes = []; // 크게베기의 벤 자리
 let raidDrops = {}; // id -> thrown 물방울 in flight
 let raidDropSplashes = []; // [{x, y, until}]
 
-socket.on('dropThrown', ({ id, x, y, vx, vy, radius }) => {
-    raidDrops[id] = { x, y, vx, vy, radius, at: performance.now() };
+socket.on('dropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
+    raidDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
 });
 
 socket.on('dropGone', ({ id, hit, x, y }) => {
+    const charType = raidDrops[id] && raidDrops[id].charType;
     delete raidDrops[id];
-    if (hit) raidDropSplashes.push({ x, y, until: performance.now() + 260 });
+    if (hit) raidDropSplashes.push({ x, y, charType, until: performance.now() + 260 });
 });
 
 socket.on('raidStarted', (data) => {

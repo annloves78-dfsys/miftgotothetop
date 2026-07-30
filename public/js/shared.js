@@ -799,9 +799,9 @@ const CHARACTERS = {
     flamefairy: {
         name: '불꽃요정맛 쿠키',
         shortName: '불꽃요정',
-        color: '#e74c3c',
-        colorLeft: '#e74c3c', // 빨강
-        colorRight: '#ff8a80', // 연한 빨강
+        color: '#8b1a1a',
+        colorLeft: '#8b1a1a', // 찐한 빨강
+        colorRight: '#e74c3c', // 그냥 빨강
         grade: '게스트',
         element: '불',
         role: '대미지 딜러',
