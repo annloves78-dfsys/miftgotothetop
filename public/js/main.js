@@ -4898,7 +4898,8 @@ function confirmSkillTarget() {
 
 function isTargetedUltimate(type) {
     return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike'
-        || type === 'magma_pour' || type === 'mark_flood' || type === 'dumpling_zone';
+        || type === 'magma_pour' || type === 'mark_flood' || type === 'dumpling_zone'
+        || type === 'sky_slam';
 }
 
 // 때파기 / 물방울 터트리기 are the first SKILLS that are placed on a spot
