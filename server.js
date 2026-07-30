@@ -11,7 +11,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     awakenFloorKey, AWAKEN_PARTY_SIZE, storyPartySizeFor, AWAKEN_BOSS_LEVELS,
     awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
-    awakenBossSummonCount, awakenBossSummonHealth } = require('./public/js/shared.js');
+    awakenBossSummonCount, awakenBossSummonHealth, awakenMinionMonsterType } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -1770,18 +1770,10 @@ function spawnAwakenBossMinions(roomId, room, boss, info, now) {
     const health = awakenBossSummonHealth(info.charType, info.level);
     const summon = CHARACTERS[info.charType].ultimateSummon;
     if (!count || !summon) return;
-    const type = `awakenminion_${info.charType}_${info.level}`;
-    if (!MONSTERS[type]) {
-        MONSTERS[type] = {
-            name: summon.name, color: summon.color,
-            health, speed: summon.speed,
-            aggroRange: 900, preferredDistance: Math.max(30, (summon.attackRange || 110) - 30),
-            attackRange: summon.attackRange || 110,
-            attackDamage: summon.attackDamage || 2,
-            attackCooldown: summon.attackCooldown || 300,
-            telegraphMs: 150
-        };
-    }
+    // 부하 표는 shared.js가 미리 등록해 둔다 (화면도 같은 표를 읽어야 한다).
+    // 표에 없으면 화면이 이 type을 몰라서 그림이 멈추므로 아예 부르지 않는다.
+    const type = awakenMinionMonsterType(info.charType, info.level);
+    if (!MONSTERS[type]) return;
     const floorDef = floorDefFor(room.floor);
     const until = now + (CHARACTERS[info.charType].ultimateDurationMs || 10000);
     for (let i = 0; i < count; i++) {

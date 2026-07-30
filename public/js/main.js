@@ -3781,7 +3781,14 @@ function storyFrame() {
         }
         updateStoryCooldownDisplay(now);
     }
-    storyRender(now);
+    // 한 판을 그리다 터져도 판 자체는 계속 돌게 한다. 예전에는 여기서 오류가
+    // 나면 requestAnimationFrame이 다시 안 걸려서 화면이 그 자리에 얼어붙고,
+    // 다른 모드로 나가도 그 그림이 남아 겹쳐 보였다.
+    try {
+        storyRender(now);
+    } catch (err) {
+        console.error('storyRender', err);
+    }
     storyLoopHandle = requestAnimationFrame(storyFrame);
 }
 
@@ -3817,6 +3824,10 @@ function quakeOffset(now, until) {
 }
 
 function storyRender(now) {
+    // 매 판을 늘 깨끗한 좌표계에서 시작한다. 그림 중간에 오류가 나면 save()와
+    // translate()가 짝을 잃은 채로 남는데, 그러면 다음 판의 clearRect가 엉뚱한
+    // 자리를 지워서 지난 화면이 그대로 남아 다른 모드에 겹쳐 보인다.
+    storyCtx.setTransform(1, 0, 0, 1, 0, 0);
     storyCtx.clearRect(0, 0, storyCanvas.width, storyCanvas.height);
     storyCtx.save();
     const cam = storyCamera();
@@ -3956,6 +3967,9 @@ function storyRender(now) {
     Object.values(storyMonsters).forEach(m => {
         if (!m.alive) return;
         const def = SHARED.MONSTERS[m.type];
+        // 표에 없는 적은 그리지 않고 넘어간다. 예전에 여기서 def를 그냥 읽다가
+        // 표에 없는 부하가 나오는 순간 그림이 통째로 멈춘 적이 있다.
+        if (!def) return;
         // 케이크 같은 보스는 잡몹보다 덩치가 크다. 판정도 같은 값을 쓴다.
         const mRad = SHARED.monsterRadiusOf(m.type);
         storyCtx.save();
