@@ -724,6 +724,12 @@ function passiveText(stats) {
         if (stats.passiveReviveEnemySoloRatio) {
             parts.push(`부활하는 순간 충격파가 퍼져 상대가 한 명이면 그 상대의 체력을 ${Math.round(stats.passiveReviveEnemySoloRatio * 100)}%, 여러 명이면 각각 ${Math.round(stats.passiveReviveEnemyCrowdRatio * 100)}%씩 깎습니다.`);
         }
+        if (stats.passiveReviveBlastDamage) {
+            parts.push(`부활하는 순간 반경 ${stats.passiveReviveBlastRadius}px 내의 적에게 ${stats.passiveReviveBlastDamage}의 고정 피해를 줍니다.`);
+        }
+    }
+    if (stats.passiveKillAttackBuff) {
+        parts.push(`기본 공격으로 적을 쓰러뜨릴 때마다 ${sec(stats.passiveKillAttackBuffDurationMs)}초 동안 공격력이 ${stats.passiveKillAttackBuff} 오릅니다. 중첩 제한은 없습니다.`);
     }
     if (stats.passiveResistElement) {
         parts.push(`${stats.passiveResistElement} 속성 표식이 걸린 상대에게 받는 피해가 ${Math.round(stats.passiveResistMultiplier * 100)}%로 줄어듭니다.`);
@@ -886,6 +892,9 @@ function describeAbility(stats, kind) {
                 return `상체와 하체를 서로 바꿉니다. 피해도 표식도 없습니다.`
                     + ` 상체는 체력 ${stats.upperHealth} · 공격력 ${stats.upperAttackDamage}, 하체는 체력 ${stats.lowerHealth} · 공격력 ${stats.lowerAttackDamage}이고,`
                     + ` 두 몸은 체력을 각각 따로 가지고 있어 나갔다 들어와도 그대로입니다. 합체 중에는 쓸 수 없습니다.${cd}`;
+            case 'life_burst':
+                return `조준 없이 즉시 발동합니다. 자신의 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 채우고,`
+                    + ` 반경 ${stats.skillRadius}px 내의 적 전부에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -949,6 +958,10 @@ function describeAbility(stats, kind) {
                     + ` 이동 속도가 ${stats.ultimateSpeedBonus} 빨라집니다.${cd}`;
             case 'butterfly_mode':
                 return `나비모드가 됩니다. 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다. 지속 시간은 없지만 ${sec(stats.ultimateSelfDamageIntervalMs)}초마다 자신의 체력을 ${stats.ultimateSelfDamage}씩 깎습니다. 궁극기 버튼을 한 번 더 누르면 해제되며, 해제한 순간부터 ${sec(stats.ultimateCooldownMs)}초가 카운트됩니다.`;
+            case 'sky_slam':
+                return `원하는 지점을 지정하면 그 자리로 날아올랐다가 ${sec(stats.ultimateWindupMs)}초 뒤 떨어집니다.`
+                    + ` 착지 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 주고,`
+                    + ` 적중하면 ${sec(stats.ultimateAttackBuffDurationMs)}초 동안 공격력이 ${stats.ultimateAttackBuff} 오르며 최대 체력의 ${Math.round(stats.ultimateHealRatioOnHit * 100)}%를 회복합니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -1047,7 +1060,9 @@ const SKILL_ICONS = {
     mark_punch: '🥊',
     dumpling_zone: '🥟',
     body_swap: '🔄',
-    body_fuse: '🔗'
+    body_fuse: '🔗',
+    life_burst: '🩸',
+    sky_slam: '🌠'
 };
 const detailCharIcon = document.getElementById('detail-char-icon');
 const detailCharName = document.getElementById('detail-char-name');
