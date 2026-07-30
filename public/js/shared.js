@@ -2749,26 +2749,26 @@ const CLEAR_REWARDS = {
 
 // 같은 출처에서 장비도 하나 떨어진다. 보상과 마찬가지로 깔 때마다.
 const CLEAR_DROPS = {
-    story1: ['wood_stick', 'cloth_cap'],
-    story2: ['leather_vest', 'runner_boots'],
-    story3: ['wood_stick', 'cloth_cap', 'leather_vest'],
-    story4: ['runner_boots', 'jelly_guard'],
-    story5: ['jelly_guard', 'mint_blade'],
-    story6: ['mint_blade', 'bomber_helm'],
-    story7: ['cream_plate', 'cream_greaves'],
-    story8: ['cream_greaves', 'frost_boots'],
-    story9: ['cream_plate', 'frost_boots'],
+    story1: ['wood_stick', 'cloth_cap', 'rusty_sword', 'leather_hood'],
+    story2: ['leather_vest', 'runner_boots', 'linen_robe', 'cotton_pants'],
+    story3: ['wood_stick', 'cloth_cap', 'leather_vest', 'straw_sandals'],
+    story4: ['runner_boots', 'jelly_guard', 'steel_plate'],
+    story5: ['jelly_guard', 'mint_blade', 'silver_axe', 'spiked_greaves'],
+    story6: ['mint_blade', 'bomber_helm', 'spiked_helm', 'wind_shoes'],
+    story7: ['cream_plate', 'cream_greaves', 'ice_spear'],
+    story8: ['cream_greaves', 'frost_boots', 'flame_helm'],
+    story9: ['cream_plate', 'frost_boots', 'spirit_armor'],
     // 11~19층은 지금 있는 장비들 중 좋은 쪽이 계속 나온다. 새 장비는 유누가
     // 만들어 주면 여기 이름만 바꿔 넣으면 된다.
-    story11: ['cream_plate', 'cream_greaves'],
-    story12: ['frost_boots', 'cream_plate'],
-    story13: ['cream_greaves', 'frost_boots'],
-    story14: ['cream_plate', 'mint_blade'],
-    story15: ['frost_boots', 'cream_greaves'],
-    story16: ['cream_plate', 'frost_boots'],
-    story17: ['cream_greaves', 'cream_plate'],
-    story18: ['frost_boots', 'cream_plate', 'cream_greaves'],
-    story19: ['cream_plate', 'cream_greaves', 'frost_boots'],
+    story11: ['cream_plate', 'cream_greaves', 'ice_spear'],
+    story12: ['frost_boots', 'cream_plate', 'flame_helm'],
+    story13: ['cream_greaves', 'frost_boots', 'spirit_armor'],
+    story14: ['cream_plate', 'mint_blade', 'storm_greaves'],
+    story15: ['frost_boots', 'cream_greaves', 'gale_boots'],
+    story16: ['cream_plate', 'frost_boots', 'ice_spear'],
+    story17: ['cream_greaves', 'cream_plate', 'spirit_armor'],
+    story18: ['frost_boots', 'cream_plate', 'cream_greaves', 'storm_greaves'],
+    story19: ['cream_plate', 'cream_greaves', 'frost_boots', 'gale_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
 };
@@ -3048,7 +3048,32 @@ const EQUIPMENT = {
             ultimateZoneDurationMs: 18000
         },
         ownerText: '불꽃요정맛 쿠키 전용 — 부활 1회 추가(패시브 포함 총 3번). 3번째 부활부터는 화염 피해가 더 늘지 않는 대신 기본 공격력이 +2 됩니다. 궁극기 화염지대 유지시간 15초 → 18초.'
-    }
+    },
+    // ---- 등급 x 종류 채우기 (각성 장비 제외, 등급별 5종류 모두 하나씩) ----
+    // ---- 일반 ----
+    rusty_sword: { name: '녹슨 검', slot: 'weapon', grade: '일반', icon: '🗡', bonusAttack: 1 },
+    leather_hood: { name: '가죽 두건', slot: 'helmet', grade: '일반', icon: '🧢', bonusHealth: 5 },
+    linen_robe: { name: '삼베 옷', slot: 'armor', grade: '일반', icon: '🦺', bonusHealth: 8, bonusDamageTaken: 0.98 },
+    cotton_pants: { name: '무명 바지', slot: 'leggings', grade: '일반', icon: '👖', bonusHealth: 6, bonusDamageTaken: 0.99 },
+    straw_sandals: { name: '짚신', slot: 'boots', grade: '일반', icon: '🩴', bonusHealth: 5, bonusDamageTaken: 0.99 },
+    // ---- 희귀 ----
+    silver_axe: { name: '은도끼', slot: 'weapon', grade: '희귀', icon: '⛏', bonusAttack: 2, bonusCooldown: 0.96 },
+    spiked_helm: { name: '가시 투구', slot: 'helmet', grade: '희귀', icon: '🪖', bonusHealth: 12, bonusAttack: 1 },
+    steel_plate: { name: '강철 판금', slot: 'armor', grade: '희귀', icon: '🛡', bonusHealth: 20, bonusDamageTaken: 0.96 },
+    spiked_greaves: { name: '가시 각반', slot: 'leggings', grade: '희귀', icon: '🦵', bonusHealth: 13, bonusCooldown: 0.97 },
+    wind_shoes: { name: '바람의 신발', slot: 'boots', grade: '희귀', icon: '👟', bonusHealth: 9, bonusSpeed: 2 },
+    // ---- 에픽 ----
+    ice_spear: { name: '얼음 창', slot: 'weapon', grade: '에픽', icon: '🔱', bonusAttack: 3, bonusCooldown: 0.94 },
+    flame_helm: { name: '화염 투구', slot: 'helmet', grade: '에픽', icon: '⛑', bonusHealth: 20, bonusAttack: 1 },
+    spirit_armor: { name: '정령의 갑옷', slot: 'armor', grade: '에픽', icon: '🛡', bonusHealth: 28, bonusDamageTaken: 0.94 },
+    storm_greaves: { name: '폭풍의 각반', slot: 'leggings', grade: '에픽', icon: '🦿', bonusHealth: 22, bonusSpeed: 3 },
+    gale_boots: { name: '질풍 부츠', slot: 'boots', grade: '에픽', icon: '🥾', bonusHealth: 16, bonusSpeed: 4 },
+    // ---- 레전더리 (어둠 세트와 짝을 이루는 빛 세트) ----
+    light_blade: { name: '빛의 대검', slot: 'weapon', grade: '레전더리', icon: '⚔', bonusAttack: 6, bonusCooldown: 0.89 },
+    light_crown: { name: '빛의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑', bonusHealth: 28, bonusAttack: 2, bonusCooldown: 0.93 },
+    light_mantle: { name: '빛의 갑옷', slot: 'armor', grade: '레전더리', icon: '🧥', bonusHealth: 36, bonusDamageTaken: 0.9 },
+    light_greaves: { name: '빛의 각반', slot: 'leggings', grade: '레전더리', icon: '🦿', bonusHealth: 28, bonusCooldown: 0.92 },
+    light_boots: { name: '빛의 장화', slot: 'boots', grade: '레전더리', icon: '🥾', bonusHealth: 26, bonusSpeed: 5 }
 };
 
 // 각성한 쿠키는 awakenedForm에 적힌 항목만 그 값으로 바뀜다. 적혀 있지
