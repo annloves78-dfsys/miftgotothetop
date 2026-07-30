@@ -219,6 +219,15 @@ function ultimateOnHitBuff(character, p, now) {
     return 0;
 }
 
+// 불꽃요정맛 각성 장비(타오르는 강판) 전용: 부활 횟수가
+// passiveReviveAttackBonusAtRevives에 닿으면(3번째 부활부터) 기본공격력이
+// 영구히 오른다. 장비가 없으면 이 필드 자체가 없어서 항상 0이다.
+function reviveAttackBonus(character, p) {
+    const at = character.passiveReviveAttackBonusAtRevives;
+    if (!at) return 0;
+    return (p && p.revivesUsed || 0) >= at ? (character.passiveReviveAttackBonus || 0) : 0;
+}
+
 // awakening temporarily replaces the basic attack's damage; every other
 // character just uses their flat attackDamage.
 function effectiveAttackDamage(character, p, now) {
@@ -242,7 +251,7 @@ function effectiveAttackDamage(character, p, now) {
     } else {
         base = stat(character, p, 'attackDamage') + bonusOf(p).attack;
     }
-    return base + killBuffBonus(character, p, now) + ultimateOnHitBuff(character, p, now);
+    return base + killBuffBonus(character, p, now) + ultimateOnHitBuff(character, p, now) + reviveAttackBonus(character, p);
 }
 
 // 바다펄맛: 약해진 주먹이 적중할 때마다 스스로 회복하는 양.
@@ -1489,11 +1498,16 @@ function hurtStoryMonster(roomId, room, mid, m, rawDamage) {
 }
 
 // 불꽃요정맛 패시브: 부활할 때마다 화염 피해가 늘어난다 (6 -> 7 -> 8).
+// 타오르는 강판(각성 장비)을 끼면 passiveBurnGrowthMaxRevives가 붙어서,
+// 부활이 그 이상(3번째) 늘어도 화염 피해 성장은 거기서 멈춘다 -- 그 몫은
+// reviveAttackBonus(기본 공격력 +2)로 대신 나간다.
 function effectiveBurnDamage(character, p) {
     if (!character.attackBurnDamage) return 0;
-    const growth = character.passiveBurnGrowthPerRevive
-        ? (p && p.revivesUsed || 0) * character.passiveBurnGrowthPerRevive : 0;
-    return character.attackBurnDamage + growth;
+    if (!character.passiveBurnGrowthPerRevive) return character.attackBurnDamage;
+    const revives = (p && p.revivesUsed) || 0;
+    const cap = character.passiveBurnGrowthMaxRevives;
+    const counted = cap != null ? Math.min(revives, cap) : revives;
+    return character.attackBurnDamage + counted * character.passiveBurnGrowthPerRevive;
 }
 
 // 불꽃요정맛 궁극기(화염지대) 안에 서 있는 적을 공격하면 화염 피해가 더 붙는다.

@@ -3013,6 +3013,41 @@ const EQUIPMENT = {
         ownerChar: 'sugarfly',
         ownerBonus: { bonusCooldown: 0.9 },
         ownerText: '슈가 플라이맛 쿠키가 착용하면 재사용 대기시간이 10% 더 줄어듭니다.'
+    },
+    // ---- 각성 장비 (2차) ----
+    dark_axe: {
+        name: '어둠의 도끼', slot: 'awaken', grade: '비스트', icon: '🪓',
+        ownerChar: 'hellflavor',
+        ownerBonus: { bonusAttack: 5, bonusRevive: 1 },
+        // 궁극기 피해는 더하기로 표현이 안 돼서(ultimateDamage는 EQUIP_BONUS_KEYS에
+        // 없다) awakenForm으로 통째로 덮어쓴다: 60 -> 65.
+        awakenForm: { ultimateDamage: 65 },
+        ownerText: '지옥맛 쿠키 전용 — 공격력 +5, 궁극기 피해 60 → 65, 부활 1회 추가(패시브 포함 총 2번).'
+    },
+    pearl_necklace: {
+        name: '진주목걸이', slot: 'awaken', grade: '비스트', icon: '📿',
+        ownerChar: 'seapearl',
+        ownerBonus: { bonusHealth: 100 },
+        // 몸을 사리는 기준(lowHpAt)과 그때의 회복량(lowHpAttackHealSelf)은
+        // 더하기로 표현이 안 되는 수치라 통째로 덮어쓴다.
+        awakenForm: { lowHpAt: 100, lowHpAttackHealSelf: 5 },
+        ownerText: '바다펄맛 쿠키 전용 — 체력 +100, 몸을 사리는 기준이 체력 60 → 100 이하로 낮아지고, 그동안 회복량이 2 → 5로 늘어납니다.'
+    },
+    burning_steel_plate: {
+        name: '타오르는 강판', slot: 'awaken', grade: '게스트', icon: '🔥',
+        ownerChar: 'flamefairy',
+        ownerBonus: { bonusRevive: 1 },
+        // 부활은 패시브 2번 + 이 장비 1번 = 총 3번. 다만 화염 피해 성장은
+        // passiveBurnGrowthMaxRevives로 2번째 부활까지만 세서 6->7->8에서
+        // 멈추고, 그 대신 3번째 부활(패시브가 못 붙잡는 몫)부터 기본 공격력이
+        // +2 붙는다. 궁극기 화염지대는 15초 -> 18초로 늘어난다.
+        awakenForm: {
+            passiveBurnGrowthMaxRevives: 2,
+            passiveReviveAttackBonusAtRevives: 3,
+            passiveReviveAttackBonus: 2,
+            ultimateZoneDurationMs: 18000
+        },
+        ownerText: '불꽃요정맛 쿠키 전용 — 부활 1회 추가(패시브 포함 총 3번). 3번째 부활부터는 화염 피해가 더 늘지 않는 대신 기본 공격력이 +2 됩니다. 궁극기 화염지대 유지시간 15초 → 18초.'
     }
 };
 
