@@ -3136,6 +3136,19 @@ resizeStoryCanvas();
 let storyFloorDef = null;
 let storyPlayer = null; // {x,y,hp,maxHp,facing,charType,alive,lastAttackClientTime,...}
 let storyMonsters = {}; // id -> {type,x,y,hp,maxHp,alive,state}
+// 서버가 보내는 몬스터 스냅샷은 매번 통째로 갈아 끼워지는데, 20층 보스의
+// trick/trickFlickerReal/trickReflectFlashAt 같은 클라이언트 전용 표시 필드는
+// 그 스냅샷에 없다. 그냥 storyMonsters = monsters로 덮어쓰면 clownTelegraph 등이
+// 세팅한 값이 다음 틱(50ms)마다 사라져서 화면에 거의 안 보이게 된다 -- 그래서
+// 스냅샷을 받을 때마다 기존 항목 위에 얹어 쓴다(merge), 통째로 갈아 끼우지 않는다.
+function mergeStoryMonsters(next) {
+    const merged = {};
+    for (const [id, nm] of Object.entries(next || {})) {
+        const prev = storyMonsters[id];
+        merged[id] = prev ? { ...prev, ...nm } : nm;
+    }
+    storyMonsters = merged;
+}
 // 같이 들어온 사람. 내 것은 여기 안 들어온다 (내 쿠키는 storyPlayer가 주인).
 // 서버 틱(50ms)마다 통째로 갈아 끼우고, 그 사이는 그냥 마지막 자리에 그린다.
 let storyPartners = {};
@@ -3292,7 +3305,7 @@ socket.on('storyPlayerPulled', ({ id, x, y }) => {
 });
 // 보스가 부하를 부르면 몬스터 목록이 통째로 갈아 끼워진다.
 socket.on('bossMinions', ({ monsters }) => {
-    storyMonsters = monsters;
+    mergeStoryMonsters(monsters);
     updateStoryMonstersLeft();
 });
 socket.on('monsterShield', ({ id, shieldHp }) => {
@@ -3318,7 +3331,7 @@ socket.on('monsterGuard', ({ id, hp, shieldHp, x, y }) => {
 // 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 그 자리에서
 // 크게 터뜨린다.
 socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
-    if (monsters) storyMonsters = monsters;
+    if (monsters) mergeStoryMonsters(monsters);
     // 겹겹의 고리로 크게 터뜨린다.
     const now = performance.now();
     [70, 130, 200].forEach((r, i) => {
@@ -3342,7 +3355,7 @@ socket.on('monsterSummoned', ({ x, y }) => {
 });
 // 갈라져 나온 것들을 다음 틱까지 기다리지 않고 바로 보여 준다.
 socket.on('storyMonstersChanged', ({ monsters }) => {
-    storyMonsters = monsters;
+    mergeStoryMonsters(monsters);
     updateStoryMonstersLeft();
 });
 
@@ -3373,7 +3386,7 @@ socket.on('storyTick', ({ monsters, projectiles, players, summons }) => {
         storyPartners = next;
         renderStoryPartnerHp();
     }
-    storyMonsters = monsters;
+    mergeStoryMonsters(monsters);
     const at = performance.now();
     const next = {};
     for (const [id, pr] of Object.entries(projectiles || {})) next[id] = { ...pr, at };
