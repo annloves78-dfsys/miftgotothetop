@@ -3404,6 +3404,43 @@ socket.on('monsterTelegraph', ({ id }) => {
     if (storyMonsters[id]) storyMonsters[id].state = 'telegraph';
 });
 
+// ---- 20층 보스(가면광대) 전용 이벤트 ----
+// 화면 표시는 storyMonsters[id].trick에 다 몰아넣고, until(performance.now()
+// 기준)이 지나면 storyRender가 알아서 안 그린다 -- 서버가 따로 "패턴 끝"
+// 이벤트를 보내지 않아도 되게.
+let storyReverseUntil = 0; // Date.now() 기준 -- 서버 타임스탬프와 비교해야 해서 performance.now()가 아니다.
+socket.on('clownTelegraph', (data) => {
+    const m = storyMonsters[data.id];
+    if (!m) return;
+    const startAt = performance.now();
+    let durationMs = (data.telegraphMs || 0) + 350;
+    if (data.pattern === 'decoy_flicker') durationMs = data.maxDurationMs || 10000;
+    else if (data.pattern === 'reverse_steps') durationMs = Math.max(0, data.until - Date.now());
+    else if (data.pattern === 'vanish_strike') durationMs = (data.hitCount || 5) * (data.intervalMs || 1000) + 400;
+    m.trick = { ...data, startAt, until: startAt + durationMs, realSide: null };
+});
+socket.on('clownAttack', (data) => {
+    const m = storyMonsters[data.id];
+    if (m && m.trick && m.trick.pattern === data.pattern) {
+        m.trick.flashAt = performance.now();
+        m.trick.realSide = null; // vanish_strike: 다음 힌트 전까지는 다시 "모름" 상태로
+    }
+});
+socket.on('clownFlicker', ({ id, real }) => {
+    if (storyMonsters[id]) storyMonsters[id].trickFlickerReal = real;
+});
+socket.on('clownHint', ({ id, realSide }) => {
+    const m = storyMonsters[id];
+    if (m && m.trick) m.trick.realSide = realSide;
+});
+socket.on('clownReflect', ({ id }) => {
+    const m = storyMonsters[id];
+    if (m) m.trickReflectFlashAt = performance.now();
+});
+socket.on('storyReverseControls', ({ until }) => {
+    storyReverseUntil = until;
+});
+
 socket.on('monsterDamaged', ({ id, hp }) => {
     if (storyMonsters[id]) storyMonsters[id].hp = hp;
     updateStoryBossBar();
@@ -3860,6 +3897,9 @@ function storyFrame() {
         if (keys['s'] || keys['S']) dy += speed;
         if (keys['a'] || keys['A']) dx -= speed;
         if (keys['d'] || keys['D']) dx += speed;
+        // 20층 보스 "뒤바뀐 발걸음": 서버가 준 until은 Date.now() 기준이라
+        // performance.now()가 아니라 여기서만 따로 비교한다.
+        if (storyReverseUntil && Date.now() < storyReverseUntil) { dx = -dx; dy = -dy; }
         if (dx !== 0 || dy !== 0) {
             // Mirrors the server's storyPlayerMove clamping, along the bridge's
             // own axis so an upward floor (axis: 'y') behaves like a leftward one.
@@ -3922,6 +3962,77 @@ function drawStarPath(ctx, radius) {
         else ctx.lineTo(x, y);
     }
     ctx.closePath();
+}
+
+// 20층 보스(가면광대) 패턴 오버레이. ctx는 이미 보스 위치로 translate된
+// 상태(로컬 원점 = 보스)로 들어온다. 이 층은 axis가 'x'라 along=x, across=y라서
+// 서버가 along/across로 계산한 것들을 그대로 로컬 x/y로 옮겨 그릴 수 있다.
+function drawClownTrickOverlay(ctx, m, now) {
+    const trick = m.trick;
+    if (!trick || now >= trick.until) return;
+    if (trick.pattern === 'fake_slash') {
+        const { baseAngle, halfSpan, reversed } = trick;
+        const R = 520;
+        if (reversed) {
+            // 위험은 부채꼴 "밖" 전체 -- 화면을 옅은 빨강으로 덮고 부채꼴 자리만
+            // 도려내 보랏빛 테두리로만 남긴다 (여기가 오히려 안전지대).
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(0, 0, R, 0, Math.PI * 2);
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, R, baseAngle - halfSpan, baseAngle + halfSpan, false);
+            ctx.fillStyle = 'rgba(231, 76, 60, 0.28)';
+            ctx.fill('evenodd');
+            ctx.restore();
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, R, baseAngle - halfSpan, baseAngle + halfSpan);
+            ctx.closePath();
+            ctx.strokeStyle = 'rgba(155, 89, 182, 0.9)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, R, baseAngle - halfSpan, baseAngle + halfSpan);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(231, 76, 60, 0.32)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+    } else if (trick.pattern === 'nine_cells') {
+        const CELL = 180, HALF = 270;
+        (trick.cells || []).forEach(c => {
+            const row = Math.floor(c.id / 3), col = c.id % 3;
+            const lx = -HALF + col * CELL, ly = -HALF + row * CELL;
+            ctx.fillStyle = c.fake ? 'rgba(46, 204, 113, 0.55)' : 'rgba(46, 204, 113, 0.2)';
+            ctx.fillRect(lx, ly, CELL, CELL);
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(lx, ly, CELL, CELL);
+        });
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-HALF, -HALF, CELL * 3, CELL * 3);
+    } else if (trick.pattern === 'vanish_strike') {
+        const known = trick.realSide !== null && trick.realSide !== undefined;
+        const sideColor = (side) => {
+            if (!known) return 'rgba(155, 89, 182, 0.22)';
+            return trick.realSide === side ? 'rgba(231, 76, 60, 0.32)' : 'rgba(120, 120, 120, 0.1)';
+        };
+        ctx.fillStyle = sideColor(-1);
+        ctx.fillRect(-520, -420, 1040, 420);
+        ctx.fillStyle = sideColor(1);
+        ctx.fillRect(-520, 0, 1040, 420);
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-520, 0);
+        ctx.lineTo(520, 0);
+        ctx.stroke();
+    }
 }
 
 // Screen shake for the earthquake ultimate. Returns the pixel offset to add to
@@ -4092,7 +4203,8 @@ function storyRender(now) {
         const mRad = SHARED.monsterRadiusOf(m.type);
         storyCtx.save();
         storyCtx.translate(m.x, m.y);
-        if (m.state === 'telegraph') {
+        if (def.trickBoss) drawClownTrickOverlay(storyCtx, m, now);
+        if (m.state === 'telegraph' && !def.trickBoss) {
             storyCtx.beginPath();
             storyCtx.arc(0, 0, mRad + 10, 0, Math.PI * 2);
             storyCtx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
@@ -4134,13 +4246,30 @@ function storyRender(now) {
             storyCtx.fillStyle = m.state === 'firing' ? '#ff5252' : '#c0392b';
             storyCtx.fill();
         } else {
+            // 가면광대가 "가짜"로 보이는 순간엔 보랏빛으로 물든다 (헛것 베기) --
+            // 이때 때리면 클라이언트 판정과 무관하게 서버가 무조건 역관광시킨다.
+            const clownFake = def.trickBoss && m.trickFlickerReal === false;
             storyCtx.beginPath();
             storyCtx.arc(0, 0, mRad, 0, Math.PI * 2);
-            storyCtx.fillStyle = def.color;
+            storyCtx.fillStyle = clownFake ? '#9b59b6' : def.color;
             storyCtx.fill();
-            storyCtx.strokeStyle = '#2c3e50';
-            storyCtx.lineWidth = 2;
+            storyCtx.strokeStyle = clownFake ? '#6c3483' : '#2c3e50';
+            storyCtx.lineWidth = clownFake ? 5 : 2;
             storyCtx.stroke();
+            if (clownFake) {
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, mRad + 8, 0, Math.PI * 2);
+                storyCtx.strokeStyle = 'rgba(155, 89, 182, 0.7)';
+                storyCtx.lineWidth = 3;
+                storyCtx.stroke();
+            }
+            if (def.trickBoss && m.trickReflectFlashAt && now - m.trickReflectFlashAt < 300) {
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, mRad + 14, 0, Math.PI * 2);
+                storyCtx.strokeStyle = `rgba(255, 255, 255, ${1 - (now - m.trickReflectFlashAt) / 300})`;
+                storyCtx.lineWidth = 4;
+                storyCtx.stroke();
+            }
             // 스스로 두른 보호막은 몸 바깥에 파란 테로 보인다 (케이크의 버티기).
             if (m.shieldHp > 0) {
                 storyCtx.beginPath();
@@ -4370,6 +4499,15 @@ function storyRender(now) {
     }
 
     storyCtx.restore();
+
+    // 20층 보스 "뒤바뀐 발걸음": 화면 전체가 보라색으로 물든다. 카메라 이동과
+    // 무관하게 항상 화면 전체를 덮어야 해서 위쪽 restore() 이후, 화면 좌표계에서 그린다.
+    if (storyReverseUntil && Date.now() < storyReverseUntil) {
+        storyCtx.save();
+        storyCtx.fillStyle = 'rgba(142, 68, 173, 0.22)';
+        storyCtx.fillRect(0, 0, storyCanvas.width, storyCanvas.height);
+        storyCtx.restore();
+    }
 }
 
 // ---- Boss select ----

@@ -922,6 +922,102 @@ const BOSS_LIST = [
     { id: 'boss3', name: '???', locked: true }
 ];
 
+// ---- 스토리 타워 20층 보스: 가면광대 ----
+// "보스 레이드" 목록(BOSS_LIST/boss3)과는 다른 존재다 -- 10층(케이크 보스)과
+// 같은 방식으로, 스토리 20층의 다리 위에 놓인 몬스터 하나(MONSTERS.clown_boss,
+// trickBoss:true)로 구현한다. 다만 이 보스만은 일반 몬스터 AI(추격+단발
+// 공격)를 쓰지 않고, server.js의 tickClownBoss가 통째로 대신 돈다 -- 부채꼴
+// 반전/9칸 격자/좌우 반쪽 갈라치기 같은 패턴은 플레이어 위치를 보스 기준
+// 좌표(along/across)로 재는 것뿐이라 다리 폭만 넉넉하면(laneHalfWidth:300)
+// 레인 이동 그대로도 표현된다.
+const STORY_TOWER_BOSS_FLOOR = 20;
+const STORY_TOWER_BOSS_MONSTER = 'clown_boss';
+// "속임수"가 정체성인 보스. 체력 3500은 MONSTERS.clown_boss.health에 있다
+// (스토리 몬스터는 항상 인원수와 무관한 고정 체력이라 따로 분기할 게 없다).
+// 페이즈는 체력 구간으로 나뉘고, 페이즈마다 쓰는 패턴 조합과 패시브가 다르다.
+// 패턴 하나하나의 수치도 페이즈마다 달라서(같은 패턴이 뒷페이즈에서 더
+// 세짐), 패턴 정의 자체를 페이즈 키로 감싼 별도 표로 둔다.
+
+// 색 언어는 전 패턴 공통: 빨강 = 정직(예고대로), 보라 = 속임수(예고와 반대).
+const BOSS3_COLOR_HONEST = '#e74c3c';
+const BOSS3_COLOR_TRICK = '#9b59b6';
+
+const BOSS3_PATTERN_DEFS = {
+    // 거짓 참격: 부채꼴(아레나의 2/5, 약 144도) 참격. reverseChance 확률로
+    // "안이 위험" <-> "밖이 위험"이 뒤집히고, 그때만 보랏빛으로 표시된다.
+    fake_slash: {
+        p1: { telegraphMs: 500, damage: 10, reverseChance: 0.4, arcFraction: 2 / 5 },
+        p2: { telegraphMs: 500, damage: 10, reverseChance: 0.4, arcFraction: 2 / 5 },
+        p3: { telegraphMs: 300, damage: 118, reverseChance: 0.5, arcFraction: 2 / 5 }
+    },
+    // 헛것 베기: 보스 자체가 최대 maxDurationMs 동안 "진짜"/"가짜(보랏빛)"로
+    // 계속 깜빡인다. 가짜로 보일 때 공격이 적중하면 그 공격은 무효, 공격자가
+    // reflectDamage를 입고 패턴이 즉시 끝난다. 원래 설계는 "분신이 옆에 서는"
+    // 것이었지만, 이 게임의 보스 판정이 항상 아레나 중앙 한 점 고정이라(다른
+    // 위치에 별도로 때릴 수 있는 대상을 둘 수 없음) 같은 자리에서 겉모습만
+    // 바뀌는 걸로 구현한다 -- "지금 진짜로 보이는가"를 읽는 게임이 된다.
+    // fakeCount는 페이즈가 셀수록 가짜 판정 구간이 넓어지는 정도(가중치)로 쓴다.
+    decoy_flicker: {
+        p1: { maxDurationMs: 10000, reflectDamage: 20, fakeWeight: 1, flickerMs: 900 },
+        p3: { maxDurationMs: 10000, reflectDamage: 25, fakeWeight: 2, flickerMs: 700 }
+    },
+    // 뒤바뀐 발걸음: 파티 전체 이동 반전 + 화면 보라색. 페이즈3부터는 지속
+    // 데미지/보스 회복까지 붙는다.
+    reverse_steps: {
+        p1: { durationMs: 5000, dotDamagePerSec: 0, bossHealPerSec: 0 },
+        p3: { durationMs: 7000, dotDamagePerSec: 2, bossHealPerSec: 3 }
+    },
+    // 아홉 칸: 아레나를 3x3(9칸)으로 나누고 그중 safeCellCount칸을 "안전"으로
+    // 표시. 그 안에서 0~maxFakeCount개는 랜덤으로 가짜(더 찐하게 빛남) --
+    // 표시 안 된 칸 + 가짜 칸에 있으면 피해.
+    nine_cells: {
+        p2: { telegraphMs: 5000, damage: 15, safeCellCount: 3, maxFakeCount: 2 },
+        p3: { telegraphMs: 3000, damage: 20, safeCellCount: 3, maxFakeCount: 2 }
+    },
+    // 자취 감추기: 보스가 공중으로 사라져 좌/우 고정 축으로 연속 타격. 매
+    // 타격마다 반쪽 중 하나만 진짜이고, 타격 hintMs 전에 어느 쪽인지 표시된다
+    // (너무 짧아 사실상 운에 가깝다).
+    vanish_strike: {
+        p2: { hitCountMin: 4, hitCountMax: 5, intervalMs: 1000, hintMs: 300, damage: 10 },
+        p3: { hitCountMin: 6, hitCountMax: 7, intervalMs: 700, hintMs: 200, damage: 15 }
+    }
+};
+
+// 페이즈는 체력 하한선(minHp, 그 초과일 때 이 페이즈) 순서로 나열한다.
+// 1페이즈 3500~2500 / 2페이즈 2500~1000 / 3페이즈(발악) 1000~0.
+const BOSS3_PHASES = [
+    {
+        key: 'p1', minHp: 2500,
+        patternKeys: ['fake_slash', 'decoy_flicker', 'reverse_steps'],
+        patternIntervalMs: 3000,
+        passive: null
+    },
+    {
+        key: 'p2', minHp: 1000,
+        patternKeys: ['fake_slash', 'nine_cells', 'vanish_strike'],
+        patternIntervalMs: 3000,
+        passive: { negateChance: 0.25, reflectDamage: 8, healOnHit: 10, regenPerSec: 0 }
+    },
+    {
+        key: 'p3', minHp: 0,
+        patternKeys: ['fake_slash', 'decoy_flicker', 'reverse_steps', 'nine_cells', 'vanish_strike'],
+        patternIntervalMs: 2000,
+        passive: { negateChance: 0.35, reflectDamage: 12, healOnHit: 15, regenPerSec: 2 }
+    }
+];
+
+function boss3PhaseFor(hp) {
+    for (const phase of BOSS3_PHASES) {
+        if (hp > phase.minHp) return phase;
+    }
+    return BOSS3_PHASES[BOSS3_PHASES.length - 1];
+}
+
+function boss3PatternStat(patternName, phaseKey) {
+    const byPhase = BOSS3_PATTERN_DEFS[patternName];
+    return byPhase ? (byPhase[phaseKey] || byPhase.p1 || byPhase.p2) : null;
+}
+
 // ---- Guest raid ----
 // Fought in a big SQUARE field rather than the boss raid's circle. The boss
 // holds the far (top) edge and the party comes in from the bottom. Unlike the
@@ -1746,6 +1842,28 @@ const MONSTERS = {
         growOnAttack: { attack: 0.5, speed: 0.1, heal: 0.5 },
         // 딱 한 번: 체력 100 회복 + 보호막 100.
         lowHpGuard: { atHp: 200, heal: 100, shield: 100 }
+    },
+    // 20층 보스. 속임수가 정체성이라 쫓아오지도, 정직하게 예고하지도 않는다.
+    // 제자리에 고정된 채(speed:0) trickBoss 전용 AI(tickClownBoss, server.js)가
+    // 돌아간다 -- 일반 몬스터의 추격/공격 로직(tickMonsterSet)은 이 몬스터를
+    // 완전히 건너뛴다. 체력 3500, 페이즈/패턴 수치는 shared.js의 BOSS3_PHASES /
+    // BOSS3_PATTERN_DEFS에 있다.
+    clown_boss: {
+        name: '가면광대',
+        color: '#8e44ad',
+        colorLeft: '#a569bd',
+        colorRight: '#5b2c6f',
+        health: 3500,
+        speed: 0,
+        aggroRange: 0,
+        preferredDistance: 0,
+        attackRange: 0,
+        attackDamage: 0,
+        attackCooldown: 999999,
+        telegraphMs: 0,
+        bossBar: true,
+        radius: 46,
+        trickBoss: true
     },
     // ---- 11층부터. 여기서부터 적이 한 단계 세진다. ----
     // 11층: 쓰러뜨리면 둘로 갈라진다. 한 방에 정리했다고 끝이 아니다.
@@ -2674,7 +2792,19 @@ const STORY_FLOOR_DEFS = {
             { type: 'shadow_twin', at: -5500, off: 0, room: 3 }
         ],
         star: { at: -5860 }
-    })
+    }),
+    // 20층: 첫 타워 보스전. 10층(케이크)과 같은 방식(직선 다리 위에 몬스터
+    // 하나)이지만, 폭을 넓게 잡아서 부채꼴/9칸 격자/좌우 반쪽 같은 패턴이
+    // 움직일 공간을 준다.
+    [STORY_TOWER_BOSS_FLOOR]: {
+        levelType: 'bridge',
+        levelLength: 1000,
+        laneHalfWidth: 300,
+        gates: [],
+        monsters: [{ type: STORY_TOWER_BOSS_MONSTER, x: -800, y: 0, room: 0 }],
+        winOnClear: true,
+        bossFloor: true
+    }
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
@@ -2771,6 +2901,9 @@ const CLEAR_DROPS = {
     story19: ['cream_plate', 'cream_greaves', 'frost_boots', 'gale_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
+    // story20(가면광대)은 CLEAR_DROPS에 따로 안 적는다 -- clearDropsFor()의
+    // isTowerBossFloor 처리로 레전더리 전체(신규 "빛의" 세트 포함)가 자동으로
+    // 드랍 후보에 낀다.
 };
 // ---- 10층마다 오는 타워 보스전 ----
 // 레전더리 장비는 오직 여기서만 나온다. 스토리 층을 아무리 돌아도 안 나오고,
@@ -3729,7 +3862,7 @@ function legendaryBannerFor(id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor };
 }

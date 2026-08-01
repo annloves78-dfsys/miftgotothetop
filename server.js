@@ -11,7 +11,8 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     awakenFloorKey, AWAKEN_PARTY_SIZE, storyPartySizeFor, AWAKEN_BOSS_LEVELS,
     awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
-    awakenBossSummonCount, awakenBossSummonHealth, awakenMinionMonsterType } = require('./public/js/shared.js');
+    awakenBossSummonCount, awakenBossSummonHealth, awakenMinionMonsterType,
+    boss3PhaseFor, boss3PatternStat } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -1519,7 +1520,37 @@ function zoneBurnBonus(character, room, casterId, targetX, targetY, targetRadius
         ? character.ultimateZoneAttackBonusBurn : 0;
 }
 
+// 가면광대 전용 속임수 두 겹. 둘 다 "이 공격은 무효, 대신 공격자가 다친다"로
+// 끝나므로 정상 피해 계산보다 먼저 걸러낸다.
+function clownTrickInterceptsHit(roomId, room, mid, m, attackerId, now) {
+    const def = MONSTERS[m.type];
+    if (!def || !def.trickBoss) return false;
+
+    // 헛것 베기: 가짜로 보이는 순간(m.trickFlickerReal === false) 맞으면 패턴이
+    // 확률이 아니라 무조건 역관광으로 끝난다.
+    if (m.trickPattern === 'decoy_flicker' && m.state === 'active' && m.trickFlickerReal === false) {
+        const stat = boss3PatternStat('decoy_flicker', m.trickPhaseKey);
+        const attacker = room.players[attackerId];
+        if (attacker && attacker.alive) applyDamageToStoryPlayer(roomId, attackerId, stat.reflectDamage);
+        m.state = 'idle';
+        m.trickNextAttackAt = now + boss3PhaseFor(m.hp).patternIntervalMs;
+        io.to(roomId).emit('clownReflect', { id: mid, attackerId });
+        return true;
+    }
+
+    // 되돌아오는 대가 패시브(2페이즈부터): 확률로 공격 자체가 무효화된다.
+    const phase = boss3PhaseFor(m.hp);
+    if (phase.passive && phase.passive.negateChance && Math.random() < phase.passive.negateChance) {
+        const attacker = room.players[attackerId];
+        if (attacker && attacker.alive) applyDamageToStoryPlayer(roomId, attackerId, phase.passive.reflectDamage);
+        io.to(roomId).emit('clownReflect', { id: mid, attackerId });
+        return true;
+    }
+    return false;
+}
+
 function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, baseDamage, now, opts) {
+    if (clownTrickInterceptsHit(roomId, room, mid, m, attackerId, now)) return false;
     let dmg = Math.round(damageWithMark(m, character, baseDamage, now, opts.markUse) * monsterDamageTaken(m));
     dmg = absorbMonsterShield(roomId, mid, m, dmg);
     m.hp = Math.max(0, m.hp - dmg);
@@ -2318,6 +2349,203 @@ function tickLaser(ctx, m, mid, def, nearest, alivePlayers, now) {
     }
 }
 
+// Fisher-Yates. Only used for the 20층 boss's nine_cells pattern so far.
+function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+// nine_cells: which of the 3x3 grid (centered on the boss) a player is
+// standing in. Grid cell size/half-extent are fixed constants -- not derived
+// from the lane width -- so the grid always reads the same regardless of how
+// wide a given floor's lane is.
+const CLOWN_CELL_SIZE = 180;
+const CLOWN_GRID_HALF = 270; // 1.5 * CLOWN_CELL_SIZE
+function clownCellOf(floorDef, m, p) {
+    const alongBoss = alongOf(floorDef, m.x, m.y);
+    const along = alongOf(floorDef, p.x, p.y);
+    const across = acrossOf(floorDef, p.x, p.y);
+    const col = Math.min(2, Math.max(0, Math.floor((across + CLOWN_GRID_HALF) / CLOWN_CELL_SIZE)));
+    const row = Math.min(2, Math.max(0, Math.floor((along - (alongBoss - CLOWN_GRID_HALF)) / CLOWN_CELL_SIZE)));
+    return row * 3 + col;
+}
+
+// 되돌아오는 대가 패시브(2페이즈부터): 보스가 플레이어를 맞출 때마다 회복.
+// 모든 가면광대 패턴의 데미지 적용은 이 헬퍼를 거친다.
+function dealClownDamage(ctx, m, mid, playerId, dmg, phase) {
+    ctx.damagePlayer(playerId, dmg);
+    if (!rooms[ctx.roomId] || !m.alive) return;
+    if (phase.passive && phase.passive.healOnHit && m.hp < m.maxHp) {
+        m.hp = Math.min(m.maxHp, m.hp + phase.passive.healOnHit);
+        io.to(ctx.roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+    }
+}
+
+// ---- 20층 보스: 가면광대 ----
+// 일반 몬스터 AI(추격+단발 공격, tickMonsterSet 본문)와 완전히 분리된 상태
+// 머신. m.state(idle/telegraph/active)는 그대로 재사용하고, 패턴별 진행
+// 상황은 m.trick* 필드에 둔다. 페이즈는 매 틱 현재 체력으로 다시 구한다
+// (boss3PhaseFor) -- 체력이 깎여 페이즈가 바뀌는 순간 다음 패턴부터 자동으로
+// 그 페이즈의 조합/수치를 쓰게 된다.
+function tickClownBoss(ctx, m, mid, now) {
+    const { roomId, room, floorDef } = ctx;
+    if (!floorDef || !m.alive) return;
+    const phase = boss3PhaseFor(m.hp);
+
+    // 발악(3페이즈)부터 붙는 초당 자연 회복. 50ms 틱이라 분수로 누적한다.
+    if (phase.passive && phase.passive.regenPerSec) {
+        m.trickRegenAcc = (m.trickRegenAcc || 0) + phase.passive.regenPerSec * 0.05;
+        if (m.trickRegenAcc >= 1 && m.hp < m.maxHp) {
+            const amt = Math.floor(m.trickRegenAcc);
+            m.trickRegenAcc -= amt;
+            m.hp = Math.min(m.maxHp, m.hp + amt);
+            io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+        }
+    }
+
+    if (m.state === 'idle') {
+        if (!m.trickNextAttackAt) m.trickNextAttackAt = now + phase.patternIntervalMs;
+        if (now < m.trickNextAttackAt) return;
+        const pattern = phase.patternKeys[Math.floor(Math.random() * phase.patternKeys.length)];
+        const stat = boss3PatternStat(pattern, phase.key);
+        m.trickPattern = pattern;
+        m.trickPhaseKey = phase.key;
+        m.trickPatternStartAt = now;
+        m.trickRuntime = {};
+        m.state = 'telegraph';
+
+        if (pattern === 'fake_slash') {
+            const baseAngle = Math.random() * Math.PI * 2;
+            const reversed = Math.random() < stat.reverseChance;
+            const halfSpan = stat.arcFraction * Math.PI;
+            m.trickRuntime = { baseAngle, reversed, halfSpan, damage: stat.damage };
+            io.to(roomId).emit('clownTelegraph', {
+                id: mid, pattern, telegraphMs: stat.telegraphMs, baseAngle, halfSpan, reversed
+            });
+        } else if (pattern === 'decoy_flicker') {
+            m.trickRuntime = { endAt: now + stat.maxDurationMs, flickerNextAt: now, fakeWeight: stat.fakeWeight };
+            m.trickFlickerReal = true;
+            m.state = 'active'; // no telegraph beat -- the flicker window starts immediately
+            io.to(roomId).emit('clownTelegraph', { id: mid, pattern, telegraphMs: 0, maxDurationMs: stat.maxDurationMs });
+        } else if (pattern === 'reverse_steps') {
+            const until = now + stat.durationMs;
+            m.trickRuntime = { until, dot: stat.dotDamagePerSec, heal: stat.bossHealPerSec, lastTickAt: now };
+            m.state = 'active';
+            io.to(roomId).emit('clownTelegraph', { id: mid, pattern, telegraphMs: 0, until });
+            io.to(roomId).emit('storyReverseControls', { until });
+        } else if (pattern === 'nine_cells') {
+            const cellIds = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, stat.safeCellCount);
+            const fakeCount = Math.floor(Math.random() * (stat.maxFakeCount + 1));
+            const fakeSet = new Set(shuffled(cellIds).slice(0, fakeCount));
+            const cells = cellIds.map(id => ({ id, fake: fakeSet.has(id) }));
+            m.trickRuntime = { cells, damage: stat.damage };
+            io.to(roomId).emit('clownTelegraph', { id: mid, pattern, telegraphMs: stat.telegraphMs, cells });
+        } else if (pattern === 'vanish_strike') {
+            const hitCount = stat.hitCountMin + Math.floor(Math.random() * (stat.hitCountMax - stat.hitCountMin + 1));
+            m.trickRuntime = {
+                hitCount, hitIndex: 0, intervalMs: stat.intervalMs, hintMs: stat.hintMs,
+                damage: stat.damage, nextHitAt: now + stat.intervalMs, realSide: null
+            };
+            m.state = 'active';
+            io.to(roomId).emit('clownTelegraph', { id: mid, pattern, telegraphMs: 0, hitCount, intervalMs: stat.intervalMs });
+        }
+        return;
+    }
+
+    if (m.state === 'telegraph') {
+        const stat = boss3PatternStat(m.trickPattern, m.trickPhaseKey);
+        if (now - m.trickPatternStartAt < stat.telegraphMs) return;
+
+        if (m.trickPattern === 'fake_slash') {
+            const { baseAngle, reversed, halfSpan, damage } = m.trickRuntime;
+            const hits = [];
+            for (const [pid, p] of Object.entries(room.players)) {
+                if (!p.alive) continue;
+                const angle = Math.atan2(p.y - m.y, p.x - m.x);
+                let diff = Math.abs(angle - baseAngle) % (Math.PI * 2);
+                if (diff > Math.PI) diff = Math.PI * 2 - diff;
+                const inArc = diff <= halfSpan;
+                const danger = reversed ? !inArc : inArc;
+                if (danger) { hits.push(pid); dealClownDamage(ctx, m, mid, pid, damage, phase); if (!rooms[roomId]) return; }
+            }
+            io.to(roomId).emit('clownAttack', { id: mid, pattern: 'fake_slash', hits });
+        } else if (m.trickPattern === 'nine_cells') {
+            const hits = [];
+            for (const [pid, p] of Object.entries(room.players)) {
+                if (!p.alive) continue;
+                const cell = clownCellOf(floorDef, m, p);
+                const found = m.trickRuntime.cells.find(c => c.id === cell);
+                if (!found || found.fake) {
+                    hits.push(pid);
+                    dealClownDamage(ctx, m, mid, pid, m.trickRuntime.damage, phase);
+                    if (!rooms[roomId]) return;
+                }
+            }
+            io.to(roomId).emit('clownAttack', { id: mid, pattern: 'nine_cells', hits });
+        }
+        m.state = 'idle';
+        m.trickNextAttackAt = now + phase.patternIntervalMs;
+        return;
+    }
+
+    if (m.state === 'active') {
+        if (m.trickPattern === 'decoy_flicker') {
+            const rt = m.trickRuntime;
+            if (now >= rt.endAt) { m.state = 'idle'; m.trickNextAttackAt = now + phase.patternIntervalMs; return; }
+            if (now >= rt.flickerNextAt) {
+                m.trickFlickerReal = !m.trickFlickerReal;
+                // 가짜로 보이는 구간이 fakeWeight배 더 길다 -- 뒷페이즈일수록 속기 쉽다.
+                rt.flickerNextAt = now + (m.trickFlickerReal ? 900 : 900 * rt.fakeWeight);
+                io.to(roomId).emit('clownFlicker', { id: mid, real: m.trickFlickerReal });
+            }
+        } else if (m.trickPattern === 'reverse_steps') {
+            const rt = m.trickRuntime;
+            if (now - rt.lastTickAt >= 1000) {
+                rt.lastTickAt += 1000;
+                if (rt.dot) {
+                    for (const [pid, p] of Object.entries(room.players)) {
+                        if (!p.alive) continue;
+                        ctx.damagePlayer(pid, rt.dot);
+                        if (!rooms[roomId]) return;
+                    }
+                }
+                if (rt.heal && m.hp < m.maxHp) {
+                    m.hp = Math.min(m.maxHp, m.hp + rt.heal);
+                    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+            }
+            if (now >= rt.until) { m.state = 'idle'; m.trickNextAttackAt = now + phase.patternIntervalMs; return; }
+        } else if (m.trickPattern === 'vanish_strike') {
+            const rt = m.trickRuntime;
+            if (rt.hitIndex >= rt.hitCount) { m.state = 'idle'; m.trickNextAttackAt = now + phase.patternIntervalMs; return; }
+            if (rt.realSide === null && now >= rt.nextHitAt - rt.hintMs) {
+                rt.realSide = Math.random() < 0.5 ? -1 : 1; // -1 = 왼쪽(across<0), 1 = 오른쪽
+                io.to(roomId).emit('clownHint', { id: mid, realSide: rt.realSide });
+            }
+            if (now >= rt.nextHitAt) {
+                const hits = [];
+                for (const [pid, p] of Object.entries(room.players)) {
+                    if (!p.alive) continue;
+                    const side = acrossOf(floorDef, p.x, p.y) < 0 ? -1 : 1;
+                    if (side === rt.realSide) {
+                        hits.push(pid);
+                        dealClownDamage(ctx, m, mid, pid, rt.damage, phase);
+                        if (!rooms[roomId]) return;
+                    }
+                }
+                io.to(roomId).emit('clownAttack', { id: mid, pattern: 'vanish_strike', hits, realSide: rt.realSide });
+                rt.hitIndex++;
+                rt.realSide = null;
+                rt.nextHitAt = now + rt.intervalMs;
+            }
+        }
+    }
+}
+
 // One tick of every monster in a room: kiting, telegraphs, beams and arrows.
 // Shared by story floors and the guest raid's summoned adds -- see storyMonsterCtx.
 function tickMonsterSet(ctx, alivePlayers, now) {
@@ -2335,6 +2563,7 @@ function tickMonsterSet(ctx, alivePlayers, now) {
             continue;
         }
         const def = MONSTERS[m.type];
+        if (def.trickBoss) { tickClownBoss(ctx, m, mid, now); continue; }
 
         let nearest = null, nearestDist = Infinity;
         for (const p of alivePlayers) {
