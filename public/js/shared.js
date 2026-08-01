@@ -3087,7 +3087,7 @@ const EQUIPMENT = {
     },
     mint_blade: {
         name: '민트 단검', slot: 'weapon', grade: '희귀', icon: '🗡',
-        bonusAttack: 2, bonusCooldown: 0.95
+        bonusAttack: 2
     },
     bomber_helm: {
         name: '폭탄병 투구', slot: 'helmet', grade: '희귀', icon: '🪖',
@@ -3099,7 +3099,7 @@ const EQUIPMENT = {
     },
     cream_greaves: {
         name: '크림 기사 레깅스', slot: 'leggings', grade: '에픽', icon: '👖',
-        bonusHealth: 20, bonusCooldown: 0.96
+        bonusHealth: 20
     },
     frost_boots: {
         name: '서리 부츠', slot: 'boots', grade: '에픽', icon: '🥾',
@@ -3107,14 +3107,14 @@ const EQUIPMENT = {
     },
     dark_blade: {
         name: '어둠의 대검', slot: 'weapon', grade: '레전더리', icon: '⚔',
-        bonusAttack: 5, bonusCooldown: 0.9,
+        bonusAttack: 5,
         ownerChar: 'lightningdevil',
         ownerBonus: { bonusAttack: 3 },
         ownerText: '번개악마맛 쿠키가 착용하면 공격력이 3 더 오릅니다.'
     },
     dark_crown: {
         name: '어둠의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑',
-        bonusHealth: 26, bonusAttack: 2, bonusCooldown: 0.94
+        bonusHealth: 26, bonusAttack: 2
     },
     dark_mantle: {
         name: '어둠의 망토', slot: 'armor', grade: '레전더리', icon: '🧥',
@@ -3122,7 +3122,7 @@ const EQUIPMENT = {
     },
     dark_greaves: {
         name: '어둠의 각반', slot: 'leggings', grade: '레전더리', icon: '🦿',
-        bonusHealth: 26, bonusCooldown: 0.93
+        bonusHealth: 26
     },
     dark_boots: {
         name: '어둠의 장화', slot: 'boots', grade: '레전더리', icon: '🥾',
@@ -3131,21 +3131,18 @@ const EQUIPMENT = {
     // ---- 시하라얼 ----
     shihara_spear: {
         name: '시하라얼의 창', slot: 'weapon', grade: '에픽', icon: '🔱',
-        bonusAttack: 3, bonusCooldown: 0.92,
+        bonusAttack: 3,
         ownerChar: 'lightninghell',
-        ownerBonus: { bonusAttack: 2, bonusCooldown: 0.9 },
-        ownerText: '번개지옥맛 쿠키가 착용하면 공격력 +2, 재사용 대기시간이 10% 더 줄어듭니다.'
+        ownerBonus: { bonusAttack: 2 },
+        ownerText: '번개지옥맛 쿠키가 착용하면 공격력이 2 더 오릅니다.'
     },
     shadow_helm: {
         name: '그림자 투구', slot: 'helmet', grade: '에픽', icon: '⛑',
-        bonusHealth: 18, bonusCooldown: 0.95
+        bonusHealth: 18
     },
     shadow_boots: {
         name: '그림자 부츠', slot: 'boots', grade: '에픽', icon: '🥾',
-        bonusHealth: 16, bonusCooldown: 0.95,
-        ownerChar: 'sugarfly',
-        ownerBonus: { bonusCooldown: 0.9 },
-        ownerText: '슈가 플라이맛 쿠키가 착용하면 재사용 대기시간이 10% 더 줄어듭니다.'
+        bonusHealth: 16
     },
     // ---- 각성 장비 (2차) ----
     dark_axe: {
@@ -3190,22 +3187,22 @@ const EQUIPMENT = {
     cotton_pants: { name: '무명 바지', slot: 'leggings', grade: '일반', icon: '👖', bonusHealth: 6, bonusDamageTaken: 0.99 },
     straw_sandals: { name: '짚신', slot: 'boots', grade: '일반', icon: '🩴', bonusHealth: 5, bonusDamageTaken: 0.99 },
     // ---- 희귀 ----
-    silver_axe: { name: '은도끼', slot: 'weapon', grade: '희귀', icon: '⛏', bonusAttack: 2, bonusCooldown: 0.96 },
+    silver_axe: { name: '은도끼', slot: 'weapon', grade: '희귀', icon: '⛏', bonusAttack: 2 },
     spiked_helm: { name: '가시 투구', slot: 'helmet', grade: '희귀', icon: '🪖', bonusHealth: 12, bonusAttack: 1 },
     steel_plate: { name: '강철 판금', slot: 'armor', grade: '희귀', icon: '🛡', bonusHealth: 20, bonusDamageTaken: 0.96 },
-    spiked_greaves: { name: '가시 각반', slot: 'leggings', grade: '희귀', icon: '🦵', bonusHealth: 13, bonusCooldown: 0.97 },
+    spiked_greaves: { name: '가시 각반', slot: 'leggings', grade: '희귀', icon: '🦵', bonusHealth: 13 },
     wind_shoes: { name: '바람의 신발', slot: 'boots', grade: '희귀', icon: '👟', bonusHealth: 9, bonusSpeed: 2 },
     // ---- 에픽 ----
-    ice_spear: { name: '얼음 창', slot: 'weapon', grade: '에픽', icon: '🔱', bonusAttack: 3, bonusCooldown: 0.94 },
+    ice_spear: { name: '얼음 창', slot: 'weapon', grade: '에픽', icon: '🔱', bonusAttack: 3 },
     flame_helm: { name: '화염 투구', slot: 'helmet', grade: '에픽', icon: '⛑', bonusHealth: 20, bonusAttack: 1 },
     spirit_armor: { name: '정령의 갑옷', slot: 'armor', grade: '에픽', icon: '🛡', bonusHealth: 28, bonusDamageTaken: 0.94 },
     storm_greaves: { name: '폭풍의 각반', slot: 'leggings', grade: '에픽', icon: '🦿', bonusHealth: 22, bonusSpeed: 3 },
     gale_boots: { name: '질풍 부츠', slot: 'boots', grade: '에픽', icon: '🥾', bonusHealth: 16, bonusSpeed: 4 },
     // ---- 레전더리 (어둠 세트와 짝을 이루는 빛 세트) ----
-    light_blade: { name: '빛의 대검', slot: 'weapon', grade: '레전더리', icon: '⚔', bonusAttack: 6, bonusCooldown: 0.89 },
-    light_crown: { name: '빛의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑', bonusHealth: 28, bonusAttack: 2, bonusCooldown: 0.93 },
+    light_blade: { name: '빛의 대검', slot: 'weapon', grade: '레전더리', icon: '⚔', bonusAttack: 6 },
+    light_crown: { name: '빛의 왕관', slot: 'helmet', grade: '레전더리', icon: '👑', bonusHealth: 28, bonusAttack: 2 },
     light_mantle: { name: '빛의 갑옷', slot: 'armor', grade: '레전더리', icon: '🧥', bonusHealth: 36, bonusDamageTaken: 0.9 },
-    light_greaves: { name: '빛의 각반', slot: 'leggings', grade: '레전더리', icon: '🦿', bonusHealth: 28, bonusCooldown: 0.92 },
+    light_greaves: { name: '빛의 각반', slot: 'leggings', grade: '레전더리', icon: '🦿', bonusHealth: 28 },
     light_boots: { name: '빛의 장화', slot: 'boots', grade: '레전더리', icon: '🥾', bonusHealth: 26, bonusSpeed: 5 }
 };
 
