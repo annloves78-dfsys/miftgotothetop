@@ -815,11 +815,11 @@ const CHARACTERS = {
         attackDamage: 5,
         attackCooldown: 500,
         // 마그마맛처럼 화염 피해가 따로 붙는다: 1초마다 1번씩, 6초 동안.
-        attackBurnDamage: 6,
+        attackBurnDamage: 2,
         attackBurnTicks: 6,
         attackBurnIntervalMs: 1000,
         // 패시브: 전투당 두 번 부활한다(항상 풀피). 부활할 때마다 화염 피해가
-        // 1씩 늘어서 6 -> 7(1차 부활) -> 8(2차 부활)이 된다.
+        // 1씩 늘어서 2 -> 3(1차 부활) -> 4(2차 부활)이 된다.
         passiveReviveCount: 2,
         passiveReviveHpRatio: 1,
         passiveBurnGrowthPerRevive: 1,
@@ -3171,7 +3171,7 @@ const EQUIPMENT = {
         ownerChar: 'flamefairy',
         ownerBonus: { bonusRevive: 1 },
         // 부활은 패시브 2번 + 이 장비 1번 = 총 3번. 다만 화염 피해 성장은
-        // passiveBurnGrowthMaxRevives로 2번째 부활까지만 세서 6->7->8에서
+        // passiveBurnGrowthMaxRevives로 2번째 부활까지만 세서 2->3->4에서
         // 멈추고, 그 대신 3번째 부활(패시브가 못 붙잡는 몫)부터 기본 공격력이
         // +2 붙는다. 궁극기 화염지대는 15초 -> 18초로 늘어난다.
         awakenForm: {
