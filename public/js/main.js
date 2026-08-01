@@ -2895,8 +2895,8 @@ storyMultiBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-// 19층까지 만들어져 있다. 20층 보스는 아직 없다 -- 유누가 주면 20으로 올린다.
-const STORY_TOTAL_FLOORS = 19;
+// 20층(가면광대)까지 만들어져 있다. 더 늘어나면 이 숫자만 올리면 된다.
+const STORY_TOTAL_FLOORS = 20;
 let selectedStoryFloor = 1;
 // What the story engine was actually entered with -- a floor number from the
 // tower, or an event stage id. Decides where 나가기 sends you back to.
