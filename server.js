@@ -1329,12 +1329,12 @@ function fireHomingBurst(roomId, room, ownerId, p, character, now, ev) {
     }
 }
 
-// 초당 이만큼(라디안) 방향을 틀 수 있다 -- 135도/초. 180도(정반대 방향)를
-// 완전히 꺾는 데 1.33초가 걸리는데, 이 구슬의 최대 사거리(480px)는 380px/s
-// 속도로 1.26초 만에 다 닳는다. 즉 등을 돌리고 쏘면 다 꺾기도 전에 사거리가
-// 끝나 버려서 사실상 빗나간다 -- 너무 잘 따라가서 뒤돌아 쏴도 맞는다는
-// 피드백을 받고 낮췄다 (예전엔 540도/초라 0.33초 만에 반바퀴를 돌았다).
-const HOMING_TURN_RATE = Math.PI * 0.75;
+// 초당 이만큼(라디안) 방향을 틀 수 있다 -- 90도/초. 이 구슬의 최대 사거리
+// (480px)는 380px/s 속도로 1.26초 만에 다 닳으므로, 그 안에 꺾을 수 있는
+// 각도는 최대 113도 정도다. 등을 돌리고 쏘는 건 물론, 완전히 옆(90도)을
+// 보고 쏴도 거의 못 따라간다 -- 너무 잘 따라간다는 피드백을 두 번 받고
+// 계속 낮췄다 (540도/초 -> 135도/초 -> 90도/초).
+const HOMING_TURN_RATE = Math.PI * 0.5;
 function steerProjectileToward(pr, tx, ty, dt) {
     const speed = Math.hypot(pr.vx, pr.vy);
     if (!speed) return;
