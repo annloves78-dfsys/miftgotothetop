@@ -12,7 +12,12 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
     awakenBossSummonCount, awakenBossSummonHealth, awakenMinionMonsterType,
-    boss3PhaseFor, boss3PatternStat } = require('./public/js/shared.js');
+    boss3PhaseFor, boss3PatternStat,
+    ZOMBIE_ARENA_RADIUS, ZOMBIE_WALL_RING_RADIUS, ZOMBIE_WALL_SLOTS, ZOMBIE_FENCE_HP, ZOMBIE_FENCE_WOOD_COST,
+    ZOMBIE_BUILD_RANGE, ZOMBIE_SLOT_RADIUS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT,
+    ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_WALL_SLOT_POSITIONS,
+    zombieNearestSlotIndex, ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
+    zombieWaveReward } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -4194,6 +4199,252 @@ function guestTickPayload(room) {
     };
 }
 
+// ==================== 좀비막기 ====================
+// 다른 두 레이드처럼 rooms[roomId] 하나를 쓰지만, 상대는 보스가 아니라
+// 웨이브마다 불어나는 좀비 무리다. tickMonsterSet의 텔레그래프/카이팅 같은
+// 정교한 상태기계는 필요 없어서 좀비 전용으로 훨씬 단순한 걷기+근접 로직을
+// 새로 둔다 (tickZombie).
+function findOpenZombieRoom() {
+    for (const [roomId, room] of Object.entries(rooms)) {
+        if (room.kind === 'zombie' && room.state === 'waiting' && !room.solo && Object.keys(room.players).length < 2) {
+            return roomId;
+        }
+    }
+    return null;
+}
+
+function createZombieRoom(solo) {
+    const roomId = `zombie_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    rooms[roomId] = {
+        kind: 'zombie',
+        solo: !!solo,
+        state: 'waiting',
+        players: {},
+        wave: 1,
+        wavePhase: 'prep', // 'prep' | 'active'
+        phaseUntil: 0,
+        pendingSpawns: 0,
+        nextSpawnAt: 0,
+        zombies: {},
+        nextZombieId: 0,
+        fences: {}, // slotIndex -> { hp, maxHp }
+        trees: {}, // treeId -> { x, y, hitsLeft }
+        nextTreeId: 0,
+        nextTreeSpawnAt: 0,
+        wood: 0, // 파티 공용 자원
+        coins: 0, // 파티 공용, 클리어(사망) 시 실제 재화로 전환됨
+        loopHandle: null
+    };
+    return roomId;
+}
+
+function makeZombiePlayer(charType, equip, slotIndex) {
+    const bonus = bonusFrom(equip, charType);
+    const character = charFrom(charType, equip);
+    const maxHp = character.health + bonus.health;
+    return {
+        charType, bonus, character,
+        x: slotIndex === 0 ? -30 : 30, y: 30,
+        facing: -Math.PI / 2,
+        hp: maxHp, maxHp,
+        alive: true, ready: false,
+        lastAttackTime: 0
+    };
+}
+
+function publicZombiePlayers(room) {
+    const out = {};
+    for (const [id, p] of Object.entries(room.players)) {
+        out[id] = { x: p.x, y: p.y, facing: p.facing, alive: p.alive, ready: !!p.ready, charType: p.charType, hp: p.hp, maxHp: p.maxHp };
+    }
+    return out;
+}
+
+// 링 바깥, 서로 너무 붙지 않는 자리에 나무를 하나 심는다. 20번 시도해도
+// 자리가 안 나면 아무 데나 대충 심는다 -- 게임을 멈추는 것보단 낫다.
+function randomZombieTreeSpot(room) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = ZOMBIE_WALL_RING_RADIUS + 50 + Math.random() * (ZOMBIE_ARENA_RADIUS - ZOMBIE_WALL_RING_RADIUS - 90);
+        const x = Math.cos(angle) * dist, y = Math.sin(angle) * dist;
+        const tooClose = Object.values(room.trees).some(t => Math.hypot(t.x - x, t.y - y) < 70);
+        if (!tooClose) return { x, y };
+    }
+    const angle = Math.random() * Math.PI * 2;
+    return { x: Math.cos(angle) * (ZOMBIE_ARENA_RADIUS - 60), y: Math.sin(angle) * (ZOMBIE_ARENA_RADIUS - 60) };
+}
+
+function spawnZombieTree(room) {
+    const spot = randomZombieTreeSpot(room);
+    const id = `t${room.nextTreeId++}`;
+    room.trees[id] = { x: spot.x, y: spot.y, hitsLeft: ZOMBIE_TREE_HITS };
+    return id;
+}
+
+function startZombieFight(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.kind !== 'zombie' || room.state !== 'waiting') return;
+    if (Object.keys(room.players).length === 0) return;
+
+    room.state = 'fighting';
+    room.wave = 1;
+    room.wavePhase = 'prep';
+    room.phaseUntil = Date.now() + ZOMBIE_PREP_MS;
+    room.wood = 0;
+    room.coins = 0;
+    room.zombies = {};
+    room.fences = {};
+    room.trees = {};
+    for (let i = 0; i < ZOMBIE_MAX_TREES; i++) spawnZombieTree(room);
+
+    io.to(roomId).emit('zombieStarted', {
+        players: publicZombiePlayers(room),
+        wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
+        wood: room.wood, coins: room.coins,
+        trees: room.trees, fences: room.fences
+    });
+
+    room.loopHandle = setInterval(() => tickZombieRoom(roomId), 50);
+}
+
+function spawnZombie(roomId, room, now) {
+    const type = zombieRollTypeForWave(room.wave);
+    const stats = zombieStatsForWave(type, room.wave);
+    const angle = Math.random() * Math.PI * 2;
+    const x = Math.cos(angle) * ZOMBIE_ARENA_RADIUS;
+    const y = Math.sin(angle) * ZOMBIE_ARENA_RADIUS;
+    const slot = zombieNearestSlotIndex(angle);
+    const id = `z${room.nextZombieId++}`;
+    room.zombies[id] = {
+        type, x, y, hp: stats.hp, maxHp: stats.hp, slot,
+        passedGate: false, nextAttackAt: 0, facing: angle + Math.PI
+    };
+    io.to(roomId).emit('zombieSpawned', { id, ...room.zombies[id] });
+}
+
+// 좀비 하나의 이동/공격. 자기 몫의 울타리 칸이 아직 살아 있으면 그쪽으로
+// 가서 두드리고, 뚫렸거나 애초에 없으면 가장 가까운 플레이어를 쫓는다.
+function tickZombie(roomId, room, zid, z, alivePlayers, now) {
+    const def = ZOMBIE_DEFS[z.type];
+    let targetX, targetY, targetRadius, fence = null;
+
+    if (!z.passedGate && room.fences[z.slot] && room.fences[z.slot].hp > 0) {
+        const slotPos = ZOMBIE_WALL_SLOT_POSITIONS[z.slot];
+        targetX = slotPos.x; targetY = slotPos.y; targetRadius = ZOMBIE_SLOT_RADIUS;
+        fence = room.fences[z.slot];
+    } else {
+        z.passedGate = true;
+        let nearest = null, nearestDist = Infinity;
+        for (const p of alivePlayers) {
+            const d = Math.hypot(p.x - z.x, p.y - z.y);
+            if (d < nearestDist) { nearestDist = d; nearest = p; }
+        }
+        if (!nearest) return;
+        targetX = nearest.x; targetY = nearest.y; targetRadius = PLAYER_RADIUS;
+    }
+
+    const dist = Math.hypot(targetX - z.x, targetY - z.y) || 0.001;
+    const reach = def.attackRange + targetRadius;
+    if (dist > reach) {
+        z.facing = Math.atan2(targetY - z.y, targetX - z.x);
+        const step = def.speed * 3; // px/tick, monsterSpeed의 관례와 맞춘 값
+        const move = Math.min(step, dist - reach + 1);
+        z.x += Math.cos(z.facing) * move;
+        z.y += Math.sin(z.facing) * move;
+        return;
+    }
+
+    if (now < z.nextAttackAt) return;
+    z.nextAttackAt = now + def.attackCooldown;
+
+    if (fence) {
+        fence.hp -= def.wallDamage;
+        if (fence.hp <= 0) {
+            delete room.fences[z.slot];
+            z.passedGate = true;
+            io.to(roomId).emit('zombieWallBroken', { slot: z.slot });
+        } else {
+            io.to(roomId).emit('zombieHitWall', { slot: z.slot, hp: fence.hp });
+        }
+        return;
+    }
+
+    let nearest = null, nearestDist = Infinity;
+    for (const p of alivePlayers) {
+        const d = Math.hypot(p.x - z.x, p.y - z.y);
+        if (d < nearestDist) { nearestDist = d; nearest = p; }
+    }
+    if (!nearest || nearestDist > reach) return;
+    nearest.hp = Math.max(0, nearest.hp - def.attackDamage);
+    const pid = Object.keys(room.players).find(id => room.players[id] === nearest);
+    io.to(roomId).emit('zombiePlayerDamaged', { id: pid, hp: nearest.hp });
+    if (nearest.hp <= 0 && nearest.alive) {
+        nearest.alive = false;
+        io.to(roomId).emit('zombiePlayerDown', { id: pid });
+        checkZombieWipe(roomId, room);
+    }
+}
+
+function checkZombieWipe(roomId, room) {
+    if (!Object.values(room.players).some(p => p.alive)) endZombieRoom(roomId);
+}
+
+function endZombieRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.loopHandle) clearInterval(room.loopHandle);
+    room.state = 'ended';
+    io.to(roomId).emit('zombieResult', { wave: room.wave, coins: room.coins });
+    delete rooms[roomId];
+}
+
+function tickZombieRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const now = Date.now();
+    const alivePlayers = Object.values(room.players).filter(p => p.alive);
+
+    if (room.wavePhase === 'prep') {
+        if (now >= room.phaseUntil) {
+            room.wavePhase = 'active';
+            room.pendingSpawns = zombieCountForWave(room.wave);
+            room.nextSpawnAt = now;
+            io.to(roomId).emit('zombieWaveStarted', { wave: room.wave });
+        }
+    } else if (room.wavePhase === 'active') {
+        if (room.pendingSpawns > 0 && now >= room.nextSpawnAt) {
+            spawnZombie(roomId, room, now);
+            room.pendingSpawns--;
+            room.nextSpawnAt = now + Math.max(220, 900 - room.wave * 25);
+        }
+        if (room.pendingSpawns === 0 && Object.keys(room.zombies).length === 0) {
+            room.wave++;
+            room.wavePhase = 'prep';
+            room.phaseUntil = now + ZOMBIE_PREP_MS;
+            io.to(roomId).emit('zombieWaveCleared', { wave: room.wave, phaseUntil: room.phaseUntil });
+        }
+    }
+
+    if (Object.keys(room.trees).length < ZOMBIE_MAX_TREES && now >= (room.nextTreeSpawnAt || 0)) {
+        const id = spawnZombieTree(room);
+        io.to(roomId).emit('zombieTreeSpawned', { id, ...room.trees[id] });
+    }
+
+    for (const [zid, z] of Object.entries(room.zombies)) {
+        tickZombie(roomId, room, zid, z, alivePlayers, now);
+        if (!rooms[roomId]) return;
+    }
+
+    io.to(roomId).emit('zombieTick', {
+        players: publicZombiePlayers(room),
+        zombies: room.zombies,
+        fences: room.fences,
+        wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
+        pendingSpawns: room.pendingSpawns || 0,
+        wood: room.wood, coins: room.coins
+    });
+}
+
 io.on('connection', (socket) => {
     socket.on('joinRaid', ({ bossId, charType, solo, equip }) => {
         if (!BOSS_DEFS[bossId]) return;
@@ -6304,6 +6555,132 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ---------------- 좀비막기 ----------------
+    socket.on('joinZombieDefense', ({ charType, solo, equip }) => {
+        if (!CHARACTERS[charType]) return;
+        let roomId = solo ? null : findOpenZombieRoom();
+        if (!roomId) roomId = createZombieRoom(solo);
+        const room = rooms[roomId];
+        if (room.state !== 'waiting') return;
+
+        room.players[socket.id] = makeZombiePlayer(charType, equip, Object.keys(room.players).length);
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+
+        io.to(roomId).emit('zombieRoomUpdate', {
+            roomId, count: Object.keys(room.players).length, players: publicZombiePlayers(room)
+        });
+    });
+
+    socket.on('startZombieDefense', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (room && room.kind === 'zombie') startZombieFight(roomId);
+    });
+
+    socket.on('zombiePlayerReady', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'zombie' || room.state !== 'waiting') return;
+        const p = room.players[socket.id];
+        if (!p) return;
+        p.ready = true;
+        io.to(roomId).emit('zombieRoomUpdate', {
+            roomId, count: Object.keys(room.players).length, players: publicZombiePlayers(room)
+        });
+        const list = Object.values(room.players);
+        if (list.length >= 2 && list.every(pl => pl.ready)) startZombieFight(roomId);
+    });
+
+    socket.on('leaveZombieDefense', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'zombie') return;
+        delete room.players[socket.id];
+        socket.leave(roomId);
+        socket.data.roomId = null;
+        if (Object.keys(room.players).length === 0) {
+            if (room.loopHandle) clearInterval(room.loopHandle);
+            delete rooms[roomId];
+            return;
+        }
+        if (room.state === 'fighting') { checkZombieWipe(roomId, room); return; }
+        io.to(roomId).emit('zombieRoomUpdate', {
+            roomId, count: Object.keys(room.players).length, players: publicZombiePlayers(room)
+        });
+    });
+
+    socket.on('zombiePlayerMove', ({ x, y, facing }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'zombie' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (Math.hypot(x, y) > ZOMBIE_ARENA_RADIUS + 1) return;
+        p.x = x; p.y = y;
+        if (typeof facing === 'number') p.facing = facing;
+    });
+
+    // 근접 공격 한 방으로 사거리 안의 좀비와 나무를 한꺼번에 때린다 -- 콤보/이도류
+    // 등 캐릭터별 특수 공격 로직은 여기서는 재현하지 않고, resolveAttack이 계산한
+    // 평범한 부채꼴 판정만 그대로 쓴다 (보스 상대 전용 계산인 흡혈/유도탄 등은 스킵).
+    socket.on('zombiePlayerAttack', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'zombie' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = p.character;
+        const now = Date.now();
+        if (now - p.lastAttackTime < character.attackCooldown) return;
+        p.lastAttackTime = now;
+        const swing = resolveAttack(character, p, now, false);
+        advanceAttackSequence(character, p);
+
+        for (const [zid, z] of Object.entries(room.zombies)) {
+            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, z.x, z.y, ZOMBIE_DEFS[z.type].radius)) {
+                z.hp -= swing.damage;
+                if (z.hp <= 0) {
+                    delete room.zombies[zid];
+                    room.coins += ZOMBIE_COIN_PER_KILL;
+                    io.to(roomId).emit('zombieKilled', { id: zid, coins: room.coins });
+                } else {
+                    io.to(roomId).emit('zombieDamaged', { id: zid, hp: z.hp });
+                }
+            }
+        }
+        for (const [tid, t] of Object.entries(room.trees)) {
+            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, t.x, t.y, ZOMBIE_TREE_RADIUS)) {
+                t.hitsLeft -= 1;
+                room.wood += ZOMBIE_WOOD_PER_HIT;
+                if (t.hitsLeft <= 0) {
+                    delete room.trees[tid];
+                    room.nextTreeSpawnAt = now + ZOMBIE_TREE_RESPAWN_MS;
+                    io.to(roomId).emit('zombieTreeChopped', { id: tid, gone: true, wood: room.wood });
+                } else {
+                    io.to(roomId).emit('zombieTreeChopped', { id: tid, gone: false, hitsLeft: t.hitsLeft, wood: room.wood });
+                }
+            }
+        }
+    });
+
+    socket.on('zombieBuildWall', ({ slot }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'zombie' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (!Number.isInteger(slot) || slot < 0 || slot >= ZOMBIE_WALL_SLOTS) return;
+        if (room.fences[slot]) return;
+        if (room.wood < ZOMBIE_FENCE_WOOD_COST) return;
+        const pos = ZOMBIE_WALL_SLOT_POSITIONS[slot];
+        if (Math.hypot(p.x - pos.x, p.y - pos.y) > ZOMBIE_BUILD_RANGE) return;
+        room.wood -= ZOMBIE_FENCE_WOOD_COST;
+        room.fences[slot] = { hp: ZOMBIE_FENCE_HP, maxHp: ZOMBIE_FENCE_HP };
+        io.to(roomId).emit('zombieWallBuilt', { slot, wood: room.wood });
+    });
+
     socket.on('disconnect', () => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
@@ -6324,6 +6701,13 @@ io.on('connection', (socket) => {
             if (Object.keys(room.players).every(id => room.discardChoices[id] !== undefined)) {
                 startGuestPhase2(roomId);
             }
+            return;
+        }
+        if (room.kind === 'zombie') {
+            if (room.state === 'fighting') { checkZombieWipe(roomId, room); return; }
+            io.to(roomId).emit('zombieRoomUpdate', {
+                roomId, count: Object.keys(room.players).length, players: publicZombiePlayers(room)
+            });
             return;
         }
         // 스토리 방은 스토리 쪽 알림을 받아야 한다 (같이 기다리던 사람이

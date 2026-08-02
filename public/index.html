@@ -283,6 +283,10 @@
                 <div class="icon">✨</div>
                 <div class="name">각성모드</div>
             </div>
+            <div id="zombie-mode-card" class="mode-card">
+                <div class="icon">🧟</div>
+                <div class="name">좀비막기</div>
+            </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
     </div>
@@ -585,6 +589,68 @@
         </div>
     </div>
 
+    <!-- 좀비막기: 캐릭터는 로비에서 고른 그대로, 솔로/멀티만 고른다 -->
+    <div id="zombie-detail-screen" class="screen hidden">
+        <button id="zombie-leave-btn" class="leave-party-btn hidden">나가기</button>
+        <div class="detail-layout">
+            <div class="detail-left">
+                <div class="char-preview-row waiting-row">
+                    <div class="char-preview">
+                        <div id="zombie-my-ready" class="ready-badge hidden">✅ READY</div>
+                        <div id="zombie-char-icon" class="char-icon-circle"></div>
+                        <div id="zombie-char-name" class="char-name"></div>
+                    </div>
+                    <div id="zombie-campfire" class="campfire hidden" aria-hidden="true">
+                        <div class="campfire-flame">🔥</div>
+                        <div class="campfire-logs">🪵</div>
+                    </div>
+                    <div id="zombie-partner-preview" class="char-preview hidden">
+                        <div id="zombie-partner-ready" class="ready-badge hidden">✅ READY</div>
+                        <div id="zombie-partner-icon" class="char-icon-circle"></div>
+                        <div id="zombie-partner-name" class="char-name"></div>
+                    </div>
+                </div>
+                <button id="zombie-change-char-btn" class="secondary-btn">캐릭터 변경</button>
+            </div>
+            <div class="detail-right">
+                <h2>좀비막기</h2>
+                <div class="boss-icon-circle" style="background:#556b2f">🧟</div>
+                <p class="settings-hint">준비 시간에 나무를 베어 목재를 모으고, 그 목재로 울타리를 지어
+                    좀비를 막으세요. 파티가 전멸하면 그때까지 버틴 웨이브만큼 보상을 받습니다.</p>
+                <div class="detail-actions">
+                    <button id="zombie-multi-btn" class="play-btn">멀티플레이</button>
+                    <button id="zombie-solo-btn" class="play-btn">솔로플레이</button>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-zombie-detail-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 좀비막기 전투 -->
+    <div id="zombie-fight-screen" class="screen hidden">
+        <button id="zombie-fight-menu-btn" class="menu-btn" aria-label="메뉴">☰</button>
+        <div id="zombie-fight-settings" class="settings-menu hidden">
+            <button id="zombie-fight-leave-btn" class="secondary-btn">나가기</button>
+        </div>
+        <div id="zombie-hud" class="zombie-hud">
+            <span id="zombie-wave-label" class="zombie-hud-chip">웨이브 1</span>
+            <span id="zombie-phase-label" class="zombie-hud-chip">준비 중...</span>
+            <span class="zombie-hud-chip">🪵 <span id="zombie-wood-count">0</span></span>
+            <span class="zombie-hud-chip">🪙 <span id="zombie-coin-count">0</span></span>
+        </div>
+        <div id="zombie-build-hint" class="zombie-build-hint hidden"></div>
+        <div id="zombie-my-hp-container" class="hp-container bottom-left">
+            <div class="hp-label">나</div>
+            <div class="hp-bar-bg"><div id="zombie-my-hp-bar" class="hp-bar-fill mine"></div><span id="zombie-my-hp-text" class="hp-bar-text"></span></div>
+        </div>
+        <div id="zombie-partner-hp-container" class="hp-container bottom-right hidden">
+            <div class="hp-label">파트너</div>
+            <div class="hp-bar-bg"><div id="zombie-partner-hp-bar" class="hp-bar-fill partner"></div><span id="zombie-partner-hp-text" class="hp-bar-text"></span></div>
+        </div>
+        <canvas id="zombieCanvas" width="960" height="680"></canvas>
+        <button id="zombie-build-btn" class="mc-btn zombie-build-btn">🔨 건설 (B)</button>
+    </div>
+
     <!-- Fight -->
     <div id="fight-screen" class="screen hidden">
         <button id="settings-btn" class="settings-btn">⚙</button>
@@ -662,5 +728,6 @@
     <script src="js/player.js"></script>
     <script src="js/main.js"></script>
     <script src="js/guest_raid.js"></script>
+    <script src="js/zombie_defense.js"></script>
 </body>
 </html>

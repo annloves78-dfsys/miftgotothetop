@@ -3466,4 +3466,52 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 /* 모바일에서는 조작 버튼과 겹치지 않게 조금 작게. */
 body.mc-on .story-boss-bar { top: 6px; width: 70%; }
 body.mc-on .sbb-name { font-size: 14px; }
+
+/* ==================== 좀비막기 ==================== */
+.zombie-hud {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    display: flex;
+    gap: 10px;
+}
+
+.zombie-hud-chip {
+    background: rgba(20, 24, 32, 0.65);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 10px;
+    padding: 6px 14px;
+    color: #fff;
+    font-weight: bold;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.zombie-build-hint {
+    position: absolute;
+    top: 66px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    background: rgba(241, 196, 15, 0.9);
+    color: #2c2c2c;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+.zombie-build-btn {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    padding: 10px 22px;
+    font-size: 15px;
+}
+
+body.mc-on .zombie-build-btn { display: none; }
 body.mc-on .sbb-track { height: 16px; }

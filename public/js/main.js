@@ -21,6 +21,8 @@ const screens = {
     controls: document.getElementById('controls-screen'),
     guestDetail: document.getElementById('guest-detail-screen'),
     guestFight: document.getElementById('guest-fight-screen'),
+    zombieDetail: document.getElementById('zombie-detail-screen'),
+    zombieFight: document.getElementById('zombie-fight-screen'),
     event: document.getElementById('event-screen'),
     characterSelect: document.getElementById('character-select-screen'),
     bossSelect: document.getElementById('boss-select-screen'),
@@ -1886,6 +1888,7 @@ charDetailSelectBtn.addEventListener('click', () => {
     updateSelectedCharLabel();
     if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
     else if (characterReturnScreen === 'storyTower') renderTower();
+    else if (characterReturnScreen === 'zombieDetail' && typeof updateZombieDetailCharPreview === 'function') updateZombieDetailCharPreview();
     showScreen(characterReturnScreen);
 });
 
@@ -5178,6 +5181,8 @@ resultBackBtn.addEventListener('click', () => {
         // 각성모드에서 왔으면 보스 선택이 아니라 각성모드로 돌아간다.
         renderAwakenDetail();
         showScreen('awakenDetail');
+    } else if (resultReturnScreen === 'modeSelect') {
+        showScreen('modeSelect');
     } else {
         renderBossList();
         showScreen('bossSelect');
