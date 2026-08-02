@@ -17,6 +17,7 @@
             <div class="menu-section">
                 <button id="menu-account-btn" class="menu-item-btn">👤 계정</button>
                 <button id="menu-controls-btn" class="menu-item-btn">🎮 조작</button>
+                <button id="menu-stocks-btn" class="menu-item-btn">📈 주식</button>
             </div>
         </div>
         <div class="lobby-trees" aria-hidden="true">
@@ -71,6 +72,18 @@
             <div id="shop-content" class="shop-content"></div>
         </div>
         <button id="back-from-shop-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 속성 주식: 물/불/바람/어둠/빛 -->
+    <div id="stocks-screen" class="screen hidden">
+        <h2>주식 <span id="stocks-purse" class="gacha-ticket-count">💎 0</span></h2>
+        <div id="stocks-msg" class="equip-picker-msg hidden"></div>
+        <div id="stocks-list" class="stocks-list"></div>
+        <div id="stocks-events-wrap">
+            <div class="stocks-events-title">최근 시세 변동</div>
+            <div id="stocks-events" class="stocks-events"></div>
+        </div>
+        <button id="back-from-stocks-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- 아이템창: 재화와 달리 "쓰는" 것들 -->

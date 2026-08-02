@@ -4,6 +4,7 @@ const socket = io();
 const screens = {
     lobby: document.getElementById('lobby-screen'),
     shop: document.getElementById('shop-screen'),
+    stocks: document.getElementById('stocks-screen'),
     items: document.getElementById('items-screen'),
     awakenBoss: document.getElementById('awaken-boss-screen'),
     awakenDetail: document.getElementById('awaken-detail-screen'),
@@ -1882,6 +1883,145 @@ shopBtn.addEventListener('click', () => {
     showScreen('shop');
 });
 backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- 속성 주식 ----
+// 물/불/바람/어둠/빛 5개 속성 주식. 시세는 SHARED.computeStockPrice(es)가
+// shared.js의 STOCK_EVENTS 로그만 보고 계산한다 -- 패치(신규 캐릭터/버프/너프)를
+// 낼 때마다 그 배열에 이벤트 하나를 추가하면 서버 없이도 모든 플레이어가
+// 같은 시세를 보게 된다. 보유 주식/투자원금은 계정 세이브(gameData.stocks)에
+// 저장되고, 다른 재화들과 같은 경로로 클라우드에 동기화된다.
+const stocksBtn = document.getElementById('menu-stocks-btn');
+const backFromStocksBtn = document.getElementById('back-from-stocks-btn');
+const stocksListEl = document.getElementById('stocks-list');
+const stocksEventsEl = document.getElementById('stocks-events');
+const stocksPurseEl = document.getElementById('stocks-purse');
+const stocksMsgEl = document.getElementById('stocks-msg');
+
+function stockHoldings() {
+    if (!gameData.stocks || typeof gameData.stocks !== 'object') gameData.stocks = {};
+    return gameData.stocks;
+}
+function stockHolding(element) {
+    const bag = stockHoldings();
+    return bag[element] || (bag[element] = { shares: 0, invested: 0 });
+}
+
+function showStocksMsg(text, good) {
+    if (!stocksMsgEl) return;
+    stocksMsgEl.textContent = text || '';
+    stocksMsgEl.classList.toggle('hidden', !text);
+    stocksMsgEl.classList.toggle('good', !!good);
+}
+
+// 정수 주식수만 거래한다. admin 모드에서는 다이아가 무제한이라 매수 시 실제
+// 차감은 건너뛰지만(다른 재화 소비 흐름과 동일), 보유 주식수는 그대로 늘어난다.
+function buyStock(element, qty) {
+    qty = Math.floor(qty);
+    if (!(qty > 0)) return { ok: false, msg: '수량을 입력해주세요.' };
+    const price = SHARED.computeStockPrice(element);
+    const cost = price * qty;
+    if (currencyAmount('diamonds') < cost) return { ok: false, msg: '다이아가 부족합니다.' };
+    const h = stockHolding(element);
+    h.shares += qty;
+    h.invested += cost;
+    if (adminPowerOn('currencies')) saveGameData(gameData);
+    else grantCurrencies({ diamonds: -cost });
+    return { ok: true, msg: `${element} 속성 주식 ${qty}주를 샀습니다.` };
+}
+
+function sellStock(element, qty) {
+    qty = Math.floor(qty);
+    const h = stockHolding(element);
+    if (!(qty > 0)) return { ok: false, msg: '수량을 입력해주세요.' };
+    if (h.shares < qty) return { ok: false, msg: '보유 주식이 부족합니다.' };
+    const price = SHARED.computeStockPrice(element);
+    const proceeds = price * qty;
+    // 평단 기준으로 투자원금도 같이 덜어내야 남은 주식의 평가손익이 안 왜곡된다.
+    const avgCost = h.invested / h.shares;
+    h.shares -= qty;
+    h.invested = Math.max(0, h.invested - avgCost * qty);
+    grantCurrencies({ diamonds: proceeds });
+    return { ok: true, msg: `${element} 속성 주식 ${qty}주를 팔았습니다.` };
+}
+
+function renderStockEventsFeed() {
+    if (!stocksEventsEl) return;
+    const recent = SHARED.STOCK_EVENTS.slice(-8).reverse();
+    if (!recent.length) {
+        stocksEventsEl.innerHTML = '<p class="shop-empty">아직 시세를 움직인 소식이 없습니다.</p>';
+        return;
+    }
+    const typeIcon = { new_character: '🆕', buff: '⬆️', nerf: '⬇️' };
+    stocksEventsEl.innerHTML = recent.map(e => `
+        <div class="stock-event-row">
+            <span class="stock-event-icon">${typeIcon[e.type] || '📌'}</span>
+            <span class="stock-event-text">
+                <span class="stock-event-el">${ELEMENT_ICONS[e.element] || ''} ${e.element}</span>
+                ${e.note || ''}
+            </span>
+            <span class="stock-event-pct ${e.pct >= 0 ? 'up' : 'down'}">${e.pct >= 0 ? '+' : ''}${Math.round(e.pct * 100)}%</span>
+        </div>`).join('');
+}
+
+function renderStocksScreen() {
+    if (stocksPurseEl) stocksPurseEl.textContent = `💎 ${currencyText('diamonds')}`;
+    showStocksMsg('');
+    const prices = SHARED.computeStockPrices();
+    stocksListEl.innerHTML = SHARED.STOCK_ELEMENTS.map(el => {
+        const price = prices[el];
+        const changePct = Math.round((price / SHARED.STOCK_BASE_PRICE - 1) * 100);
+        const h = stockHolding(el);
+        const value = h.shares * price;
+        const profit = value - h.invested;
+        const changeClass = changePct > 0 ? 'up' : changePct < 0 ? 'down' : '';
+        const profitClass = profit > 0 ? 'up' : profit < 0 ? 'down' : '';
+        return `
+            <div class="stock-card" data-element="${el}">
+                <div class="stock-card-head">
+                    <span class="stock-card-icon">${ELEMENT_ICONS[el] || ''}</span>
+                    <span class="stock-card-name">${el} 속성</span>
+                    <span class="stock-card-price">💎 ${price}
+                        <span class="stock-card-change ${changeClass}">(${changePct >= 0 ? '+' : ''}${changePct}%)</span>
+                    </span>
+                </div>
+                <div class="stock-card-holding">
+                    보유 ${h.shares}주 · 평가액 💎 ${value}
+                    ${h.shares > 0 ? `<span class="stock-card-profit ${profitClass}">${profit >= 0 ? '+' : ''}${profit}</span>` : ''}
+                </div>
+                <div class="stock-card-actions">
+                    <input type="number" class="stock-qty-input" min="1" step="1" value="1">
+                    <button class="stock-buy-btn">매수</button>
+                    <button class="stock-sell-btn" ${h.shares > 0 ? '' : 'disabled'}>매도</button>
+                </div>
+            </div>`;
+    }).join('');
+    renderStockEventsFeed();
+}
+
+if (stocksListEl) {
+    stocksListEl.addEventListener('click', (e) => {
+        const card = e.target.closest('.stock-card');
+        if (!card) return;
+        const element = card.dataset.element;
+        const qtyInput = card.querySelector('.stock-qty-input');
+        const qty = parseInt(qtyInput.value, 10) || 0;
+        let res = null;
+        if (e.target.classList.contains('stock-buy-btn')) res = buyStock(element, qty);
+        else if (e.target.classList.contains('stock-sell-btn')) res = sellStock(element, qty);
+        if (!res) return;
+        renderStocksScreen();
+        showStocksMsg(res.msg, res.ok);
+    });
+}
+
+if (stocksBtn) {
+    stocksBtn.addEventListener('click', () => {
+        sideMenu.classList.add('hidden');
+        renderStocksScreen();
+        showScreen('stocks');
+    });
+}
+if (backFromStocksBtn) backFromStocksBtn.addEventListener('click', () => showScreen('lobby'));
 
 // ---- 아이템창 ----
 // 재화 바에는 안 들어가는, "쓰는" 것들이 사는 곳. 표(SHARED.ITEMS)에 한 줄

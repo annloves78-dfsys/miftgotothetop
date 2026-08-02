@@ -3002,6 +3002,122 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     cursor: pointer;
 }
 
+/* ---- 속성 주식 ---- */
+.stocks-list {
+    width: min(560px, 92vw);
+    margin: 10px auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 46vh;
+    overflow-y: auto;
+}
+
+.stock-card {
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #22303f;
+    border: 1px solid #34495e;
+    text-align: left;
+}
+
+.stock-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stock-card-icon { font-size: 20px; }
+
+.stock-card-name {
+    flex: 1 1 auto;
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.stock-card-price { color: #f1c40f; font-weight: bold; font-size: 14px; }
+
+.stock-card-change.up { color: #2ecc71; }
+.stock-card-change.down { color: #e74c3c; }
+
+.stock-card-holding {
+    margin-top: 4px;
+    color: #9fb1c1;
+    font-size: 12px;
+}
+
+.stock-card-profit.up { color: #2ecc71; margin-left: 6px; }
+.stock-card-profit.down { color: #e74c3c; margin-left: 6px; }
+
+.stock-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.stock-qty-input {
+    width: 64px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    border: 1px solid #34495e;
+    background: #16212c;
+    color: #ecf0f1;
+    font-size: 13px;
+}
+
+.stock-buy-btn, .stock-sell-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.stock-buy-btn { background: #27ae60; }
+.stock-sell-btn { background: #c0392b; }
+.stock-sell-btn:disabled { background: #576574; cursor: not-allowed; opacity: 0.6; }
+
+.stocks-events-wrap {
+    width: min(560px, 92vw);
+    margin: 12px auto 16px;
+}
+
+.stocks-events-title {
+    color: #9fb1c1;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.stocks-events {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 20vh;
+    overflow-y: auto;
+}
+
+.stock-event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #1c2836;
+    border: 1px solid #2c3e50;
+    font-size: 12px;
+}
+
+.stock-event-icon { flex: 0 0 auto; }
+.stock-event-text { flex: 1 1 auto; color: #ecf0f1; }
+.stock-event-el { color: #f1c40f; margin-right: 4px; }
+.stock-event-pct.up { color: #2ecc71; font-weight: bold; }
+.stock-event-pct.down { color: #e74c3c; font-weight: bold; }
+
 .item-use-btn:hover { background: #2ecc71; }
 
 /* ---- 각성모드 ---- */

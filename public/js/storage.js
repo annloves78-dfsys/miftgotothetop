@@ -40,6 +40,9 @@ const defaultData = {
     // 아이템창. 재화와 달리 "쓰는" 것들 (랜덤 각성 장비, 각성 장비 조각 등).
     // key -> 개수. 표는 shared.js의 ITEMS에 있다.
     items: {},
+    // 속성 주식 보유분. element -> { shares, invested(다이아 누적 매수액) }.
+    // 시세 자체는 shared.js의 STOCK_EVENTS에서 계산하므로 여기엔 안 둔다.
+    stocks: {},
     admin: false, // 관리자 전용; see admin_gate.js
     // 관리자 전용의 힘 중 "꺼 둔" 것들. 여기 없는 것은 켜진 것으로 본다.
     adminOff: {}
@@ -83,6 +86,7 @@ function loadGameData() {
             // 아이템창이 없던 시절의 세이브: 빈 아이템창으로 시작한다.
             data.items = (data.items && typeof data.items === 'object') ? data.items : {};
             data.adminOff = (data.adminOff && typeof data.adminOff === 'object') ? data.adminOff : {};
+            data.stocks = (data.stocks && typeof data.stocks === 'object') ? data.stocks : {};
             data.equipped = data.equipped || {};
             // uid는 가방에 이미 있는 번호보다 반드시 커야 한다 -- 안 그러면
             // 새 장비가 기존 장비와 같은 번호를 받아 섞인다.
