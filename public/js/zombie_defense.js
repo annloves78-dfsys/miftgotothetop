@@ -6,8 +6,8 @@
 // 0.5초마다 체력을 1씩 회복한다. 제작대가 맵 어딘가에 있으면 목록에
 // 터렛/강화대/강화 울타리/강화 터렛/대포가 추가로 뜬다 (대포는 사거리 제한이
 // 없어 맵 어디의 좀비든 쏜다). 강화대를 지은 뒤 그걸
-// 클릭하면 코인으로 공격력을 강화하는 패널이 뜬다(이 강화는 이 판에서만
-// 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
+// 클릭하면 코인으로 공격력/터렛 공격력/울타리 체력을 강화하는 패널이 뜬다
+// (이 강화들은 이 판에서만 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
 // (서버의 resolveAttack이 계산하는) 평범한 부채꼴 근접 공격 하나만 쓴다.
 //
 // main.js 뒤에 로드되므로 그 파일의 전역(socket, showScreen, gameData,
@@ -48,10 +48,19 @@ const zombieBuildItemEls = [...zombieBuildMenuEl.querySelectorAll('.zombie-build
 const ZOMBIE_WORKBENCH_GATED_IDS = ['zombie-build-turret', 'zombie-build-upgradeTable', 'zombie-build-reinforcedFence', 'zombie-build-reinforcedTurret', 'zombie-build-cannon'];
 const zombieWorkbenchGatedEls = ZOMBIE_WORKBENCH_GATED_IDS.map(id => document.getElementById(id));
 const zombieUpgradePanelEl = document.getElementById('zombie-upgrade-panel');
-const zombieAtkLevelEl = document.getElementById('zombie-atk-level');
-const zombieAtkUpgradeCostEl = document.getElementById('zombie-atk-upgrade-cost');
-const zombieAtkUpgradeBtn = document.getElementById('zombie-atk-upgrade-btn');
 const zombieUpgradeCloseBtn = document.getElementById('zombie-upgrade-close-btn');
+// 강화대의 세 항목 (공격력/터렛 공격력/울타리 체력). stat이 곧 zombieState의
+// 레벨 필드 접두어(atk/turretAtk/fenceHp + "UpgradeLevel")와 맞물린다.
+const ZOMBIE_UPGRADE_STATS = [
+    { stat: 'attack', levelKey: 'atkUpgradeLevel', el: 'zombie-atk' },
+    { stat: 'turretAttack', levelKey: 'turretAtkUpgradeLevel', el: 'zombie-turretAtk' },
+    { stat: 'fenceHp', levelKey: 'fenceHpUpgradeLevel', el: 'zombie-fenceHp' }
+].map(row => ({
+    ...row,
+    levelEl: document.getElementById(`${row.el}-level`),
+    costEl: document.getElementById(`${row.el}-upgrade-cost`),
+    btn: document.getElementById(`${row.el}-upgrade-btn`)
+}));
 const zombieMyHpBar = document.getElementById('zombie-my-hp-bar');
 const zombieMyHpText = document.getElementById('zombie-my-hp-text');
 const zombiePartnerHpContainer = document.getElementById('zombie-partner-hp-container');
@@ -175,7 +184,10 @@ socket.on('zombieStarted', (data) => {
         players: data.players, zombies: {}, grid: data.grid || new Array(SHARED.ZOMBIE_CELL_COUNT).fill(null),
         wave: data.wave, wavePhase: data.wavePhase, phaseUntil: data.phaseUntil,
         pendingSpawns: 0, wood: data.wood, coins: data.coins,
-        ore: data.ore || 0, iron: data.iron || 0, atkUpgradeLevel: data.atkUpgradeLevel || 0
+        ore: data.ore || 0, iron: data.iron || 0,
+        atkUpgradeLevel: data.atkUpgradeLevel || 0,
+        turretAtkUpgradeLevel: data.turretAtkUpgradeLevel || 0,
+        fenceHpUpgradeLevel: data.fenceHpUpgradeLevel || 0
     };
     zombieTrees = { ...data.trees };
     const me = data.players[socket.id];
@@ -214,14 +226,17 @@ socket.on('zombieTick', (data) => {
     zombieState.ore = data.ore || 0;
     zombieState.iron = data.iron || 0;
     zombieState.atkUpgradeLevel = data.atkUpgradeLevel || 0;
+    zombieState.turretAtkUpgradeLevel = data.turretAtkUpgradeLevel || 0;
+    zombieState.fenceHpUpgradeLevel = data.fenceHpUpgradeLevel || 0;
     updateZombieHud();
     updateZombieHpBars();
     updateZombieUpgradePanel();
 });
 
-socket.on('zombieAttackUpgraded', ({ level, coins }) => {
+socket.on('zombieStatUpgraded', ({ stat, level, coins }) => {
     if (!zombieState) return;
-    zombieState.atkUpgradeLevel = level;
+    const row = ZOMBIE_UPGRADE_STATS.find(r => r.stat === stat);
+    if (row) zombieState[row.levelKey] = level;
     zombieState.coins = coins;
     updateZombieHud();
     updateZombieUpgradePanel();
@@ -367,8 +382,11 @@ function cancelZombiePendingBuild() {
 // ---------------- 강화대 ----------------
 function updateZombieUpgradePanel() {
     if (!zombieState) return;
-    zombieAtkLevelEl.textContent = `Lv.${zombieState.atkUpgradeLevel}`;
-    zombieAtkUpgradeCostEl.textContent = SHARED.zombieAttackUpgradeCost(zombieState.atkUpgradeLevel);
+    ZOMBIE_UPGRADE_STATS.forEach(row => {
+        const level = zombieState[row.levelKey] || 0;
+        row.levelEl.textContent = `Lv.${level}`;
+        row.costEl.textContent = SHARED.zombieUpgradeCost(level);
+    });
 }
 function openZombieUpgradePanel() {
     updateZombieUpgradePanel();
@@ -377,7 +395,9 @@ function openZombieUpgradePanel() {
 function closeZombieUpgradePanel() {
     zombieUpgradePanelEl.classList.add('hidden');
 }
-zombieAtkUpgradeBtn.addEventListener('click', () => socket.emit('zombieUpgradeAttack'));
+ZOMBIE_UPGRADE_STATS.forEach(row => {
+    row.btn.addEventListener('click', () => socket.emit('zombieUpgradeStat', { stat: row.stat }));
+});
 zombieUpgradeCloseBtn.addEventListener('click', closeZombieUpgradePanel);
 
 // 내 근처(건설 가능 이웃 칸이나 내가 서 있는 칸)에 강화대가 있는지.

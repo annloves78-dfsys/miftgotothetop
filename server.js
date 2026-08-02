@@ -18,7 +18,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS,
     ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_WORKBENCH_ITEMS, ZOMBIE_MINER_ORE_INTERVAL_MS,
     ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT,
-    zombieAttackUpgradeCost, zombieCellIndex, zombieCellColRow,
+    zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow,
     zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
     ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
     zombieWaveReward } = require('./public/js/shared.js');
@@ -4244,7 +4244,10 @@ function createZombieRoom(solo) {
         coins: 0, // 파티 공용, 클리어(사망) 시 실제 재화로 전환됨
         ore: 0, // 채굴기가 캐낸 광석 (파티 공용)
         iron: 0, // 용광로가 정련한 철 (파티 공용)
-        atkUpgradeLevel: 0, // 강화대에서 산 공격력 강화 -- 이 판에서만 유지된다
+        // 강화대에서 산 강화 세 가지. 전부 이 판에서만(방이 사라지면) 유지된다.
+        atkUpgradeLevel: 0, // 내 기본공격 피해
+        turretAtkUpgradeLevel: 0, // 터렛/강화 터렛/대포의 발사 피해
+        fenceHpUpgradeLevel: 0, // 새/기존 울타리 최대 체력
         zombieFields: [], // 매 틱 다시 계산되는 길찾기 거리장 (recomputeZombieFields)
         loopHandle: null
     };
@@ -4312,6 +4315,8 @@ function startZombieFight(roomId) {
     room.ore = 0;
     room.iron = 0;
     room.atkUpgradeLevel = 0;
+    room.turretAtkUpgradeLevel = 0;
+    room.fenceHpUpgradeLevel = 0;
     room.zombies = {};
     room.grid = new Array(ZOMBIE_CELL_COUNT).fill(null);
     room.trees = {};
@@ -4320,7 +4325,9 @@ function startZombieFight(roomId) {
     io.to(roomId).emit('zombieStarted', {
         players: publicZombiePlayers(room),
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
-        wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron, atkUpgradeLevel: room.atkUpgradeLevel,
+        wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron,
+        atkUpgradeLevel: room.atkUpgradeLevel, turretAtkUpgradeLevel: room.turretAtkUpgradeLevel,
+        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel,
         trees: room.trees, grid: room.grid
     });
 
@@ -4488,7 +4495,7 @@ function tickZombieTurrets(roomId, room, now) {
         }
         if (!nearest || nearestDist > def.range) return;
         cell.nextAttackAt = now + def.attackCooldown;
-        nearest.hp -= def.damage;
+        nearest.hp -= def.damage + room.turretAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT;
         io.to(roomId).emit('zombieTurretFired', { index, targetId: nearestId });
         if (nearest.hp <= 0) {
             delete room.zombies[nearestId];
@@ -4589,7 +4596,9 @@ function tickZombieRoom(roomId) {
         grid: room.grid,
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
         pendingSpawns: room.pendingSpawns || 0,
-        wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron, atkUpgradeLevel: room.atkUpgradeLevel
+        wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron,
+        atkUpgradeLevel: room.atkUpgradeLevel, turretAtkUpgradeLevel: room.turretAtkUpgradeLevel,
+        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel
     });
 }
 
@@ -6784,7 +6793,7 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
         const swing = resolveAttack(character, p, now, false);
-        swing.damage += room.atkUpgradeLevel; // 강화대에서 산 만큼 이 판 내내 붙는다
+        swing.damage += room.atkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT; // 강화대에서 산 만큼 이 판 내내 붙는다
         advanceAttackSequence(character, p);
 
         for (const [zid, z] of Object.entries(room.zombies)) {
@@ -6842,40 +6851,61 @@ io.on('connection', (socket) => {
         room.wood -= (def.wood || 0);
         room.iron -= (def.iron || 0);
         const now = Date.now();
+        // 울타리는 지금까지 산 울타리 체력 강화만큼 처음부터 더 튼튼하게 지어진다.
+        const hp = def.hp + (type === 'fence' ? room.fenceHpUpgradeLevel * ZOMBIE_FENCE_HP_UPGRADE_AMOUNT : 0);
         let cell;
         if (def.range != null) {
             // 자동으로 공격하는 시설(터렛류/대포) -- 다음 발사 시각을 따로 든다.
-            cell = { type, hp: def.hp, maxHp: def.hp, nextAttackAt: 0 };
+            cell = { type, hp, maxHp: hp, nextAttackAt: 0 };
         } else if (type === 'miner') {
-            cell = { type, hp: def.hp, maxHp: def.hp, nextOreAt: now + ZOMBIE_MINER_ORE_INTERVAL_MS };
+            cell = { type, hp, maxHp: hp, nextOreAt: now + ZOMBIE_MINER_ORE_INTERVAL_MS };
         } else if (type === 'furnace') {
-            cell = { type, hp: def.hp, maxHp: def.hp, nextSmeltAt: now + ZOMBIE_FURNACE_SMELT_MS };
+            cell = { type, hp, maxHp: hp, nextSmeltAt: now + ZOMBIE_FURNACE_SMELT_MS };
         } else {
-            cell = { type, hp: def.hp, maxHp: def.hp };
+            cell = { type, hp, maxHp: hp };
         }
         room.grid[index] = cell;
         io.to(roomId).emit('zombieBuilt', { index, type, wood: room.wood, iron: room.iron });
     });
 
-    // 강화대(설치된 어느 칸이든 하나) 근처에서만 공격력을 살 수 있다. 가격은
-    // 5코인부터 시작해 살 때마다 5코인씩 오르고, 이 강화는 방에 붙어 있어서
-    // 판이 끝나면(방이 사라지면) 함께 사라진다.
-    socket.on('zombieUpgradeAttack', () => {
+    // 강화대(설치된 어느 칸이든 하나) 근처에서만 강화를 살 수 있다. 세 가지
+    // 다 같은 값을 쓴다 (5코인부터, 살 때마다 5코인씩 오름) -- 이 강화들은
+    // 방에 붙어 있어서 판이 끝나면(방이 사라지면) 함께 사라진다. 울타리
+    // 체력은 다른 둘과 달리 전투 중 계산이 아니라 이미 지어진 울타리를
+    // 그 자리에서 즉시 더 튼튼하게 만든다.
+    const ZOMBIE_UPGRADE_LEVEL_KEYS = {
+        attack: 'atkUpgradeLevel',
+        turretAttack: 'turretAtkUpgradeLevel',
+        fenceHp: 'fenceHpUpgradeLevel'
+    };
+    socket.on('zombieUpgradeStat', ({ stat }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'zombie' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
+        const levelKey = ZOMBIE_UPGRADE_LEVEL_KEYS[stat];
+        if (!levelKey) return;
 
         const { col, row } = zombieColRowOfPos(p.x, p.y);
         const nearby = [zombieCellIndexOfPos(p.x, p.y), ...zombieBuildableCellsFrom(col, row)];
         if (!nearby.some(i => room.grid[i] && room.grid[i].type === 'upgradeTable')) return;
 
-        const cost = zombieAttackUpgradeCost(room.atkUpgradeLevel);
+        const cost = zombieUpgradeCost(room[levelKey]);
         if (room.coins < cost) return;
         room.coins -= cost;
-        room.atkUpgradeLevel++;
-        io.to(roomId).emit('zombieAttackUpgraded', { level: room.atkUpgradeLevel, coins: room.coins });
+        room[levelKey]++;
+
+        if (stat === 'fenceHp') {
+            room.grid.forEach(cell => {
+                if (cell && cell.type === 'fence') {
+                    cell.maxHp += ZOMBIE_FENCE_HP_UPGRADE_AMOUNT;
+                    cell.hp += ZOMBIE_FENCE_HP_UPGRADE_AMOUNT;
+                }
+            });
+        }
+
+        io.to(roomId).emit('zombieStatUpgraded', { stat, level: room[levelKey], coins: room.coins });
     });
 
     socket.on('disconnect', () => {
