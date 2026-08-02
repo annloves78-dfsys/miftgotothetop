@@ -637,6 +637,8 @@
             <span id="zombie-phase-label" class="zombie-hud-chip">준비 중...</span>
             <span class="zombie-hud-chip">🪵 <span id="zombie-wood-count">0</span></span>
             <span class="zombie-hud-chip">🪙 <span id="zombie-coin-count">0</span></span>
+            <span class="zombie-hud-chip">⛏ <span id="zombie-ore-count">0</span></span>
+            <span class="zombie-hud-chip">🔩 <span id="zombie-iron-count">0</span></span>
         </div>
         <div id="zombie-build-hint" class="zombie-build-hint hidden"></div>
         <div id="zombie-my-hp-container" class="hp-container bottom-left">
@@ -649,12 +651,26 @@
         </div>
         <canvas id="zombieCanvas" width="1000" height="520"></canvas>
         <button id="zombie-build-btn" class="mc-btn zombie-build-btn">🔨 건설 (B)</button>
-        <!-- B를 누르면 뜨는 세로 목록. 터렛은 근처에 제작대가 있을 때만 보인다. -->
+        <!-- B를 누르면 뜨는 세로 목록. 터렛/강화대/강화 울타리/강화 터렛은
+             근처에 제작대가 있을 때만 보인다. -->
         <div id="zombie-build-menu" class="zombie-build-menu hidden">
-            <button id="zombie-build-fence" class="zombie-build-item" data-type="fence">🧱 울타리 <span class="zombie-build-cost">5</span></button>
-            <button id="zombie-build-workbench" class="zombie-build-item" data-type="workbench">🛠 제작대 <span class="zombie-build-cost">8</span></button>
-            <button id="zombie-build-furnace" class="zombie-build-item" data-type="furnace">🔥 용광로 <span class="zombie-build-cost">8</span></button>
-            <button id="zombie-build-turret" class="zombie-build-item hidden" data-type="turret">🔫 터렛 <span class="zombie-build-cost">15</span></button>
+            <button id="zombie-build-fence" class="zombie-build-item" data-type="fence">🧱 울타리 <span class="zombie-build-cost">🪵5</span></button>
+            <button id="zombie-build-workbench" class="zombie-build-item" data-type="workbench">🛠 제작대 <span class="zombie-build-cost">🪵8</span></button>
+            <button id="zombie-build-furnace" class="zombie-build-item" data-type="furnace">🔥 용광로 <span class="zombie-build-cost">🪵8</span></button>
+            <button id="zombie-build-miner" class="zombie-build-item" data-type="miner">⛏ 채굴기 <span class="zombie-build-cost">🪵10</span></button>
+            <button id="zombie-build-turret" class="zombie-build-item hidden" data-type="turret">🔫 터렛 <span class="zombie-build-cost">🪵15</span></button>
+            <button id="zombie-build-upgradeTable" class="zombie-build-item hidden" data-type="upgradeTable">📈 강화대 <span class="zombie-build-cost">🪵10</span></button>
+            <button id="zombie-build-reinforcedFence" class="zombie-build-item hidden" data-type="reinforcedFence">🧱 강화 울타리 <span class="zombie-build-cost">🪵5 🔩1</span></button>
+            <button id="zombie-build-reinforcedTurret" class="zombie-build-item hidden" data-type="reinforcedTurret">🔫 강화 터렛 <span class="zombie-build-cost">🪵10 🔩3</span></button>
+        </div>
+        <!-- 강화대를 클릭하면 뜨는 패널. 지금은 공격력만 강화할 수 있다. -->
+        <div id="zombie-upgrade-panel" class="zombie-build-menu hidden">
+            <div class="zombie-upgrade-title">강화대</div>
+            <div class="zombie-upgrade-row">
+                <span>⚔ 공격력 <span id="zombie-atk-level">Lv.0</span></span>
+                <button id="zombie-atk-upgrade-btn" class="zombie-build-item">🪙 <span id="zombie-atk-upgrade-cost">5</span></button>
+            </div>
+            <button id="zombie-upgrade-close-btn" class="secondary-btn">닫기</button>
         </div>
     </div>
 

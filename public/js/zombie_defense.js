@@ -1,11 +1,12 @@
 // ==================== 좀비막기 ====================
-// 정사각형 아레나에서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서 고른
+// 가로로 긴 아레나에서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서 고른
 // 것을 그대로 쓴다(게스트 레이드처럼 파티를 새로 짜지 않는다). 아레나
-// 전체가 8x8(64칸) 격자로 나뉘어 있고, B를 누르면 뜨는 목록에서 울타리/
-// 제작대/용광로를 고른 뒤 내 근처 칸을 클릭해서 짓는다. 제작대 근처에서는
-// 목록 맨 아래에 터렛이 추가로 뜬다. 콤보/스킬/궁극기 같은 캐릭터별 특수
-// 전투는 재현하지 않고 (서버의 resolveAttack이 계산하는) 평범한 부채꼴
-// 근접 공격 하나만 쓴다.
+// 전체가 격자로 나뉘어 있고, B를 누르면 뜨는 목록에서 울타리/제작대/용광로/
+// 채굴기를 고른 뒤 내 근처 칸을 클릭해서 짓는다. 제작대 근처에서는 목록에
+// 터렛/강화대/강화 울타리/강화 터렛이 추가로 뜬다. 강화대를 지은 뒤 그걸
+// 클릭하면 코인으로 공격력을 강화하는 패널이 뜬다(이 강화는 이 판에서만
+// 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
+// (서버의 resolveAttack이 계산하는) 평범한 부채꼴 근접 공격 하나만 쓴다.
 //
 // main.js 뒤에 로드되므로 그 파일의 전역(socket, showScreen, gameData,
 // charIconBackground, keys, autoAimEnabled, hpBarLabel, equipBonusOf,
@@ -35,11 +36,20 @@ const zombieWaveLabel = document.getElementById('zombie-wave-label');
 const zombiePhaseLabel = document.getElementById('zombie-phase-label');
 const zombieWoodCountEl = document.getElementById('zombie-wood-count');
 const zombieCoinCountEl = document.getElementById('zombie-coin-count');
+const zombieOreCountEl = document.getElementById('zombie-ore-count');
+const zombieIronCountEl = document.getElementById('zombie-iron-count');
 const zombieBuildHintEl = document.getElementById('zombie-build-hint');
 const zombieBuildBtn = document.getElementById('zombie-build-btn');
 const zombieBuildMenuEl = document.getElementById('zombie-build-menu');
-const zombieBuildItemEls = [...document.querySelectorAll('.zombie-build-item')];
-const zombieBuildTurretItemEl = document.getElementById('zombie-build-turret');
+const zombieBuildItemEls = [...zombieBuildMenuEl.querySelectorAll('.zombie-build-item')];
+// 제작대 근처에서만 뜨는 항목들 (터렛/강화대/강화 울타리/강화 터렛).
+const ZOMBIE_WORKBENCH_GATED_IDS = ['zombie-build-turret', 'zombie-build-upgradeTable', 'zombie-build-reinforcedFence', 'zombie-build-reinforcedTurret'];
+const zombieWorkbenchGatedEls = ZOMBIE_WORKBENCH_GATED_IDS.map(id => document.getElementById(id));
+const zombieUpgradePanelEl = document.getElementById('zombie-upgrade-panel');
+const zombieAtkLevelEl = document.getElementById('zombie-atk-level');
+const zombieAtkUpgradeCostEl = document.getElementById('zombie-atk-upgrade-cost');
+const zombieAtkUpgradeBtn = document.getElementById('zombie-atk-upgrade-btn');
+const zombieUpgradeCloseBtn = document.getElementById('zombie-upgrade-close-btn');
 const zombieMyHpBar = document.getElementById('zombie-my-hp-bar');
 const zombieMyHpText = document.getElementById('zombie-my-hp-text');
 const zombiePartnerHpContainer = document.getElementById('zombie-partner-hp-container');
@@ -162,7 +172,8 @@ socket.on('zombieStarted', (data) => {
     zombieState = {
         players: data.players, zombies: {}, grid: data.grid || new Array(SHARED.ZOMBIE_CELL_COUNT).fill(null),
         wave: data.wave, wavePhase: data.wavePhase, phaseUntil: data.phaseUntil,
-        pendingSpawns: 0, wood: data.wood, coins: data.coins
+        pendingSpawns: 0, wood: data.wood, coins: data.coins,
+        ore: data.ore || 0, iron: data.iron || 0, atkUpgradeLevel: data.atkUpgradeLevel || 0
     };
     zombieTrees = { ...data.trees };
     const me = data.players[socket.id];
@@ -198,8 +209,20 @@ socket.on('zombieTick', (data) => {
     zombieState.pendingSpawns = data.pendingSpawns || 0;
     zombieState.wood = data.wood;
     zombieState.coins = data.coins;
+    zombieState.ore = data.ore || 0;
+    zombieState.iron = data.iron || 0;
+    zombieState.atkUpgradeLevel = data.atkUpgradeLevel || 0;
     updateZombieHud();
     updateZombieHpBars();
+    updateZombieUpgradePanel();
+});
+
+socket.on('zombieAttackUpgraded', ({ level, coins }) => {
+    if (!zombieState) return;
+    zombieState.atkUpgradeLevel = level;
+    zombieState.coins = coins;
+    updateZombieHud();
+    updateZombieUpgradePanel();
 });
 
 socket.on('zombieTreeSpawned', ({ id, x, y, hitsLeft }) => {
@@ -264,6 +287,8 @@ function updateZombieHud() {
     }
     zombieWoodCountEl.textContent = zombieState.wood;
     zombieCoinCountEl.textContent = zombieState.coins;
+    zombieOreCountEl.textContent = zombieState.ore;
+    zombieIronCountEl.textContent = zombieState.iron;
 }
 
 function updateZombieHpBars() {
@@ -297,7 +322,8 @@ function zombieNearWorkbench() {
 
 function openZombieBuildMenu() {
     if (!zombieState) return;
-    zombieBuildTurretItemEl.classList.toggle('hidden', !zombieNearWorkbench());
+    const near = zombieNearWorkbench();
+    zombieWorkbenchGatedEls.forEach(el => el.classList.toggle('hidden', !near));
     zombieBuildMenuEl.classList.remove('hidden');
 }
 function closeZombieBuildMenu() {
@@ -310,12 +336,16 @@ function toggleZombieBuildMenu() {
 }
 zombieBuildBtn.addEventListener('click', toggleZombieBuildMenu);
 
+function zombieCostOf(type) {
+    return SHARED.ZOMBIE_BUILDABLES[type] || SHARED.ZOMBIE_WORKBENCH_ITEMS[type];
+}
+
 zombieBuildItemEls.forEach(el => {
     el.addEventListener('click', () => {
         const type = el.dataset.type;
-        const cost = SHARED.ZOMBIE_BUILDABLES[type] || SHARED.ZOMBIE_TURRET_DEF;
-        if (zombieState.wood < cost.wood) {
-            zombieHintShow(`목재가 부족합니다 (🪵 ${zombieState.wood}/${cost.wood})`);
+        const cost = zombieCostOf(type);
+        if (zombieState.wood < cost.wood || zombieState.iron < (cost.iron || 0)) {
+            zombieHintShow(`재료가 부족합니다 (🪵 ${zombieState.wood}/${cost.wood} 🔩 ${zombieState.iron}/${cost.iron || 0})`);
             return;
         }
         zombiePendingBuildType = type;
@@ -329,10 +359,34 @@ function cancelZombiePendingBuild() {
     closeZombieBuildMenu();
 }
 
+// ---------------- 강화대 ----------------
+function updateZombieUpgradePanel() {
+    if (!zombieState) return;
+    zombieAtkLevelEl.textContent = `Lv.${zombieState.atkUpgradeLevel}`;
+    zombieAtkUpgradeCostEl.textContent = SHARED.zombieAttackUpgradeCost(zombieState.atkUpgradeLevel);
+}
+function openZombieUpgradePanel() {
+    updateZombieUpgradePanel();
+    zombieUpgradePanelEl.classList.remove('hidden');
+}
+function closeZombieUpgradePanel() {
+    zombieUpgradePanelEl.classList.add('hidden');
+}
+zombieAtkUpgradeBtn.addEventListener('click', () => socket.emit('zombieUpgradeAttack'));
+zombieUpgradeCloseBtn.addEventListener('click', closeZombieUpgradePanel);
+
+// 내 근처(건설 가능 이웃 칸이나 내가 서 있는 칸)에 강화대가 있는지.
+function zombieNearbyUpgradeTableIndex() {
+    if (!zombieLocal || !zombieState) return -1;
+    const myCell = SHARED.zombieCellIndexOfPos(zombieLocal.x, zombieLocal.y);
+    const cells = [myCell, ...zombieMyBuildableCells()];
+    return cells.find(i => zombieState.grid[i] && zombieState.grid[i].type === 'upgradeTable') ?? -1;
+}
+
 document.addEventListener('keydown', (e) => {
     if (!zombieState || screens.zombieFight.classList.contains('hidden')) return;
     if (e.key === 'b' || e.key === 'B') toggleZombieBuildMenu();
-    else if (e.key === 'Escape') cancelZombiePendingBuild();
+    else if (e.key === 'Escape') { cancelZombiePendingBuild(); closeZombieUpgradePanel(); }
 });
 
 // ---------------- 입력 ----------------
@@ -346,12 +400,32 @@ zombieCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 2) { cancelZombiePendingBuild(); return; }
     if (e.button !== 0) return;
     if (zombiePendingBuildType) { tryZombiePlaceAtMouse(); return; }
+    if (tryZombieOpenUpgradeAtMouse()) return;
     if (autoAimActive()) fireZombieAutoAimedAttack();
     else tryZombieAttack();
 });
 
 function zombieWorldFromMouse() {
     return { x: zombieMouseX - zombieCanvas.width / 2, y: zombieMouseY - zombieCanvas.height / 2 };
+}
+
+// 클릭이 내가 지은 강화대 위에 떨어졌으면 (근처에 있을 때만) 공격 대신
+// 강화 패널을 연다. 강화대를 클릭했는데 너무 멀면 힌트만 띄우고, 어느
+// 쪽이든 그 클릭은 공격으로 넘기지 않는다.
+function tryZombieOpenUpgradeAtMouse() {
+    if (!zombieState || !zombieLocal || zombieMouseX === null) return false;
+    const w = zombieWorldFromMouse();
+    if (Math.abs(w.x) > SHARED.ZOMBIE_ARENA_HALF_W || Math.abs(w.y) > SHARED.ZOMBIE_ARENA_HALF_H) return false;
+    const index = SHARED.zombieCellIndexOfPos(w.x, w.y);
+    const cell = zombieState.grid[index];
+    if (!cell || cell.type !== 'upgradeTable') return false;
+    const myCell = SHARED.zombieCellIndexOfPos(zombieLocal.x, zombieLocal.y);
+    if (![myCell, ...zombieMyBuildableCells()].includes(index)) {
+        zombieHintShow('강화대에 더 가까이 가세요');
+        return true;
+    }
+    openZombieUpgradePanel();
+    return true;
 }
 
 function tryZombiePlaceAtMouse() {
@@ -448,8 +522,17 @@ const ZOMBIE_STRUCT_COLORS = {
     fence: { fill: '#8d6238', stroke: '#5a3d21' },
     workbench: { fill: '#7f6a4f', stroke: '#4a3c2a' },
     furnace: { fill: '#5c5c5c', stroke: '#2e2e2e' },
-    turret: { fill: '#34495e', stroke: '#1b2733' }
+    miner: { fill: '#6b5638', stroke: '#3d3120' },
+    turret: { fill: '#34495e', stroke: '#1b2733' },
+    upgradeTable: { fill: '#8e44ad', stroke: '#5b2c6f' },
+    reinforcedFence: { fill: '#a5682f', stroke: '#5a3d21' },
+    reinforcedTurret: { fill: '#2c5f7c', stroke: '#173040' }
 };
+// 칸 위에 그릴 아이콘. 기본/제작대 전용 건조물 표 양쪽에서 찾는다.
+function zombieStructIcon(type) {
+    const def = (SHARED.ZOMBIE_BUILDABLES && SHARED.ZOMBIE_BUILDABLES[type]) || (SHARED.ZOMBIE_WORKBENCH_ITEMS && SHARED.ZOMBIE_WORKBENCH_ITEMS[type]);
+    return def ? def.icon : null;
+}
 
 function zombieDrawGrid(ctx, now) {
     const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H, C = SHARED.ZOMBIE_CELL_SIZE;
@@ -479,11 +562,12 @@ function zombieDrawGrid(ctx, now) {
             ctx.strokeStyle = skin.stroke;
             ctx.lineWidth = 3;
             ctx.strokeRect(center.x - half, center.y - half, half * 2, half * 2);
-            if (cell.type === 'turret') {
+            const icon = zombieStructIcon(cell.type);
+            if (icon) {
                 ctx.fillStyle = '#ecf0f1';
                 ctx.font = 'bold 16px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('🔫', center.x, center.y + 6);
+                ctx.fillText(icon, center.x, center.y + 6);
             }
             const pct = Math.max(0, cell.hp / cell.maxHp);
             ctx.fillStyle = '#7f1d1d';

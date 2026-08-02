@@ -3555,4 +3555,20 @@ body.mc-on .zombie-build-btn { display: none; }
 .zombie-build-cost {
     color: #f1c40f;
 }
+
+.zombie-upgrade-title {
+    color: #f1c40f;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+.zombie-upgrade-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    color: #fff;
+    font-size: 14px;
+}
 body.mc-on .sbb-track { height: 16px; }
