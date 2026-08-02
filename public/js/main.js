@@ -1906,14 +1906,55 @@ const SHOP_CATEGORIES = {
     iap: '아직 판매 중인 상품이 없습니다.',
     item: '아직 판매 중인 아이템이 없습니다.'
 };
+// 다이아로 사는 아이템 목록. 여기 하나 추가하면 '아이템' 탭에 카드가 뜬다.
+const SHOP_ITEMS = [
+    { key: 'ticketNormal', cost: 200, costCurrency: 'diamonds' }
+];
+
+function buyShopItem(key) {
+    const item = SHOP_ITEMS.find(it => it.key === key);
+    if (!item) return { ok: false, msg: '판매 중이 아닙니다.' };
+    if (currencyAmount(item.costCurrency) < item.cost) {
+        return { ok: false, msg: `${CURRENCY_LABELS[item.costCurrency] || item.costCurrency}가 부족합니다.` };
+    }
+    const bag = { [item.key]: 1 };
+    if (!adminPowerOn('currencies')) bag[item.costCurrency] = -item.cost;
+    grantCurrencies(bag);
+    return { ok: true, msg: `${CURRENCY_LABELS[item.key] || item.key}을(를) 구매했습니다.` };
+}
 
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
+    shopContent.classList.toggle('shop-content-list', key === 'item' && SHOP_ITEMS.length > 0);
+    if (key === 'item' && SHOP_ITEMS.length) {
+        shopContent.innerHTML = SHOP_ITEMS.map(item => `
+            <div class="shop-item-card" data-key="${item.key}">
+                <span class="shop-item-icon">${CURRENCY_ICONS[item.key] || '🎁'}</span>
+                <span class="shop-item-name">${CURRENCY_LABELS[item.key] || item.key}</span>
+                <span class="shop-item-owned">보유 ${currencyText(item.key)}</span>
+                <button class="shop-item-buy-btn">${CURRENCY_ICONS[item.costCurrency] || ''} ${item.cost}</button>
+            </div>`).join('') + '<p id="shop-item-msg" class="shop-item-msg hidden"></p>';
+        return;
+    }
     shopContent.innerHTML = `<p class="shop-empty">${SHOP_CATEGORIES[key]}</p>`;
 }
 
 Object.entries(shopCatButtons).forEach(([key, btn]) => {
     btn.addEventListener('click', () => renderShopCategory(key));
+});
+
+shopContent.addEventListener('click', (e) => {
+    const btn = e.target.closest('.shop-item-buy-btn');
+    if (!btn) return;
+    const card = btn.closest('.shop-item-card');
+    const res = buyShopItem(card.dataset.key);
+    if (res.ok) renderShopCategory('item');
+    const msgEl = document.getElementById('shop-item-msg');
+    if (msgEl) {
+        msgEl.textContent = res.msg;
+        msgEl.classList.remove('hidden');
+        msgEl.classList.toggle('good', res.ok);
+    }
 });
 
 shopBtn.addEventListener('click', () => {

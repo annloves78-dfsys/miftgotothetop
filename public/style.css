@@ -459,6 +459,61 @@ html, body {
     font-size: 15px;
 }
 
+.shop-content.shop-content-list {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 10px;
+    overflow-y: auto;
+}
+
+.shop-item-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #22303f;
+    border: 1px solid #34495e;
+}
+
+.shop-item-icon { font-size: 22px; }
+
+.shop-item-name {
+    flex: 1 1 auto;
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.shop-item-owned {
+    color: #9fb1c1;
+    font-size: 12px;
+}
+
+.shop-item-buy-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #f1c40f;
+    background: #34495e;
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.shop-item-buy-btn:hover { background: #3d5975; }
+
+.shop-item-msg {
+    width: 100%;
+    text-align: center;
+    color: #e74c3c;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+.shop-item-msg.good { color: #2ecc71; }
+
 /* Gacha */
 .gacha-banner-list {
     display: flex;
