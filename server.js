@@ -4207,7 +4207,7 @@ function guestTickPayload(room) {
 // 다른 두 레이드처럼 rooms[roomId] 하나를 쓰지만, 상대는 보스가 아니라
 // 웨이브마다 불어나는 좀비 무리다. tickMonsterSet의 텔레그래프/카이팅 같은
 // 정교한 상태기계는 필요 없어서 좀비 전용으로 훨씬 단순한 길찾기+근접 로직을
-// 새로 둔다. 아레나는 가로로 긴 12x6(72칸) 격자(room.grid, 인덱스 0~71)로
+// 새로 둔다. 아레나는 가로로 긴 15x8(120칸) 격자(room.grid, 인덱스 0~119)로
 // 나뉘어 있고, 칸에 지어진 것(울타리/제작대/용광로/터렛)은 전부 통째로 막힌
 // 장애물이다. 좀비는 항상 아레나 오른쪽 가장자리에서만 나타나 왼쪽으로
 // 밀려오며, 그 장애물들을 피해 실제로 길을 찾아 우회하고
@@ -4470,13 +4470,16 @@ function tickZombie(roomId, room, zid, z, alivePlayers, now) {
     z.y += Math.sin(z.facing) * move;
 }
 
-// 제작대 근처에서 지은 터렛(기본/강화 공용)의 자동 공격. 사거리 안의 가장
-// 가까운 좀비를 쏜다. 두 종류 다 ZOMBIE_WORKBENCH_ITEMS에서 자기 수치를 읽는다.
+// 자동으로 공격하는 시설(터렛/강화 터렛/대포)의 공격. def.range가 있는
+// 종류는 전부 여기서 처리한다 -- 사거리 안의 가장 가까운 좀비를 쏘고, 대포는
+// range가 Infinity라 사실상 맵 전체가 사거리다. 전부 ZOMBIE_WORKBENCH_ITEMS
+// 에서 자기 수치를 읽는다.
 function tickZombieTurrets(roomId, room, now) {
     room.grid.forEach((cell, index) => {
-        if (!cell || (cell.type !== 'turret' && cell.type !== 'reinforcedTurret')) return;
-        if (now < (cell.nextAttackAt || 0)) return;
+        if (!cell) return;
         const def = ZOMBIE_WORKBENCH_ITEMS[cell.type];
+        if (!def || def.range == null) return;
+        if (now < (cell.nextAttackAt || 0)) return;
         const center = zombieCellCenter(index);
         let nearestId = null, nearest = null, nearestDist = Infinity;
         for (const [zid, z] of Object.entries(room.zombies)) {
@@ -6828,7 +6831,7 @@ io.on('connection', (socket) => {
         const needsWorkbench = !!ZOMBIE_WORKBENCH_ITEMS[type];
         const def = needsWorkbench ? ZOMBIE_WORKBENCH_ITEMS[type] : ZOMBIE_BUILDABLES[type];
         if (!def) return;
-        if (room.wood < def.wood) return;
+        if (room.wood < (def.wood || 0)) return;
         if (room.iron < (def.iron || 0)) return;
 
         const { col, row } = zombieColRowOfPos(p.x, p.y);
@@ -6836,11 +6839,12 @@ io.on('connection', (socket) => {
         if (!buildable.includes(index)) return;
         if (needsWorkbench && !room.grid.some(c => c && c.type === 'workbench')) return;
 
-        room.wood -= def.wood;
+        room.wood -= (def.wood || 0);
         room.iron -= (def.iron || 0);
         const now = Date.now();
         let cell;
-        if (type === 'turret' || type === 'reinforcedTurret') {
+        if (def.range != null) {
+            // 자동으로 공격하는 시설(터렛류/대포) -- 다음 발사 시각을 따로 든다.
             cell = { type, hp: def.hp, maxHp: def.hp, nextAttackAt: 0 };
         } else if (type === 'miner') {
             cell = { type, hp: def.hp, maxHp: def.hp, nextOreAt: now + ZOMBIE_MINER_ORE_INTERVAL_MS };

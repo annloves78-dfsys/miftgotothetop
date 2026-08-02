@@ -3938,7 +3938,7 @@ function computeStockPrices() {
 // 가로로 긴 직사각형 아레나에서 파티가 몰려오는 좀비 웨이브를 막아내는 생존
 // 모드. 보스 레이드처럼 캐릭터 하나(장비 포함)로 1~2인이 함께 하지만, 상대는
 // 정해진 패턴을 쓰는 보스가 아니라 웨이브마다 불어나는 좀비 무리다. 아레나
-// 전체를 12x6(72칸) 격자로 나눠 두고, 준비 시간에 나무를 베어 모은 목재로 그
+// 전체를 15x8(120칸) 격자로 나눠 두고, 준비 시간에 나무를 베어 모은 목재로 그
 // 격자 위 아무 칸에나(내 근처 칸만) 울타리/제작대/용광로/채굴기를 짓는다.
 // 채굴기가 캐낸 광석을 용광로가 철로 정련하면, 제작대 근처에서 그 철로
 // 강화 울타리/강화 터렛을 만들 수 있고, 강화대를 지어 코인으로 공격력을
@@ -3948,8 +3948,8 @@ function computeStockPrices() {
 // 좀비를 잡으면 코인이 나오고, 파티 전원이 쓰러지면 그때까지 버틴 웨이브
 // 수만큼 보상을 받는다 -- 이기고 지는 모드가 아니라 얼마나 오래 버티는지가
 // 전부다.
-const ZOMBIE_GRID_COLS = 12;
-const ZOMBIE_GRID_ROWS = 6; // 12x6 = 72칸
+const ZOMBIE_GRID_COLS = 15;
+const ZOMBIE_GRID_ROWS = 8; // 15x8 = 120칸
 const ZOMBIE_CELL_SIZE = 80;
 const ZOMBIE_ARENA_HALF_W = (ZOMBIE_GRID_COLS * ZOMBIE_CELL_SIZE) / 2;
 const ZOMBIE_ARENA_HALF_H = (ZOMBIE_GRID_ROWS * ZOMBIE_CELL_SIZE) / 2;
@@ -3996,6 +3996,12 @@ const ZOMBIE_WORKBENCH_ITEMS = {
     reinforcedTurret: {
         name: '강화 터렛', icon: '🔫', wood: 10, iron: 3, hp: 45,
         range: ZOMBIE_CELL_SIZE * 4, damage: 8, attackCooldown: 600
+    },
+    // 사거리 제한이 없다 -- 맵 어디에 있는 좀비든 다 맞힌다. 대신 터렛류보다
+    // 느리게 쏜다.
+    cannon: {
+        name: '대포', icon: '💣', iron: 10, hp: 35,
+        range: Infinity, damage: 6, attackCooldown: 800
     }
 };
 

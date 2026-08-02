@@ -4,7 +4,8 @@
 // 전체가 격자로 나뉘어 있고, F를 누르면 뜨는 목록에서 울타리/제작대/용광로/
 // 채굴기/집을 고른 뒤 내 근처 칸을 클릭해서 짓는다. 집 위에 서 있으면
 // 0.5초마다 체력을 1씩 회복한다. 제작대가 맵 어딘가에 있으면 목록에
-// 터렛/강화대/강화 울타리/강화 터렛이 추가로 뜬다. 강화대를 지은 뒤 그걸
+// 터렛/강화대/강화 울타리/강화 터렛/대포가 추가로 뜬다 (대포는 사거리 제한이
+// 없어 맵 어디의 좀비든 쏜다). 강화대를 지은 뒤 그걸
 // 클릭하면 코인으로 공격력을 강화하는 패널이 뜬다(이 강화는 이 판에서만
 // 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
 // (서버의 resolveAttack이 계산하는) 평범한 부채꼴 근접 공격 하나만 쓴다.
@@ -44,7 +45,7 @@ const zombieBuildBtn = document.getElementById('zombie-build-btn');
 const zombieBuildMenuEl = document.getElementById('zombie-build-menu');
 const zombieBuildItemEls = [...zombieBuildMenuEl.querySelectorAll('.zombie-build-item')];
 // 제작대 근처에서만 뜨는 항목들 (터렛/강화대/강화 울타리/강화 터렛).
-const ZOMBIE_WORKBENCH_GATED_IDS = ['zombie-build-turret', 'zombie-build-upgradeTable', 'zombie-build-reinforcedFence', 'zombie-build-reinforcedTurret'];
+const ZOMBIE_WORKBENCH_GATED_IDS = ['zombie-build-turret', 'zombie-build-upgradeTable', 'zombie-build-reinforcedFence', 'zombie-build-reinforcedTurret', 'zombie-build-cannon'];
 const zombieWorkbenchGatedEls = ZOMBIE_WORKBENCH_GATED_IDS.map(id => document.getElementById(id));
 const zombieUpgradePanelEl = document.getElementById('zombie-upgrade-panel');
 const zombieAtkLevelEl = document.getElementById('zombie-atk-level');
@@ -346,8 +347,8 @@ zombieBuildItemEls.forEach(el => {
     el.addEventListener('click', () => {
         const type = el.dataset.type;
         const cost = zombieCostOf(type);
-        if (zombieState.wood < cost.wood || zombieState.iron < (cost.iron || 0)) {
-            zombieHintShow(`재료가 부족합니다 (🪵 ${zombieState.wood}/${cost.wood} 🔩 ${zombieState.iron}/${cost.iron || 0})`);
+        if (zombieState.wood < (cost.wood || 0) || zombieState.iron < (cost.iron || 0)) {
+            zombieHintShow(`재료가 부족합니다 (🪵 ${zombieState.wood}/${cost.wood || 0} 🔩 ${zombieState.iron}/${cost.iron || 0})`);
             return;
         }
         zombiePendingBuildType = type;
@@ -531,7 +532,8 @@ const ZOMBIE_STRUCT_COLORS = {
     turret: { fill: '#34495e', stroke: '#1b2733' },
     upgradeTable: { fill: '#8e44ad', stroke: '#5b2c6f' },
     reinforcedFence: { fill: '#a5682f', stroke: '#5a3d21' },
-    reinforcedTurret: { fill: '#2c5f7c', stroke: '#173040' }
+    reinforcedTurret: { fill: '#2c5f7c', stroke: '#173040' },
+    cannon: { fill: '#4a4a2a', stroke: '#2a2a15' }
 };
 // 칸 위에 그릴 아이콘. 기본/제작대 전용 건조물 표 양쪽에서 찾는다.
 function zombieStructIcon(type) {
