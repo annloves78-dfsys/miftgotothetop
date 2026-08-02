@@ -842,6 +842,52 @@ const CHARACTERS = {
         ultimateZoneSelfHealPerTick: 8,
         ultimateZoneAttackBonusBurn: 1,
         ultimateCooldownMs: 30000
+    },
+    // 유누 엄마 신청작. 빛 속성 원거리 딜러 -- 이 게임에서 가장 두꺼운 몸으로
+    // 멀리서 구슬을 계속 퍼붓는 컨셉이다.
+    plaincookie: {
+        name: '쿠키맛 쿠키',
+        shortName: '쿠키맛', // shown on the lobby's character-select button
+        color: '#e8a33d',
+        colorLeft: '#fff3b0', // 연한 빛
+        colorRight: '#c8791b', // 진한 금갈색
+        grade: '게스트',
+        element: '빛',
+        role: '대미지 딜러',
+        health: 250,
+        speed: 2,
+        // 빛의 구슬 4개를 부채꼴로 쏘아, 저마다 가장 가까운 적을 스스로 쫓아
+        // 간다. 유도탄이긴 하지만 사거리 안에 따라잡지 못하면 그냥 빗나가므로
+        // 무조건 맞는 건 아니다 -- 실제 명중 판정은 서버의 homing steer가 맡는다.
+        attackType: 'homing_burst',
+        attackHoming: true,
+        attackProjectileCount: 4,
+        attackProjectileSpreadDeg: 18, // 발사 순간 4발이 부채꼴로 퍼지는 각도
+        attackProjectileRadius: 8,
+        attackProjectileSpeed: 380,
+        attackRange: 480,
+        attackWidth: 40, // 몸 옆의 발사 이펙트 폭(장식용)
+        attackDamage: 5, // 구슬 1개당 피해
+        attackCooldown: 500,
+        // 얼리기: 조준 없이 반경 안의 적을 그 자리에서 얼려 skillFreezeMs 동안
+        // 아무 행동도 못 하게 한다. 자기 체력 회복은 적중 여부와 상관없이
+        // 스킬을 쓰는 순간 항상 들어간다.
+        skillType: 'freeze_burst',
+        skillRange: 100,
+        skillFreezeMs: 3000,
+        skillSelfHeal: 100,
+        skillCooldown: 10000,
+        // 빛의 심판: 원하는 위치를 지정하면 원이 아니라 가로로 긴 띠 모양
+        // 범위에 피해를 준다. 그 한 방으로 맞힌 적의 수 * ultimateHealPerEnemy
+        // 만큼 팀 전체를 회복시킨다 (보스 레이드는 적이 하나뿐이라 최대 한
+        // 번 분량이다).
+        ultimateType: 'targeted_line_aoe',
+        ultimateWidth: 480, // 가로 폭
+        ultimateHeight: 90, // 세로 폭
+        ultimateDamage: 40,
+        ultimateHealPerEnemy: 50,
+        ultimateRadius: 200, // 조준 UI/모바일 낙하 거리 계산용 (판정은 사각형)
+        ultimateCooldownMs: 30000
     }
 };
 

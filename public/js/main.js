@@ -841,6 +841,10 @@ function describeAbility(stats, kind) {
             return `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
+        if (stats.attackType === 'homing_burst') {
+            return `빛의 구슬 ${stats.attackProjectileCount}개를 부채꼴로 동시에 쏩니다. 구슬은 저마다 가장 가까운 적을 스스로 쫓아가며, 맞으면 1개당 ${stats.attackDamage}의 피해를 줍니다.`
+                + ` 최대 ${stats.attackRange}px까지 날아가고, 그 안에 목표를 따라잡지 못하면 빗나갑니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+        }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         if (stats.attackHealOnUse && stats.attackHealChance !== undefined) {
             text += ` 적중 시 ${Math.round(stats.attackHealChance * 100)}% 확률로 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`;
@@ -904,6 +908,8 @@ function describeAbility(stats, kind) {
                     + ` 반경 ${stats.skillRadius}px 내의 적 전부에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             case 'self_guard_surge':
                 return `방패로 막습니다. 자신의 체력을 ${stats.skillHealAmount}만큼 채우고, 자신에게만 ${stats.skillShieldAmount}짜리 보호막을 씌웁니다.${cd}`;
+            case 'freeze_burst':
+                return `조준 없이 즉시 발동합니다. 반경 ${stats.skillRange}px 내의 적을 얼려 ${sec(stats.skillFreezeMs)}초 동안 아무 행동도 못 하게 하고, 적중 여부와 상관없이 자신의 체력을 ${stats.skillSelfHeal}만큼 채웁니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -971,6 +977,8 @@ function describeAbility(stats, kind) {
                 return `원하는 지점을 지정하면 그 자리로 날아올랐다가 ${sec(stats.ultimateWindupMs)}초 뒤 떨어집니다.`
                     + ` 착지 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 주고,`
                     + ` 적중하면 ${sec(stats.ultimateAttackBuffDurationMs)}초 동안 공격력이 ${stats.ultimateAttackBuff} 오르며 최대 체력의 ${Math.round(stats.ultimateHealRatioOnHit * 100)}%를 회복합니다.${cd}`;
+            case 'targeted_line_aoe':
+                return `원하는 위치를 지정합니다. 원이 아니라 가로 ${stats.ultimateWidth}px, 세로 ${stats.ultimateHeight}px의 긴 띠 범위에 ${stats.ultimateDamage}의 피해를 주고, 그 한 방으로 맞힌 적의 수만큼 팀 전체를 각각 ${stats.ultimateHealPerEnemy}씩 회복시킵니다.${cd}`;
             case 'fire_line_zone':
                 return `조준 없이 지금 보고 있는 방향으로 전방 ${stats.ultimateRange}px(가로 ${stats.ultimateWidth}px)`
                     + ` 화염지대를 깝니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 유지되며,`
@@ -1097,7 +1105,10 @@ const SKILL_ICONS = {
     life_burst: '🩸',
     sky_slam: '🌠',
     self_guard_surge: '🛡️',
-    fire_line_zone: '🔥'
+    fire_line_zone: '🔥',
+    homing_burst: '🔮',
+    freeze_burst: '❄️',
+    targeted_line_aoe: '✨'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -1467,6 +1478,11 @@ function isFireProjectile(charType) {
     const stats = charType && SHARED.CHARACTERS[charType];
     return !!(stats && stats.element === '불');
 }
+// 쿠키맛쿠키의 빛의 구슬처럼 물/불 어느 쪽도 아닌 투사체는 금빛으로 그린다.
+function isLightProjectile(charType) {
+    const stats = charType && SHARED.CHARACTERS[charType];
+    return !!(stats && stats.element === '빛' && stats.attackType === 'homing_burst');
+}
 function drawThrownDrops(c, drops, now) {
     Object.values(drops).forEach(d => {
         const t = (now - d.at) / 1000;
@@ -1474,6 +1490,7 @@ function drawThrownDrops(c, drops, now) {
         const y = d.y + d.vy * t;
         const r = d.radius || 10;
         const fire = isFireProjectile(d.charType);
+        const light = !fire && isLightProjectile(d.charType);
         c.save();
         c.translate(x, y);
         const grad = c.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.2, 0, 0, r);
@@ -1481,6 +1498,10 @@ function drawThrownDrops(c, drops, now) {
             grad.addColorStop(0, '#fff3c4');
             grad.addColorStop(0.5, '#ff8a3d');
             grad.addColorStop(1, '#c0392b');
+        } else if (light) {
+            grad.addColorStop(0, '#fffdf0');
+            grad.addColorStop(0.5, '#ffe58a');
+            grad.addColorStop(1, '#e8a33d');
         } else {
             grad.addColorStop(0, '#eaf8ff');
             grad.addColorStop(1, '#1f6fb2');
@@ -1489,7 +1510,7 @@ function drawThrownDrops(c, drops, now) {
         c.arc(0, 0, r, 0, Math.PI * 2);
         c.fillStyle = grad;
         c.fill();
-        c.strokeStyle = fire ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
+        c.strokeStyle = (fire || light) ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
         c.lineWidth = 2;
         c.stroke();
         c.restore();
@@ -1501,14 +1522,28 @@ function drawDropSplashes(c, splashes, now) {
     splashes.forEach(s => {
         const life = (s.until - now) / 260;
         const fire = isFireProjectile(s.charType);
+        const light = !fire && isLightProjectile(s.charType);
         c.beginPath();
         c.arc(s.x, s.y, 8 + (1 - life) * 16, 0, Math.PI * 2);
         c.strokeStyle = fire
             ? `rgba(255, 138, 61, ${Math.max(0, life)})`
-            : `rgba(127, 212, 245, ${Math.max(0, life)})`;
+            : (light ? `rgba(255, 229, 138, ${Math.max(0, life)})` : `rgba(127, 212, 245, ${Math.max(0, life)})`);
         c.lineWidth = 3;
         c.stroke();
     });
+}
+
+// 쿠키맛쿠키 궁극기 조준: 원이 아니라 가로로 긴 직사각형이라 미리보기도 따로.
+function drawUltimateLinePreview(c, x, y, width, height) {
+    c.save();
+    c.setLineDash([8, 6]);
+    c.strokeStyle = 'rgba(142, 68, 173, 0.9)';
+    c.lineWidth = 2;
+    c.strokeRect(x - width / 2, y - height / 2, width, height);
+    c.setLineDash([]);
+    c.fillStyle = 'rgba(142, 68, 173, 0.15)';
+    c.fillRect(x - width / 2, y - height / 2, width, height);
+    c.restore();
 }
 
 function drawUltimatePreview(c, x, y, radius, fromX, fromY) {
@@ -3537,6 +3572,12 @@ socket.on('storyDropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
     storyDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
 });
 
+socket.on('storyDropUpdate', ({ id, x, y, vx, vy }) => {
+    const d = storyDrops[id];
+    if (!d) return;
+    d.x = x; d.y = y; d.vx = vx; d.vy = vy; d.at = performance.now();
+});
+
 socket.on('storyDropGone', ({ id, hit, x, y }) => {
     const charType = storyDrops[id] && storyDrops[id].charType;
     delete storyDrops[id];
@@ -3663,6 +3704,11 @@ socket.on('storyBodyFormChanged', ({ id, form, hp, maxHp, partyHp, partyMaxHp })
 
 socket.on('storyUltimateImpact', ({ x, y, radius }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+// 쿠키맛쿠키 궁극기: 원이 아니라 직사각형 범위.
+socket.on('storyUltimateLineImpact', ({ x, y, width, height }) => {
+    storyImpactEffects.push({ x, y, width, height, until: performance.now() + 400 });
 });
 
 // 때파기 / 물방울 터트리기 / 마그마 쏟기 / 폭포 all land as a circle at a
@@ -4308,7 +4354,11 @@ function storyRender(now) {
         const rgb = fx.heal ? '46, 204, 113'
             : (fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173'));
         storyCtx.beginPath();
-        storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        if (fx.width) {
+            storyCtx.rect(fx.x - fx.width / 2, fx.y - fx.height / 2, fx.width, fx.height);
+        } else {
+            storyCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        }
         storyCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
         storyCtx.fill();
         storyCtx.strokeStyle = `rgba(${rgb}, 0.9)`;
@@ -4640,14 +4690,22 @@ function storyRender(now) {
     if (isStoryTargetingUltimate && storyMouseX !== null && storyPlayer) {
         const world = storyWorldFromMouse();
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        drawUltimatePreview(storyCtx, world.x, world.y, stats.ultimateRadius || 90);
+        if (stats.ultimateType === 'targeted_line_aoe') {
+            drawUltimateLinePreview(storyCtx, world.x, world.y, stats.ultimateWidth, stats.ultimateHeight);
+        } else {
+            drawUltimatePreview(storyCtx, world.x, world.y, stats.ultimateRadius || 90);
+        }
     }
 
     // Live preview while the ultimate stick is being pushed on touch.
     if (storyUltimateAim && storyPlayer) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
         const pt = ultimateAimPoint(storyPlayer.x, storyPlayer.y, storyPlayer.facing, stats, storyUltimateAim);
-        drawUltimatePreview(storyCtx, pt.targetX, pt.targetY, stats.ultimateRadius || 90, storyPlayer.x, storyPlayer.y);
+        if (stats.ultimateType === 'targeted_line_aoe') {
+            drawUltimateLinePreview(storyCtx, pt.targetX, pt.targetY, stats.ultimateWidth, stats.ultimateHeight);
+        } else {
+            drawUltimatePreview(storyCtx, pt.targetX, pt.targetY, stats.ultimateRadius || 90, storyPlayer.x, storyPlayer.y);
+        }
     }
 
     storyCtx.restore();
@@ -4856,6 +4914,14 @@ socket.on('dropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
     raidDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
 });
 
+// 쿠키맛쿠키의 유도탄 구슬처럼 서버가 매 틱 방향을 트는 투사체는 위치를
+// 다시 맞춰줘야 클라이언트의 직선 외삽(dead-reckoning)이 커브를 따라간다.
+socket.on('dropUpdate', ({ id, x, y, vx, vy }) => {
+    const d = raidDrops[id];
+    if (!d) return;
+    d.x = x; d.y = y; d.vx = vx; d.vy = vy; d.at = performance.now();
+});
+
 socket.on('dropGone', ({ id, hit, x, y }) => {
     const charType = raidDrops[id] && raidDrops[id].charType;
     delete raidDrops[id];
@@ -4921,6 +4987,11 @@ socket.on('playerUltimateUsed', ({ id }) => {
 
 socket.on('ultimateImpact', ({ x, y, radius }) => {
     impactEffects.push({ x, y, radius, until: performance.now() + 400 });
+});
+
+// 쿠키맛쿠키 궁극기: 원이 아니라 직사각형 범위.
+socket.on('ultimateLineImpact', ({ x, y, width, height }) => {
+    impactEffects.push({ x, y, width, height, until: performance.now() + 400 });
 });
 
 socket.on('skillMark', ({ x, y, radius }) => {
@@ -5268,7 +5339,7 @@ function confirmSkillTarget() {
 function isTargetedUltimate(type) {
     return type === 'targeted_aoe' || type === 'magma_zone' || type === 'lightning_strike'
         || type === 'magma_pour' || type === 'mark_flood' || type === 'dumpling_zone'
-        || type === 'sky_slam';
+        || type === 'sky_slam' || type === 'targeted_line_aoe';
 }
 
 // 때파기 / 물방울 터트리기 are the first SKILLS that are placed on a spot
@@ -5405,7 +5476,11 @@ function render(now) {
         const t = 1 - Math.max(0, (fx.until - now) / 400); // 0 -> 1 as it fades
         const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
         ctx.beginPath();
-        ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        if (fx.width) {
+            ctx.rect(fx.x - fx.width / 2, fx.y - fx.height / 2, fx.width, fx.height);
+        } else {
+            ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        }
         ctx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
         ctx.fill();
         ctx.strokeStyle = `rgba(${rgb}, 0.9)`;
@@ -5445,7 +5520,11 @@ function render(now) {
     if (isTargetingUltimate && mouseX !== null) {
         const me = players[socket.id];
         const world = screenToWorld(mouseX, mouseY);
-        drawUltimatePreview(ctx, world.x, world.y, me ? me.stats.ultimateRadius : 90);
+        if (me && me.stats.ultimateType === 'targeted_line_aoe') {
+            drawUltimateLinePreview(ctx, world.x, world.y, me.stats.ultimateWidth, me.stats.ultimateHeight);
+        } else {
+            drawUltimatePreview(ctx, world.x, world.y, me ? me.stats.ultimateRadius : 90);
+        }
     }
     if (isTargetingSkill && mouseX !== null) {
         const me = players[socket.id];
@@ -5458,7 +5537,11 @@ function render(now) {
         const me = players[socket.id];
         if (me) {
             const pt = ultimateAimPoint(me.x, me.y, me.facing, me.stats, ultimateAim);
-            drawUltimatePreview(ctx, pt.targetX, pt.targetY, me.stats.ultimateRadius || 90, me.x, me.y);
+            if (me.stats.ultimateType === 'targeted_line_aoe') {
+                drawUltimateLinePreview(ctx, pt.targetX, pt.targetY, me.stats.ultimateWidth, me.stats.ultimateHeight);
+            } else {
+                drawUltimatePreview(ctx, pt.targetX, pt.targetY, me.stats.ultimateRadius || 90, me.x, me.y);
+            }
         }
     }
 

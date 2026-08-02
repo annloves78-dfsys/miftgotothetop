@@ -674,7 +674,9 @@ function tickRoom(roomId) {
     if (!rooms[roomId]) return;
     tickBodyFusion(room, roomId, now, 'bodyFormChanged');
 
-    // Thrown drops, against the one thing in this arena worth hitting.
+    // Thrown drops, against the one thing in this arena worth hitting. The
+    // raid boss never moves from the origin, so a homing shot just has to
+    // turn toward (0,0).
     tickPlayerProjectiles(roomId, room, 50, (pr) => {
         if (Math.hypot(pr.x, pr.y) > pr.radius + BOSS_RADIUS) {
             // Nothing to hit out here, and past the arena wall it is gone.
@@ -684,7 +686,7 @@ function tickRoom(roomId) {
         if (!owner) return true;
         landRaidHitOnBoss(roomId, room, pr.ownerId, owner, charOf(owner), pr.damage, Date.now());
         return true;
-    }, 'dropGone');
+    }, 'dropGone', (pr, dt) => steerProjectileToward(pr, 0, 0, dt), 'dropUpdate');
     if (!rooms[roomId]) return;
 
     // Team-wide buffs (e.g. the healer's ultimate) tick independently of the
@@ -1271,15 +1273,16 @@ function publicSummons(room) {
 // the room's 50ms tick and can miss outright. All three room kinds share the
 // spawn/tick pair below; only "what it can hit" differs, and that is handed in.
 
-function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev) {
+function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev, facingOverride) {
     if (!room.playerProjectiles) { room.playerProjectiles = {}; room.nextPlayerProjectileId = 0; }
     const id = `pp${room.nextPlayerProjectileId++}`;
     const speed = character.attackProjectileSpeed;
+    const facing = facingOverride != null ? facingOverride : p.facing;
     const pr = {
         ownerId,
         x: p.x, y: p.y,
-        vx: Math.cos(p.facing) * speed,
-        vy: Math.sin(p.facing) * speed,
+        vx: Math.cos(facing) * speed,
+        vy: Math.sin(facing) * speed,
         radius: character.attackProjectileRadius,
         damage: effectiveAttackDamage(character, p, now),
         // It fizzles once it has flown attackRange, so the range on the
@@ -1288,7 +1291,11 @@ function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev) {
         // The ultimate's marking window is captured at the throw: what matters
         // is whether it was open when the drop left the cookie's hand.
         marks: !!(p.elementMarkUntil && now < p.elementMarkUntil),
-        charType: p.charType
+        charType: p.charType,
+        // 쿠키맛쿠키의 구슬처럼 유도탄인 투사체는 매 틱 방향을 목표 쪽으로
+        // 튼다 -- steerProjectileToward 참고. 그래도 rangeLeft 안에 따라잡지
+        // 못하면 그냥 빗나간다.
+        homing: !!character.attackHoming
     };
     room.playerProjectiles[id] = pr;
     io.to(roomId).emit(ev, {
@@ -1298,14 +1305,52 @@ function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev) {
     return id;
 }
 
+// 쿠키맛쿠키 기본공격: attackProjectileCount발을 attackProjectileSpreadDeg 안에서
+// 부채꼴로 한 번에 쏜다. 각 발은 spawnPlayerProjectile이 homing:true로 표시하므로
+// 이후 각 room의 tickPlayerProjectiles steer 콜백이 알아서 가장 가까운 목표로 튼다.
+function fireHomingBurst(roomId, room, ownerId, p, character, now, ev) {
+    const count = character.attackProjectileCount || 1;
+    const spread = (character.attackProjectileSpreadDeg || 0) * Math.PI / 180;
+    for (let i = 0; i < count; i++) {
+        const offset = count > 1 ? spread * (i / (count - 1) - 0.5) : 0;
+        spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev, p.facing + offset);
+    }
+}
+
+// 초당 이만큼(라디안) 방향을 틀 수 있다 -- 540도/초, 유도탄이라 빠르게 꺾이지만
+// 순간적으로 정반대를 보고 있으면 못 따라잡고 사거리 밖으로 빗나갈 수 있다.
+const HOMING_TURN_RATE = Math.PI * 3;
+function steerProjectileToward(pr, tx, ty, dt) {
+    const speed = Math.hypot(pr.vx, pr.vy);
+    if (!speed) return;
+    const desired = Math.atan2(ty - pr.y, tx - pr.x);
+    const current = Math.atan2(pr.vy, pr.vx);
+    let diff = desired - current;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const maxTurn = HOMING_TURN_RATE * dt;
+    const applied = Math.max(-maxTurn, Math.min(maxTurn, diff));
+    const angle = current + applied;
+    pr.vx = Math.cos(angle) * speed;
+    pr.vy = Math.sin(angle) * speed;
+}
+
 // `resolveHit(pr)` returns truthy if the drop struck something this step.
-function tickPlayerProjectiles(roomId, room, dtMs, resolveHit, goneEv) {
+// `steer(pr, dt)` is optional: called before moving, lets a homing projectile
+// (pr.homing) bend toward whatever this room kind considers its nearest
+// target. `updateEv`, if given, is emitted every tick for homing projectiles
+// only so the client can correct its dead-reckoned position mid-curve.
+function tickPlayerProjectiles(roomId, room, dtMs, resolveHit, goneEv, steer, updateEv) {
     if (!room.playerProjectiles) return;
     const dt = dtMs / 1000;
     for (const [id, pr] of Object.entries(room.playerProjectiles)) {
+        if (steer && pr.homing) steer(pr, dt);
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
         pr.rangeLeft -= Math.hypot(pr.vx, pr.vy) * dt;
+        if (updateEv && pr.homing) {
+            io.to(roomId).emit(updateEv, { id, x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy });
+        }
         const hit = resolveHit(pr);
         if (!rooms[roomId]) return; // that hit ended the room
         if (!room.playerProjectiles[id]) continue; // already cleaned up
@@ -2846,7 +2891,15 @@ function tickStoryRoom(roomId) {
             return true;
         }
         return false;
-    }, 'storyDropGone');
+    }, 'storyDropGone', (pr, dt) => {
+        let best = null, bestDist = Infinity;
+        for (const m of Object.values(room.monsters)) {
+            if (!m.alive) continue;
+            const d = Math.hypot(pr.x - m.x, pr.y - m.y);
+            if (d < bestDist) { bestDist = d; best = m; }
+        }
+        if (best) steerProjectileToward(pr, best.x, best.y, dt);
+    }, 'storyDropUpdate');
     if (!rooms[roomId]) return; // a drop just hit the star
 
     io.to(roomId).emit('storyTick', {
@@ -3539,6 +3592,19 @@ function guestCircleTargets(room, x, y, radius) {
     return out;
 }
 
+// 쿠키맛쿠키 궁극기처럼 원이 아니라 (x,y) 중심의 직사각형 범위인 경우.
+function guestRectTargets(room, x, y, halfWidth, halfHeight) {
+    const out = [];
+    const def = guestDefFor(room);
+    if (Math.abs(x - room.bossX) <= halfWidth + def.radius
+        && Math.abs(y - room.bossY) <= halfHeight + def.radius) out.push({ boss: true });
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        if (Math.abs(x - m.x) <= halfWidth + mR(m) && Math.abs(y - m.y) <= halfHeight + mR(m)) out.push({ mid });
+    }
+    return out;
+}
+
 function damageGuestTargets(roomId, room, targets, amount, byId) {
     for (const t of targets) {
         if (t.boss) damageGuestBoss(roomId, room, amount, byId);
@@ -3843,7 +3909,16 @@ function tickGuestRoom(roomId) {
             }
         }
         return true;
-    }, 'guestDropGone');
+    }, 'guestDropGone', (pr, dt) => {
+        let bestX = null, bestY = null, bestDist = Math.hypot(pr.x - room.bossX, pr.y - room.bossY);
+        bestX = room.bossX; bestY = room.bossY;
+        for (const m of Object.values(room.monsters)) {
+            if (!m.alive) continue;
+            const d = Math.hypot(pr.x - m.x, pr.y - m.y);
+            if (d < bestDist) { bestDist = d; bestX = m.x; bestY = m.y; }
+        }
+        steerProjectileToward(pr, bestX, bestY, dt);
+    }, 'guestDropUpdate');
     if (!rooms[roomId]) return;
 
     // Summoned adds (2차) live in the same room and fight on their own clock.
@@ -4398,6 +4473,11 @@ io.on('connection', (socket) => {
             spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'storyDropThrown');
             return;
         }
+        // 쿠키맛쿠키 기본공격: 유도탄 구슬 여러 발을 부채꼴로 한 번에 쏜다.
+        if (character.attackType === 'homing_burst') {
+            fireHomingBurst(roomId, room, socket.id, p, character, now, 'storyDropThrown');
+            return;
+        }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
             && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear'
             && character.attackType !== 'vampire_slash') return;
@@ -4499,6 +4579,18 @@ io.on('connection', (socket) => {
                     m.stunnedUntil = now + character.skillStunMs;
                     io.to(roomId).emit('monsterStunned', { id: mid });
                 }
+            }
+        }
+        // 쿠키맛쿠키 특수스킬: 조준 없이 즉시 자기 체력을 채우고(적중 여부와
+        // 무관), 반경 안의 적 전부를 얼려 그동안 아무 행동도 못 하게 한다.
+        else if (character.skillType === 'freeze_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillSelfHeal);
+            io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) - mR(m) > character.skillRange) continue;
+                m.stunnedUntil = now + character.skillFreezeMs;
+                io.to(roomId).emit('monsterStunned', { id: mid });
             }
         } else if (character.skillType === 'kick') {
             for (const [mid, m] of Object.entries(room.monsters)) {
@@ -4767,6 +4859,34 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        }
+        // 쿠키맛쿠키 궁극기: 원이 아니라 가로로 긴 직사각형 범위. 맞힌 적의
+        // 수만큼 팀 전체를 회복시킨다.
+        else if (character.ultimateType === 'targeted_line_aoe') {
+            const t0 = targetPoint(payload);
+            if (!t0) return;
+            const floorDef = floorDefFor(room.floor);
+            const spot = clampToLane(floorDef, t0.x, t0.y);
+            io.to(roomId).emit('storyUltimateLineImpact', {
+                id: socket.id, x: spot.x, y: spot.y,
+                width: character.ultimateWidth, height: character.ultimateHeight
+            });
+            let hitCount = 0;
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                const r = mR(m);
+                if (Math.abs(spot.x - m.x) > character.ultimateWidth / 2 + r) continue;
+                if (Math.abs(spot.y - m.y) > character.ultimateHeight / 2 + r) continue;
+                hitCount++;
+                m.hp = Math.max(0, m.hp - character.ultimateDamage);
+                if (m.hp <= 0) {
+                    m.alive = false;
+                    io.to(roomId).emit('monsterDefeated', { id: mid });
+                } else {
+                    io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
+                }
+            }
+            if (hitCount) healStoryPlayer(room, roomId, character.ultimateHealPerEnemy * hitCount);
         } else if (character.ultimateType === 'sky_slam') {
             // 지옥맛 궁극기: 지정한 자리로 날아올랐다가 떨어진다. targeted_aoe와
             // 텔레그래프는 같지만, 예열 뒤에 자기 자신도 그 자리로 옮겨간다.
@@ -5009,6 +5129,10 @@ io.on('connection', (socket) => {
             spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'dropThrown');
             return;
         }
+        if (character.attackType === 'homing_burst') {
+            fireHomingBurst(roomId, room, socket.id, p, character, now, 'dropThrown');
+            return;
+        }
         if (character.attackType === 'melee_kick' || character.attackType === 'alternating_punch'
             || character.attackType === 'combo_two_stage' || character.attackType === 'dual_spear'
             || character.attackType === 'vampire_slash') {
@@ -5154,6 +5278,16 @@ io.on('connection', (socket) => {
             if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
                 room.bossStunnedUntil = now + character.skillStunMs;
                 io.to(roomId).emit('bossStunned', { durationMs: character.skillStunMs });
+            }
+        }
+        // 쿠키맛쿠키 특수스킬: 조준 없이 즉시 자기 체력을 채우고(적중 여부와
+        // 무관), 반경 안에 보스가 있으면 얼려서 그동안 아무 행동도 못 하게 한다.
+        else if (character.skillType === 'freeze_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillSelfHeal);
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            if (Math.hypot(p.x, p.y) - BOSS_RADIUS <= character.skillRange) {
+                room.bossStunnedUntil = now + character.skillFreezeMs;
+                io.to(roomId).emit('bossStunned', { durationMs: character.skillFreezeMs, freeze: true });
             }
         } else if (character.skillType === 'kick') {
             if (meleeLineHit(p.x, p.y, p.facing, character.skillRange, character.skillWidth, BOSS_RADIUS)) {
@@ -5321,6 +5455,25 @@ io.on('connection', (socket) => {
                 room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
+        }
+        // 쿠키맛쿠키 궁극기: 원이 아니라 가로로 긴 직사각형 범위. 보스는
+        // 원점에 고정이므로 지정한 자리가 그 직사각형 안에 원점을 담는지만 본다.
+        else if (character.ultimateType === 'targeted_line_aoe') {
+            const t0 = targetPoint(payload);
+            if (!t0) return;
+            const spot = clampToArena(t0.x, t0.y, ARENA_RADIUS);
+            io.to(roomId).emit('ultimateLineImpact', {
+                id: socket.id, x: spot.x, y: spot.y,
+                width: character.ultimateWidth, height: character.ultimateHeight
+            });
+            const hit = Math.abs(spot.x) <= character.ultimateWidth / 2 + BOSS_RADIUS
+                && Math.abs(spot.y) <= character.ultimateHeight / 2 + BOSS_RADIUS;
+            if (hit) {
+                room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
+                io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
+                if (room.bossHp <= 0) { endRoom(roomId, 'win'); return; }
+                healTeam(room, roomId, character.ultimateHealPerEnemy);
             }
         } else if (character.ultimateType === 'sky_slam') {
             // 지옥맛 궁극기: raid는 보스가 항상 원점이라 targeted_aoe의 텔레그래프를
@@ -5648,6 +5801,10 @@ io.on('connection', (socket) => {
             spawnPlayerProjectile(roomId, room, socket.id, p, character, now, 'guestDropThrown');
             return;
         }
+        if (character.attackType === 'homing_burst') {
+            fireHomingBurst(roomId, room, socket.id, p, character, now, 'guestDropThrown');
+            return;
+        }
         if (character.attackType !== 'melee_kick' && character.attackType !== 'alternating_punch'
             && character.attackType !== 'combo_two_stage' && character.attackType !== 'dual_spear'
             && character.attackType !== 'vampire_slash') return;
@@ -5714,6 +5871,21 @@ io.on('connection', (socket) => {
             damageGuestTargets(roomId, room,
                 guestLineTargets(room, p.x, p.y, p.facing, character.skillRange, character.skillWidth),
                 character.skillDamage, socket.id);
+        }
+        // 쿠키맛쿠키 특수스킬: 조준 없이 즉시 자기 체력을 채우고(적중 여부와
+        // 무관), 반경 안의 부하를 얼린다. 게스트 레이드는 보스 쪽 기절
+        // 파이프라인이 아예 없어서 (flying_kick·lightning_strike도 마찬가지)
+        // 보스는 얼지 않는다 -- 기존에 있던 한계다.
+        else if (character.skillType === 'freeze_burst') {
+            p.hp = Math.min(p.maxHp, p.hp + character.skillSelfHeal);
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(p.x - m.x, p.y - m.y) - mR(m) > character.skillRange) continue;
+                m.stunnedUntil = now + character.skillFreezeMs;
+                io.to(roomId).emit('monsterStunned', { id: mid });
+            }
         }
         // 치즈만두맛 만두 주먹: 앞에 있는 것(보스든 부하든) 전부에 표식을 박고,
         // 그 대상에 쌓여 있던 표식까지 한꺼번에 터뜨린다.
@@ -6004,6 +6176,22 @@ io.on('connection', (socket) => {
             damageGuestTargets(roomId, room,
                 guestCircleTargets(room, t.x, t.y, character.ultimateRadius),
                 character.ultimateDamage, socket.id);
+        }
+        // 쿠키맛쿠키 궁극기: 원이 아니라 가로로 긴 직사각형 범위. 맞힌 대상
+        // (보스·부하 통틀어) 수만큼 팀 전체를 회복시킨다.
+        else if (character.ultimateType === 'targeted_line_aoe') {
+            const t = aimed();
+            if (!t) return;
+            io.to(roomId).emit('guestUltimateLineImpact', {
+                id: socket.id, x: t.x, y: t.y,
+                width: character.ultimateWidth, height: character.ultimateHeight
+            });
+            const targets = guestRectTargets(room, t.x, t.y,
+                character.ultimateWidth / 2, character.ultimateHeight / 2);
+            if (targets.length) {
+                damageGuestTargets(roomId, room, targets, character.ultimateDamage, socket.id);
+                if (rooms[roomId]) healGuestTeam(room, roomId, character.ultimateHealPerEnemy * targets.length);
+            }
         } else if (character.ultimateType === 'sky_slam') {
             // 지옥맛 궁극기: 지정한 자리로 날아올랐다가 떨어진다.
             const t = aimed();

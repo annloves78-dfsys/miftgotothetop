@@ -551,6 +551,11 @@ socket.on('guestSpearsCleared', () => { guestStuckSpears = []; });
 socket.on('guestUltimateImpact', (d) => {
     guestImpacts.push({ ...d, until: performance.now() + 400 });
 });
+
+// 쿠키맛쿠키 궁극기: 원이 아니라 직사각형 범위.
+socket.on('guestUltimateLineImpact', (d) => {
+    guestImpacts.push({ ...d, until: performance.now() + 400 });
+});
 socket.on('guestMagmaZonePlaced', (d) => {
     guestMagmaZones.push({ ...d, until: performance.now() + d.durationMs });
 });
@@ -579,6 +584,12 @@ socket.on('guestButterflyMode', ({ id, on }) => {
 
 socket.on('guestDropThrown', ({ id, x, y, vx, vy, radius, charType }) => {
     guestDrops[id] = { x, y, vx, vy, radius, charType, at: performance.now() };
+});
+
+socket.on('guestDropUpdate', ({ id, x, y, vx, vy }) => {
+    const d = guestDrops[id];
+    if (!d) return;
+    d.x = x; d.y = y; d.vx = vx; d.vy = vy; d.at = performance.now();
 });
 
 socket.on('guestDropGone', ({ id, hit, x, y }) => {
@@ -1059,7 +1070,11 @@ function guestRender(now) {
         const t = 1 - Math.max(0, (fx.until - now) / 400);
         const rgb = fx.tide ? '46, 134, 222' : (fx.bolt ? '241, 196, 15' : '142, 68, 173');
         guestCtx.beginPath();
-        guestCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        if (fx.width) {
+            guestCtx.rect(fx.x - fx.width / 2, fx.y - fx.height / 2, fx.width, fx.height);
+        } else {
+            guestCtx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        }
         guestCtx.fillStyle = `rgba(${rgb}, ${0.5 * (1 - t)})`;
         guestCtx.fill();
         guestCtx.strokeStyle = `rgba(${rgb}, 0.9)`;
