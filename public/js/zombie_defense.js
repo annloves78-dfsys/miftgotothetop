@@ -1,9 +1,11 @@
 // ==================== 좀비막기 ====================
-// 원형 아레나 한가운데서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서
-// 고른 것을 그대로 쓴다(게스트 레이드처럼 파티를 새로 짜지 않는다). 준비
-// 시간에 나무를 베어 목재를 모으고, 그 목재로 링 위 울타리 칸을 채워 좀비의
-// 진입을 막는다. 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
-// (서버의 resolveAttack이 계산하는) 평범한 부채꼴 근접 공격 하나만 쓴다.
+// 정사각형 아레나에서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서 고른
+// 것을 그대로 쓴다(게스트 레이드처럼 파티를 새로 짜지 않는다). 아레나
+// 전체가 8x8(64칸) 격자로 나뉘어 있고, B를 누르면 뜨는 목록에서 울타리/
+// 제작대/용광로를 고른 뒤 내 근처 칸을 클릭해서 짓는다. 제작대 근처에서는
+// 목록 맨 아래에 터렛이 추가로 뜬다. 콤보/스킬/궁극기 같은 캐릭터별 특수
+// 전투는 재현하지 않고 (서버의 resolveAttack이 계산하는) 평범한 부채꼴
+// 근접 공격 하나만 쓴다.
 //
 // main.js 뒤에 로드되므로 그 파일의 전역(socket, showScreen, gameData,
 // charIconBackground, keys, autoAimEnabled, hpBarLabel, equipBonusOf,
@@ -35,6 +37,9 @@ const zombieWoodCountEl = document.getElementById('zombie-wood-count');
 const zombieCoinCountEl = document.getElementById('zombie-coin-count');
 const zombieBuildHintEl = document.getElementById('zombie-build-hint');
 const zombieBuildBtn = document.getElementById('zombie-build-btn');
+const zombieBuildMenuEl = document.getElementById('zombie-build-menu');
+const zombieBuildItemEls = [...document.querySelectorAll('.zombie-build-item')];
+const zombieBuildTurretItemEl = document.getElementById('zombie-build-turret');
 const zombieMyHpBar = document.getElementById('zombie-my-hp-bar');
 const zombieMyHpText = document.getElementById('zombie-my-hp-text');
 const zombiePartnerHpContainer = document.getElementById('zombie-partner-hp-container');
@@ -43,13 +48,15 @@ const zombiePartnerHpText = document.getElementById('zombie-partner-hp-text');
 
 let zombiePhase = 'idle';   // 'idle' | 'searching' | 'matched'
 let zombieMyReady = false;
-let zombieState = null;     // 서버의 최신 zombieTick/zombieStarted
+let zombieState = null;     // 서버의 최신 zombieTick/zombieStarted (players/zombies/grid/wave/...)
 let zombieTrees = {};       // treeId -> {x, y, hitsLeft} (틱에 안 실려서 따로 관리)
 let zombieLoopHandle = null;
 let zombieMouseX = null, zombieMouseY = null;
 let zombieLocal = null;     // 내 캐릭터의 로컬 예측 { x, y, facing, lastAttackClientTime, attackEffectUntil }
 let zombieLastMoveEmit = 0;
 let zombieBuildHintTimer = null;
+let zombiePendingBuildType = null; // B 메뉴에서 고른 것. null이면 그냥 공격 모드.
+let zombieTurretFlashes = [];      // [{fromX,fromY,toX,toY,until}] 터렛이 쏜 순간의 반짝임
 
 function zombieHintShow(text) {
     zombieBuildHintEl.textContent = text;
@@ -153,7 +160,7 @@ function zombieMyStats() {
 
 socket.on('zombieStarted', (data) => {
     zombieState = {
-        players: data.players, zombies: {}, fences: data.fences || {},
+        players: data.players, zombies: {}, grid: data.grid || new Array(64).fill(null),
         wave: data.wave, wavePhase: data.wavePhase, phaseUntil: data.phaseUntil,
         pendingSpawns: 0, wood: data.wood, coins: data.coins
     };
@@ -168,6 +175,9 @@ socket.on('zombieStarted', (data) => {
         zombieLocal.equipSpeed = b.speed;
         zombieLocal.equipCooldown = b.cooldown;
     }
+    zombiePendingBuildType = null;
+    zombieTurretFlashes = [];
+    closeZombieBuildMenu();
     resetZombieActions();
     zombiePhase = 'idle';
     zombieFightSettings.classList.add('hidden');
@@ -181,7 +191,7 @@ socket.on('zombieTick', (data) => {
     if (!zombieState) return;
     zombieState.players = data.players;
     zombieState.zombies = data.zombies || {};
-    zombieState.fences = data.fences || {};
+    zombieState.grid = data.grid || zombieState.grid;
     zombieState.wave = data.wave;
     zombieState.wavePhase = data.wavePhase;
     zombieState.phaseUntil = data.phaseUntil;
@@ -200,11 +210,20 @@ socket.on('zombieTreeChopped', ({ id, gone, hitsLeft }) => {
     else if (zombieTrees[id]) zombieTrees[id].hitsLeft = hitsLeft;
 });
 
+socket.on('zombieTurretFired', ({ index, targetId }) => {
+    const target = zombieState && zombieState.zombies[targetId];
+    if (!target) return;
+    const center = SHARED.zombieCellCenter(index);
+    zombieTurretFlashes.push({ fromX: center.x, fromY: center.y, toX: target.x, toY: target.y, until: performance.now() + 140 });
+});
+
 socket.on('zombieResult', ({ wave, coins }) => {
     stopZombieLoop();
     zombieState = null;
     zombieTrees = {};
     zombieLocal = null;
+    zombiePendingBuildType = null;
+    closeZombieBuildMenu();
     const waveReached = Math.max(1, wave);
     const bag = SHARED.zombieWaveReward(waveReached);
     if (coins) bag.coins = (bag.coins || 0) + coins;
@@ -226,6 +245,8 @@ zombieFightLeaveBtn.addEventListener('click', () => {
     zombieState = null;
     zombieTrees = {};
     zombieLocal = null;
+    zombiePendingBuildType = null;
+    closeZombieBuildMenu();
     resetZombieActions();
     showScreen('zombieDetail');
 });
@@ -261,32 +282,58 @@ function updateZombieHpBars() {
 }
 
 // ---------------- 건설 ----------------
-// 내 위치에서 지을 수 있는 범위 안에 있는 빈 칸 중 가장 가까운 것을 찾는다.
-function zombieNearestBuildableSlot() {
-    if (!zombieLocal) return -1;
-    let best = -1, bestDist = Infinity;
-    SHARED.ZOMBIE_WALL_SLOT_POSITIONS.forEach((pos, i) => {
-        if (zombieState.fences[i]) return;
-        const d = Math.hypot(zombieLocal.x - pos.x, zombieLocal.y - pos.y);
-        if (d <= SHARED.ZOMBIE_BUILD_RANGE && d < bestDist) { bestDist = d; best = i; }
-    });
-    return best;
+// 지금 내가 서 있는 칸 기준으로 지을 수 있는 이웃 칸들.
+function zombieMyBuildableCells() {
+    if (!zombieLocal) return [];
+    const { col, row } = SHARED.zombieColRowOfPos(zombieLocal.x, zombieLocal.y);
+    return SHARED.zombieBuildableCellsFrom(col, row);
 }
 
-function tryZombieBuild() {
-    if (!zombieState || !zombieLocal) return;
-    if (zombieState.wood < SHARED.ZOMBIE_FENCE_WOOD_COST) {
-        zombieHintShow(`목재가 부족합니다 (🪵 ${zombieState.wood}/${SHARED.ZOMBIE_FENCE_WOOD_COST})`);
-        return;
-    }
-    const slot = zombieNearestBuildableSlot();
-    if (slot < 0) {
-        zombieHintShow('울타리 칸에 더 가까이 가세요');
-        return;
-    }
-    socket.emit('zombieBuildWall', { slot });
+// 근처에 이미 지어 둔 제작대가 있어야 터렛 항목이 뜬다.
+function zombieNearWorkbench() {
+    if (!zombieState) return false;
+    return zombieMyBuildableCells().some(i => zombieState.grid[i] && zombieState.grid[i].type === 'workbench');
 }
-zombieBuildBtn.addEventListener('click', tryZombieBuild);
+
+function openZombieBuildMenu() {
+    if (!zombieState) return;
+    zombieBuildTurretItemEl.classList.toggle('hidden', !zombieNearWorkbench());
+    zombieBuildMenuEl.classList.remove('hidden');
+}
+function closeZombieBuildMenu() {
+    zombieBuildMenuEl.classList.add('hidden');
+    zombieBuildItemEls.forEach(el => el.classList.remove('selected'));
+}
+function toggleZombieBuildMenu() {
+    if (zombieBuildMenuEl.classList.contains('hidden')) openZombieBuildMenu();
+    else { closeZombieBuildMenu(); zombiePendingBuildType = null; }
+}
+zombieBuildBtn.addEventListener('click', toggleZombieBuildMenu);
+
+zombieBuildItemEls.forEach(el => {
+    el.addEventListener('click', () => {
+        const type = el.dataset.type;
+        const cost = SHARED.ZOMBIE_BUILDABLES[type] || SHARED.ZOMBIE_TURRET_DEF;
+        if (zombieState.wood < cost.wood) {
+            zombieHintShow(`목재가 부족합니다 (🪵 ${zombieState.wood}/${cost.wood})`);
+            return;
+        }
+        zombiePendingBuildType = type;
+        zombieBuildItemEls.forEach(b => b.classList.toggle('selected', b === el));
+        zombieHintShow('지을 칸을 클릭하세요 (Esc로 취소)');
+    });
+});
+
+function cancelZombiePendingBuild() {
+    zombiePendingBuildType = null;
+    closeZombieBuildMenu();
+}
+
+document.addEventListener('keydown', (e) => {
+    if (!zombieState || screens.zombieFight.classList.contains('hidden')) return;
+    if (e.key === 'b' || e.key === 'B') toggleZombieBuildMenu();
+    else if (e.key === 'Escape') cancelZombiePendingBuild();
+});
 
 // ---------------- 입력 ----------------
 zombieCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -296,14 +343,34 @@ zombieCanvas.addEventListener('mousemove', (e) => {
     zombieMouseY = (e.clientY - rect.top) * (zombieCanvas.height / rect.height);
 });
 zombieCanvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-        if (autoAimActive()) fireZombieAutoAimedAttack();
-        else tryZombieAttack();
-    }
+    if (e.button === 2) { cancelZombiePendingBuild(); return; }
+    if (e.button !== 0) return;
+    if (zombiePendingBuildType) { tryZombiePlaceAtMouse(); return; }
+    if (autoAimActive()) fireZombieAutoAimedAttack();
+    else tryZombieAttack();
 });
 
 function zombieWorldFromMouse() {
     return { x: zombieMouseX - zombieCanvas.width / 2, y: zombieMouseY - zombieCanvas.height / 2 };
+}
+
+function tryZombiePlaceAtMouse() {
+    if (!zombieState || zombieMouseX === null) return;
+    const w = zombieWorldFromMouse();
+    if (Math.abs(w.x) > SHARED.ZOMBIE_ARENA_HALF || Math.abs(w.y) > SHARED.ZOMBIE_ARENA_HALF) return;
+    const index = SHARED.zombieCellIndexOfPos(w.x, w.y);
+    const buildable = zombieMyBuildableCells();
+    if (!buildable.includes(index)) {
+        zombieHintShow('내 근처 칸에만 지을 수 있어요');
+        return;
+    }
+    if (zombieState.grid[index]) {
+        zombieHintShow('이미 지어진 칸입니다');
+        return;
+    }
+    socket.emit('zombieBuild', { type: zombiePendingBuildType, index });
+    zombiePendingBuildType = null;
+    closeZombieBuildMenu();
 }
 
 function tryZombieAttack() {
@@ -334,11 +401,6 @@ function fireZombieAutoAimedAttack() {
     tryZombieAttack();
 }
 
-document.addEventListener('keydown', (e) => {
-    if (!zombieState || screens.zombieFight.classList.contains('hidden')) return;
-    if (e.key === 'b' || e.key === 'B') tryZombieBuild();
-});
-
 // ---------------- 루프 + 렌더 ----------------
 function startZombieLoop() {
     stopZombieLoop();
@@ -361,13 +423,9 @@ function zombieFrame() {
         if (keys['a'] || keys['A']) dx -= speed;
         if (keys['d'] || keys['D']) dx += speed;
         if (dx !== 0 || dy !== 0) {
-            let nx = zombieLocal.x + dx, ny = zombieLocal.y + dy;
-            const dist = Math.hypot(nx, ny);
-            if (dist > SHARED.ZOMBIE_ARENA_RADIUS) {
-                const scale = SHARED.ZOMBIE_ARENA_RADIUS / dist;
-                nx *= scale; ny *= scale;
-            }
-            zombieLocal.x = nx; zombieLocal.y = ny;
+            const H = SHARED.ZOMBIE_ARENA_HALF;
+            zombieLocal.x = Math.max(-H, Math.min(H, zombieLocal.x + dx));
+            zombieLocal.y = Math.max(-H, Math.min(H, zombieLocal.y + dy));
         }
         if (autoAimEnabled) {
             const target = zombieNearestZombieWorldPos();
@@ -386,31 +444,58 @@ function zombieFrame() {
     zombieLoopHandle = requestAnimationFrame(zombieFrame);
 }
 
-function zombieDrawSlot(ctx, pos, index, fence, now) {
+const ZOMBIE_STRUCT_COLORS = {
+    fence: { fill: '#8d6238', stroke: '#5a3d21' },
+    workbench: { fill: '#7f6a4f', stroke: '#4a3c2a' },
+    furnace: { fill: '#5c5c5c', stroke: '#2e2e2e' },
+    turret: { fill: '#34495e', stroke: '#1b2733' }
+};
+
+function zombieDrawGrid(ctx, now) {
+    const H = SHARED.ZOMBIE_ARENA_HALF, C = SHARED.ZOMBIE_CELL_SIZE, N = SHARED.ZOMBIE_GRID_SIZE;
     ctx.save();
-    ctx.translate(pos.x, pos.y);
-    if (fence) {
-        ctx.beginPath();
-        ctx.arc(0, 0, SHARED.ZOMBIE_SLOT_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = '#8d6238';
-        ctx.fill();
-        ctx.strokeStyle = '#5a3d21';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        const pct = Math.max(0, fence.hp / fence.maxHp);
-        ctx.fillStyle = '#c0392b';
-        ctx.fillRect(-16, -SHARED.ZOMBIE_SLOT_RADIUS - 10, 32, 4);
-        ctx.fillStyle = '#2ecc71';
-        ctx.fillRect(-16, -SHARED.ZOMBIE_SLOT_RADIUS - 10, 32 * pct, 4);
-    } else {
-        const inRange = zombieLocal && Math.hypot(zombieLocal.x - pos.x, zombieLocal.y - pos.y) <= SHARED.ZOMBIE_BUILD_RANGE;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.arc(0, 0, SHARED.ZOMBIE_SLOT_RADIUS, 0, Math.PI * 2);
-        ctx.strokeStyle = inRange ? 'rgba(241, 196, 15, 0.9)' : 'rgba(255, 255, 255, 0.35)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= N; i++) {
+        const p = -H + i * C;
+        ctx.beginPath(); ctx.moveTo(p, -H); ctx.lineTo(p, H); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-H, p); ctx.lineTo(H, p); ctx.stroke();
+    }
+
+    const buildable = (zombiePendingBuildType && zombieLocal) ? zombieMyBuildableCells() : [];
+
+    for (let index = 0; index < N * N; index++) {
+        const cell = zombieState.grid[index];
+        const center = SHARED.zombieCellCenter(index);
+        if (cell) {
+            const skin = ZOMBIE_STRUCT_COLORS[cell.type] || ZOMBIE_STRUCT_COLORS.fence;
+            const half = C * 0.38;
+            ctx.fillStyle = skin.fill;
+            ctx.fillRect(center.x - half, center.y - half, half * 2, half * 2);
+            ctx.strokeStyle = skin.stroke;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(center.x - half, center.y - half, half * 2, half * 2);
+            if (cell.type === 'turret') {
+                ctx.fillStyle = '#ecf0f1';
+                ctx.font = 'bold 16px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('🔫', center.x, center.y + 6);
+            }
+            const pct = Math.max(0, cell.hp / cell.maxHp);
+            ctx.fillStyle = '#7f1d1d';
+            ctx.fillRect(center.x - half, center.y - half - 8, half * 2, 4);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(center.x - half, center.y - half - 8, half * 2 * pct, 4);
+        } else if (buildable.includes(index)) {
+            const half = C * 0.42;
+            ctx.fillStyle = 'rgba(241, 196, 15, 0.22)';
+            ctx.fillRect(center.x - half, center.y - half, half * 2, half * 2);
+            ctx.strokeStyle = 'rgba(241, 196, 15, 0.85)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(center.x - half, center.y - half, half * 2, half * 2);
+            ctx.setLineDash([]);
+        }
     }
     ctx.restore();
 }
@@ -500,30 +585,32 @@ function zombieRender(now) {
     zombieCtx.save();
     zombieCtx.translate(zombieCanvas.width / 2, zombieCanvas.height / 2);
 
-    const R = SHARED.ZOMBIE_ARENA_RADIUS;
-    zombieCtx.beginPath();
-    zombieCtx.arc(0, 0, R, 0, Math.PI * 2);
+    const H = SHARED.ZOMBIE_ARENA_HALF;
     zombieCtx.fillStyle = '#2a3320';
-    zombieCtx.fill();
+    zombieCtx.fillRect(-H, -H, H * 2, H * 2);
     zombieCtx.strokeStyle = 'rgba(241, 196, 15, 0.4)';
     zombieCtx.lineWidth = 4;
-    zombieCtx.stroke();
-
-    zombieCtx.setLineDash([8, 8]);
-    zombieCtx.beginPath();
-    zombieCtx.arc(0, 0, SHARED.ZOMBIE_WALL_RING_RADIUS, 0, Math.PI * 2);
-    zombieCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    zombieCtx.lineWidth = 2;
-    zombieCtx.stroke();
-    zombieCtx.setLineDash([]);
+    zombieCtx.strokeRect(-H, -H, H * 2, H * 2);
 
     if (!zombieState) { zombieCtx.restore(); return; }
 
+    zombieDrawGrid(zombieCtx, now);
     Object.values(zombieTrees).forEach(t => zombieDrawTree(zombieCtx, t));
-    SHARED.ZOMBIE_WALL_SLOT_POSITIONS.forEach((pos, i) => zombieDrawSlot(zombieCtx, pos, i, zombieState.fences[i], now));
     Object.values(zombieState.zombies).forEach(z => zombieDrawMob(zombieCtx, z));
     Object.entries(zombieState.players).forEach(([id, p]) => {
         zombieDrawPlayer(zombieCtx, p, id === socket.id, now);
+    });
+
+    zombieTurretFlashes = zombieTurretFlashes.filter(f => now < f.until);
+    zombieTurretFlashes.forEach(f => {
+        zombieCtx.save();
+        zombieCtx.strokeStyle = 'rgba(255, 220, 120, 0.9)';
+        zombieCtx.lineWidth = 2;
+        zombieCtx.beginPath();
+        zombieCtx.moveTo(f.fromX, f.fromY);
+        zombieCtx.lineTo(f.toX, f.toY);
+        zombieCtx.stroke();
+        zombieCtx.restore();
     });
 
     zombieCtx.restore();

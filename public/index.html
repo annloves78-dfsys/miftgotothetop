@@ -647,8 +647,15 @@
             <div class="hp-label">파트너</div>
             <div class="hp-bar-bg"><div id="zombie-partner-hp-bar" class="hp-bar-fill partner"></div><span id="zombie-partner-hp-text" class="hp-bar-text"></span></div>
         </div>
-        <canvas id="zombieCanvas" width="960" height="680"></canvas>
+        <canvas id="zombieCanvas" width="900" height="900"></canvas>
         <button id="zombie-build-btn" class="mc-btn zombie-build-btn">🔨 건설 (B)</button>
+        <!-- B를 누르면 뜨는 세로 목록. 터렛은 근처에 제작대가 있을 때만 보인다. -->
+        <div id="zombie-build-menu" class="zombie-build-menu hidden">
+            <button id="zombie-build-fence" class="zombie-build-item" data-type="fence">🧱 울타리 <span class="zombie-build-cost">5</span></button>
+            <button id="zombie-build-workbench" class="zombie-build-item" data-type="workbench">🛠 제작대 <span class="zombie-build-cost">8</span></button>
+            <button id="zombie-build-furnace" class="zombie-build-item" data-type="furnace">🔥 용광로 <span class="zombie-build-cost">8</span></button>
+            <button id="zombie-build-turret" class="zombie-build-item hidden" data-type="turret">🔫 터렛 <span class="zombie-build-cost">15</span></button>
+        </div>
     </div>
 
     <!-- Fight -->

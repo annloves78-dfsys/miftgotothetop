@@ -3514,4 +3514,45 @@ body.mc-on .sbb-name { font-size: 14px; }
 }
 
 body.mc-on .zombie-build-btn { display: none; }
+
+.zombie-build-menu {
+    position: absolute;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 13;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(20, 24, 32, 0.85);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.zombie-build-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 160px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.zombie-build-item:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+.zombie-build-item.selected {
+    border-color: #f1c40f;
+    background: rgba(241, 196, 15, 0.25);
+}
+.zombie-build-cost {
+    color: #f1c40f;
+}
 body.mc-on .sbb-track { height: 16px; }

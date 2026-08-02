@@ -3935,20 +3935,20 @@ function computeStockPrices() {
 }
 
 // ==================== 좀비막기 ====================
-// 원형 아레나 한가운데서 파티가 몰려오는 좀비 웨이브를 막아내는 생존 모드.
+// 정사각형 아레나에서 파티가 몰려오는 좀비 웨이브를 막아내는 생존 모드.
 // 보스 레이드처럼 캐릭터 하나(장비 포함)로 1~2인이 함께 하지만, 상대는 정해진
-// 패턴을 쓰는 보스가 아니라 웨이브마다 불어나는 좀비 무리다. 준비 시간에
-// 근처 나무를 베어 목재를 모으고, 그 목재로 링 위의 울타리 칸을 채워 좀비의
-// 진입을 막는다. 좀비를 잡으면 코인이 나온다. 파티 전원이 쓰러지면 그때까지
-// 버틴 웨이브 수만큼 보상을 받는다 -- 이기고 지는 모드가 아니라 얼마나 오래
+// 패턴을 쓰는 보스가 아니라 웨이브마다 불어나는 좀비 무리다. 아레나 전체를
+// 8x8(64칸) 격자로 나눠 두고, 준비 시간에 나무를 베어 모은 목재로 그 격자
+// 위 아무 칸에나(내 근처 칸만) 울타리/제작대/용광로를 짓는다. 제작대 근처에서는
+// 나무만으로 자동 공격 터렛도 만들 수 있다. 좀비는 이 칸들을 장애물 삼아
+// 제대로 길을 찾아 우회하고, 우회할 길이 아예 없을 때만 막고 있는 구조물을
+// 부순다. 좀비를 잡으면 코인이 나오고, 파티 전원이 쓰러지면 그때까지 버틴
+// 웨이브 수만큼 보상을 받는다 -- 이기고 지는 모드가 아니라 얼마나 오래
 // 버티는지가 전부다.
-const ZOMBIE_ARENA_RADIUS = 420;
-const ZOMBIE_WALL_RING_RADIUS = 140; // 울타리 칸들이 놓이는 원의 반지름
-const ZOMBIE_WALL_SLOTS = 10; // 링 위의 칸 개수 (36도 간격)
-const ZOMBIE_FENCE_HP = 40;
-const ZOMBIE_FENCE_WOOD_COST = 5;
-const ZOMBIE_BUILD_RANGE = 70; // 이 거리 안에 있어야 그 칸에 지을 수 있다
-const ZOMBIE_SLOT_RADIUS = 14; // 울타리 한 칸의 충돌 반지름
+const ZOMBIE_GRID_SIZE = 8; // 8x8 = 64칸
+const ZOMBIE_ARENA_HALF = 420; // 정사각형 아레나 한 변의 절반 길이
+const ZOMBIE_CELL_SIZE = (ZOMBIE_ARENA_HALF * 2) / ZOMBIE_GRID_SIZE;
+const ZOMBIE_BUILD_RANGE_CELLS = 1; // 내가 있는 칸의 8방향 이웃까지만 건설 가능
 
 const ZOMBIE_MAX_TREES = 4;
 const ZOMBIE_TREE_HITS = 3; // 나무 한 그루를 벨 때 필요한 타격 수
@@ -3959,27 +3959,56 @@ const ZOMBIE_TREE_RADIUS = 22;
 const ZOMBIE_PREP_MS = 8000; // 웨이브 사이 준비(건설) 시간
 const ZOMBIE_COIN_PER_KILL = 3;
 
-// 링 위 칸들의 좌표. 인덱스는 곧 "몇 시 방향"에 해당한다.
-function zombieWallSlotPositions() {
+// 지을 수 있는 것들. 목재만 있으면 되고, 전부 격자 한 칸을 통째로 막는
+// 장애물이다. 용광로는 지금은 자리만 차지하는 장식/보류용 (제련 기능 없음).
+const ZOMBIE_BUILDABLES = {
+    fence: { name: '울타리', icon: '🧱', wood: 5, hp: 40 },
+    workbench: { name: '제작대', icon: '🛠', wood: 8, hp: 30 },
+    furnace: { name: '용광로', icon: '🔥', wood: 8, hp: 30 }
+};
+// 터렛은 목록에는 안 뜨고, 이미 지어 둔 제작대 근처에서만 만들 수 있다.
+// 다른 건조물처럼 칸을 막고, 추가로 가장 가까운 좀비를 자동으로 쏜다.
+const ZOMBIE_TURRET_DEF = {
+    name: '터렛', icon: '🔫', wood: 15, hp: 30,
+    range: 200, damage: 4, attackCooldown: 600
+};
+
+function zombieCellIndex(col, row) { return row * ZOMBIE_GRID_SIZE + col; }
+function zombieCellColRow(index) {
+    return { col: index % ZOMBIE_GRID_SIZE, row: Math.floor(index / ZOMBIE_GRID_SIZE) };
+}
+function zombieCellCenter(index) {
+    const { col, row } = zombieCellColRow(index);
+    return {
+        x: -ZOMBIE_ARENA_HALF + col * ZOMBIE_CELL_SIZE + ZOMBIE_CELL_SIZE / 2,
+        y: -ZOMBIE_ARENA_HALF + row * ZOMBIE_CELL_SIZE + ZOMBIE_CELL_SIZE / 2
+    };
+}
+// 아레나 밖 좌표가 들어와도(스폰 직후 좀비 등) 가장 가까운 가장자리 칸으로 붙인다.
+function zombieColRowOfPos(x, y) {
+    const col = Math.floor((x + ZOMBIE_ARENA_HALF) / ZOMBIE_CELL_SIZE);
+    const row = Math.floor((y + ZOMBIE_ARENA_HALF) / ZOMBIE_CELL_SIZE);
+    return {
+        col: Math.max(0, Math.min(ZOMBIE_GRID_SIZE - 1, col)),
+        row: Math.max(0, Math.min(ZOMBIE_GRID_SIZE - 1, row))
+    };
+}
+function zombieCellIndexOfPos(x, y) {
+    const { col, row } = zombieColRowOfPos(x, y);
+    return zombieCellIndex(col, row);
+}
+// 특정 칸을 기준으로 지을 수 있는 이웃 칸들 (자기 칸 자신은 제외).
+function zombieBuildableCellsFrom(col, row) {
     const out = [];
-    for (let i = 0; i < ZOMBIE_WALL_SLOTS; i++) {
-        const angle = (i / ZOMBIE_WALL_SLOTS) * Math.PI * 2;
-        out.push({ x: Math.cos(angle) * ZOMBIE_WALL_RING_RADIUS, y: Math.sin(angle) * ZOMBIE_WALL_RING_RADIUS, angle });
+    for (let dr = -ZOMBIE_BUILD_RANGE_CELLS; dr <= ZOMBIE_BUILD_RANGE_CELLS; dr++) {
+        for (let dc = -ZOMBIE_BUILD_RANGE_CELLS; dc <= ZOMBIE_BUILD_RANGE_CELLS; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const c = col + dc, r = row + dr;
+            if (c < 0 || c >= ZOMBIE_GRID_SIZE || r < 0 || r >= ZOMBIE_GRID_SIZE) continue;
+            out.push(zombieCellIndex(c, r));
+        }
     }
     return out;
-}
-const ZOMBIE_WALL_SLOT_POSITIONS = zombieWallSlotPositions();
-
-// 좀비가 어느 방향에서 스폰됐는지로, 뚫어야 하는 칸을 미리 하나 정해 둔다
-// (스폰 각도와 가장 가까운 칸).
-function zombieNearestSlotIndex(angle) {
-    let best = 0, bestDiff = Infinity;
-    ZOMBIE_WALL_SLOT_POSITIONS.forEach((s, i) => {
-        let diff = Math.abs(s.angle - angle);
-        if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        if (diff < bestDiff) { bestDiff = diff; best = i; }
-    });
-    return best;
 }
 
 // 좀비 종류. unlockWave부터 그 웨이브 구성에 섞여 나오기 시작한다.
@@ -3989,17 +4018,17 @@ const ZOMBIE_DEFS = {
     shambler: {
         name: '느림보 좀비', unlockWave: 1, radius: 18, color: '#6b8e4e',
         hp: 18, speed: 1.1, attackDamage: 5, attackRange: 34, attackCooldown: 900,
-        wallDamage: 5
+        structureDamage: 5
     },
     runner: {
         name: '재빠른 좀비', unlockWave: 3, radius: 15, color: '#c0392b',
         hp: 12, speed: 2.2, attackDamage: 3, attackRange: 30, attackCooldown: 700,
-        wallDamage: 3
+        structureDamage: 3
     },
     brute: {
         name: '덩치 좀비', unlockWave: 6, radius: 26, color: '#4a4a4a',
         hp: 70, speed: 0.7, attackDamage: 12, attackRange: 42, attackCooldown: 1200,
-        wallDamage: 14
+        structureDamage: 14
     }
 };
 
@@ -4039,7 +4068,7 @@ function zombieWaveReward(wave) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_ARENA_RADIUS, ZOMBIE_WALL_RING_RADIUS, ZOMBIE_WALL_SLOTS, ZOMBIE_FENCE_HP, ZOMBIE_FENCE_WOOD_COST, ZOMBIE_BUILD_RANGE, ZOMBIE_SLOT_RADIUS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_WALL_SLOT_POSITIONS, zombieNearestSlotIndex, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_SIZE, ZOMBIE_ARENA_HALF, ZOMBIE_CELL_SIZE, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_TURRET_DEF, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_ARENA_RADIUS, ZOMBIE_WALL_RING_RADIUS, ZOMBIE_WALL_SLOTS, ZOMBIE_FENCE_HP, ZOMBIE_FENCE_WOOD_COST, ZOMBIE_BUILD_RANGE, ZOMBIE_SLOT_RADIUS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_WALL_SLOT_POSITIONS, zombieNearestSlotIndex, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_SIZE, ZOMBIE_ARENA_HALF, ZOMBIE_CELL_SIZE, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_TURRET_DEF, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 }

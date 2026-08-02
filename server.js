@@ -13,10 +13,11 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
     awakenBossSummonCount, awakenBossSummonHealth, awakenMinionMonsterType,
     boss3PhaseFor, boss3PatternStat,
-    ZOMBIE_ARENA_RADIUS, ZOMBIE_WALL_RING_RADIUS, ZOMBIE_WALL_SLOTS, ZOMBIE_FENCE_HP, ZOMBIE_FENCE_WOOD_COST,
-    ZOMBIE_BUILD_RANGE, ZOMBIE_SLOT_RADIUS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT,
-    ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_WALL_SLOT_POSITIONS,
-    zombieNearestSlotIndex, ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
+    ZOMBIE_GRID_SIZE, ZOMBIE_ARENA_HALF, ZOMBIE_CELL_SIZE, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES,
+    ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS,
+    ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_TURRET_DEF, zombieCellIndex, zombieCellColRow,
+    zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
+    ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
     zombieWaveReward } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -4202,8 +4203,11 @@ function guestTickPayload(room) {
 // ==================== 좀비막기 ====================
 // 다른 두 레이드처럼 rooms[roomId] 하나를 쓰지만, 상대는 보스가 아니라
 // 웨이브마다 불어나는 좀비 무리다. tickMonsterSet의 텔레그래프/카이팅 같은
-// 정교한 상태기계는 필요 없어서 좀비 전용으로 훨씬 단순한 걷기+근접 로직을
-// 새로 둔다 (tickZombie).
+// 정교한 상태기계는 필요 없어서 좀비 전용으로 훨씬 단순한 길찾기+근접 로직을
+// 새로 둔다. 아레나는 8x8(64칸) 격자(room.grid, 인덱스 0~63)로 나뉘어 있고,
+// 칸에 지어진 것(울타리/제작대/용광로/터렛)은 전부 통째로 막힌 장애물이다.
+// 좀비는 그 장애물들을 피해 실제로 길을 찾아 우회하고(zombieBuildFlowField),
+// 우회할 길이 아예 없을 때만 눈앞의 장애물을 두드려 부순다.
 function findOpenZombieRoom() {
     for (const [roomId, room] of Object.entries(rooms)) {
         if (room.kind === 'zombie' && room.state === 'waiting' && !room.solo && Object.keys(room.players).length < 2) {
@@ -4212,6 +4216,8 @@ function findOpenZombieRoom() {
     }
     return null;
 }
+
+const ZOMBIE_CELL_COUNT = ZOMBIE_GRID_SIZE * ZOMBIE_GRID_SIZE;
 
 function createZombieRoom(solo) {
     const roomId = `zombie_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -4227,12 +4233,13 @@ function createZombieRoom(solo) {
         nextSpawnAt: 0,
         zombies: {},
         nextZombieId: 0,
-        fences: {}, // slotIndex -> { hp, maxHp }
+        grid: new Array(ZOMBIE_CELL_COUNT).fill(null), // index -> { type, hp, maxHp, nextAttackAt? }
         trees: {}, // treeId -> { x, y, hitsLeft }
         nextTreeId: 0,
         nextTreeSpawnAt: 0,
         wood: 0, // 파티 공용 자원
         coins: 0, // 파티 공용, 클리어(사망) 시 실제 재화로 전환됨
+        zombieFields: [], // 매 틱 다시 계산되는 길찾기 거리장 (recomputeZombieFields)
         loopHandle: null
     };
     return roomId;
@@ -4260,18 +4267,19 @@ function publicZombiePlayers(room) {
     return out;
 }
 
-// 링 바깥, 서로 너무 붙지 않는 자리에 나무를 하나 심는다. 20번 시도해도
+// 아레나 안, 서로 너무 붙지 않는 자리에 나무를 하나 심는다 (건물 칸과는
+// 무관하게 자유 좌표를 쓴다 -- 나무는 격자에 묶이지 않는다). 20번 시도해도
 // 자리가 안 나면 아무 데나 대충 심는다 -- 게임을 멈추는 것보단 낫다.
 function randomZombieTreeSpot(room) {
+    const margin = 40;
     for (let attempt = 0; attempt < 20; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = ZOMBIE_WALL_RING_RADIUS + 50 + Math.random() * (ZOMBIE_ARENA_RADIUS - ZOMBIE_WALL_RING_RADIUS - 90);
-        const x = Math.cos(angle) * dist, y = Math.sin(angle) * dist;
+        const x = -ZOMBIE_ARENA_HALF + margin + Math.random() * (ZOMBIE_ARENA_HALF * 2 - margin * 2);
+        const y = -ZOMBIE_ARENA_HALF + margin + Math.random() * (ZOMBIE_ARENA_HALF * 2 - margin * 2);
+        if (Math.hypot(x, y) < 110) continue; // 스폰 지점 바로 옆은 피한다
         const tooClose = Object.values(room.trees).some(t => Math.hypot(t.x - x, t.y - y) < 70);
         if (!tooClose) return { x, y };
     }
-    const angle = Math.random() * Math.PI * 2;
-    return { x: Math.cos(angle) * (ZOMBIE_ARENA_RADIUS - 60), y: Math.sin(angle) * (ZOMBIE_ARENA_RADIUS - 60) };
+    return { x: ZOMBIE_ARENA_HALF - margin, y: 0 };
 }
 
 function spawnZombieTree(room) {
@@ -4293,7 +4301,7 @@ function startZombieFight(roomId) {
     room.wood = 0;
     room.coins = 0;
     room.zombies = {};
-    room.fences = {};
+    room.grid = new Array(ZOMBIE_CELL_COUNT).fill(null);
     room.trees = {};
     for (let i = 0; i < ZOMBIE_MAX_TREES; i++) spawnZombieTree(room);
 
@@ -4301,88 +4309,180 @@ function startZombieFight(roomId) {
         players: publicZombiePlayers(room),
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
         wood: room.wood, coins: room.coins,
-        trees: room.trees, fences: room.fences
+        trees: room.trees, grid: room.grid
     });
 
     room.loopHandle = setInterval(() => tickZombieRoom(roomId), 50);
 }
 
+// 좀비는 항상 정사각형 아레나 가장자리 중 한 곳에서 나타난다.
+function randomZombieSpawnPos() {
+    const side = Math.floor(Math.random() * 4);
+    const t = (Math.random() * 2 - 1) * ZOMBIE_ARENA_HALF;
+    if (side === 0) return { x: t, y: -ZOMBIE_ARENA_HALF };
+    if (side === 1) return { x: t, y: ZOMBIE_ARENA_HALF };
+    if (side === 2) return { x: -ZOMBIE_ARENA_HALF, y: t };
+    return { x: ZOMBIE_ARENA_HALF, y: t };
+}
+
 function spawnZombie(roomId, room, now) {
     const type = zombieRollTypeForWave(room.wave);
     const stats = zombieStatsForWave(type, room.wave);
-    const angle = Math.random() * Math.PI * 2;
-    const x = Math.cos(angle) * ZOMBIE_ARENA_RADIUS;
-    const y = Math.sin(angle) * ZOMBIE_ARENA_RADIUS;
-    const slot = zombieNearestSlotIndex(angle);
+    const pos = randomZombieSpawnPos();
     const id = `z${room.nextZombieId++}`;
     room.zombies[id] = {
-        type, x, y, hp: stats.hp, maxHp: stats.hp, slot,
-        passedGate: false, nextAttackAt: 0, facing: angle + Math.PI
+        type, x: pos.x, y: pos.y, hp: stats.hp, maxHp: stats.hp,
+        nextAttackAt: 0, facing: Math.atan2(-pos.y, -pos.x)
     };
     io.to(roomId).emit('zombieSpawned', { id, ...room.zombies[id] });
 }
 
-// 좀비 하나의 이동/공격. 자기 몫의 울타리 칸이 아직 살아 있으면 그쪽으로
-// 가서 두드리고, 뚫렸거나 애초에 없으면 가장 가까운 플레이어를 쫓는다.
+// BFS로 startIndex(플레이어가 서 있는 칸)에서부터 걸어갈 수 있는 모든 칸까지의
+// 거리와, 그 칸에서 한 걸음에 밟아야 할 다음 칸(next)을 함께 구한다. 이러면
+// 좀비 각자가 매번 길을 다시 찾을 필요 없이 next[내 칸]만 보면 된다.
+function zombieBuildFlowField(room, startIndex) {
+    const dist = new Array(ZOMBIE_CELL_COUNT).fill(Infinity);
+    const next = new Array(ZOMBIE_CELL_COUNT).fill(-1);
+    dist[startIndex] = 0;
+    const queue = [startIndex];
+    let qi = 0;
+    while (qi < queue.length) {
+        const cur = queue[qi++];
+        const { col, row } = zombieCellColRow(cur);
+        const neighbors = [[col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]];
+        for (const [c, r] of neighbors) {
+            if (c < 0 || c >= ZOMBIE_GRID_SIZE || r < 0 || r >= ZOMBIE_GRID_SIZE) continue;
+            const idx = zombieCellIndex(c, r);
+            if (dist[idx] !== Infinity) continue;
+            if (room.grid[idx]) continue; // 지어진 것이 있으면 지나갈 수 없다
+            dist[idx] = dist[cur] + 1;
+            next[idx] = cur; // idx 칸에서는 cur로 한 걸음 가면 시작점에 가까워진다
+            queue.push(idx);
+        }
+    }
+    return { dist, next };
+}
+
+// 살아있는 플레이어별로 하나씩(같은 칸이면 하나만) 거리장을 만들어 둔다.
+// 좀비 마릿수만큼 매번 새로 찾지 않고, 좀비는 이미 계산된 이 표만 읽는다.
+function recomputeZombieFields(room) {
+    const seen = new Set();
+    const fields = [];
+    for (const p of Object.values(room.players)) {
+        if (!p.alive) continue;
+        const cellIdx = zombieCellIndexOfPos(p.x, p.y);
+        if (seen.has(cellIdx)) continue;
+        seen.add(cellIdx);
+        const field = zombieBuildFlowField(room, cellIdx);
+        fields.push({ playerX: p.x, playerY: p.y, dist: field.dist, next: field.next });
+    }
+    room.zombieFields = fields;
+}
+
+function damageZombieStructure(roomId, room, index, amount) {
+    const cell = room.grid[index];
+    if (!cell) return;
+    cell.hp -= amount;
+    if (cell.hp <= 0) {
+        room.grid[index] = null;
+        io.to(roomId).emit('zombieStructureBroken', { index });
+    } else {
+        io.to(roomId).emit('zombieHitStructure', { index, hp: cell.hp });
+    }
+}
+
+function zombieDamagePlayer(roomId, room, target, amount) {
+    target.hp = Math.max(0, target.hp - amount);
+    const pid = Object.keys(room.players).find(id => room.players[id] === target);
+    io.to(roomId).emit('zombiePlayerDamaged', { id: pid, hp: target.hp });
+    if (target.hp <= 0 && target.alive) {
+        target.alive = false;
+        io.to(roomId).emit('zombiePlayerDown', { id: pid });
+        checkZombieWipe(roomId, room);
+    }
+}
+
+// 좀비 하나의 이동/공격. 사거리 안이면 바로 때리고, 아니면 미리 계산된
+// 거리장을 따라 다음 칸으로 한 걸음 옮긴다. 갈 수 있는 길이 아예 없을 때만
+// (플레이어가 스스로를 완전히 막아 버렸을 때) 직선으로 다가가다 막히면
+// 그 자리의 건조물을 두드린다.
 function tickZombie(roomId, room, zid, z, alivePlayers, now) {
     const def = ZOMBIE_DEFS[z.type];
-    let targetX, targetY, targetRadius, fence = null;
-
-    if (!z.passedGate && room.fences[z.slot] && room.fences[z.slot].hp > 0) {
-        const slotPos = ZOMBIE_WALL_SLOT_POSITIONS[z.slot];
-        targetX = slotPos.x; targetY = slotPos.y; targetRadius = ZOMBIE_SLOT_RADIUS;
-        fence = room.fences[z.slot];
-    } else {
-        z.passedGate = true;
-        let nearest = null, nearestDist = Infinity;
-        for (const p of alivePlayers) {
-            const d = Math.hypot(p.x - z.x, p.y - z.y);
-            if (d < nearestDist) { nearestDist = d; nearest = p; }
-        }
-        if (!nearest) return;
-        targetX = nearest.x; targetY = nearest.y; targetRadius = PLAYER_RADIUS;
-    }
-
-    const dist = Math.hypot(targetX - z.x, targetY - z.y) || 0.001;
-    const reach = def.attackRange + targetRadius;
-    if (dist > reach) {
-        z.facing = Math.atan2(targetY - z.y, targetX - z.x);
-        const step = def.speed * 3; // px/tick, monsterSpeed의 관례와 맞춘 값
-        const move = Math.min(step, dist - reach + 1);
-        z.x += Math.cos(z.facing) * move;
-        z.y += Math.sin(z.facing) * move;
-        return;
-    }
-
-    if (now < z.nextAttackAt) return;
-    z.nextAttackAt = now + def.attackCooldown;
-
-    if (fence) {
-        fence.hp -= def.wallDamage;
-        if (fence.hp <= 0) {
-            delete room.fences[z.slot];
-            z.passedGate = true;
-            io.to(roomId).emit('zombieWallBroken', { slot: z.slot });
-        } else {
-            io.to(roomId).emit('zombieHitWall', { slot: z.slot, hp: fence.hp });
-        }
-        return;
-    }
-
     let nearest = null, nearestDist = Infinity;
     for (const p of alivePlayers) {
         const d = Math.hypot(p.x - z.x, p.y - z.y);
         if (d < nearestDist) { nearestDist = d; nearest = p; }
     }
-    if (!nearest || nearestDist > reach) return;
-    nearest.hp = Math.max(0, nearest.hp - def.attackDamage);
-    const pid = Object.keys(room.players).find(id => room.players[id] === nearest);
-    io.to(roomId).emit('zombiePlayerDamaged', { id: pid, hp: nearest.hp });
-    if (nearest.hp <= 0 && nearest.alive) {
-        nearest.alive = false;
-        io.to(roomId).emit('zombiePlayerDown', { id: pid });
-        checkZombieWipe(roomId, room);
+    if (!nearest) return;
+
+    const reach = def.attackRange + PLAYER_RADIUS;
+    if (nearestDist <= reach) {
+        if (now < z.nextAttackAt) return;
+        z.nextAttackAt = now + def.attackCooldown;
+        zombieDamagePlayer(roomId, room, nearest, def.attackDamage);
+        return;
     }
+
+    const myCell = zombieCellIndexOfPos(z.x, z.y);
+    let bestField = null, bestDist = Infinity;
+    for (const f of room.zombieFields) {
+        const d = f.dist[myCell];
+        if (d < bestDist) { bestDist = d; bestField = f; }
+    }
+
+    let dest;
+    if (bestField && bestDist !== Infinity) {
+        dest = bestDist <= 1
+            ? { x: bestField.playerX, y: bestField.playerY }
+            : zombieCellCenter(bestField.next[myCell]);
+    } else {
+        dest = { x: nearest.x, y: nearest.y };
+    }
+
+    z.facing = Math.atan2(dest.y - z.y, dest.x - z.x);
+    const dist = Math.hypot(dest.x - z.x, dest.y - z.y) || 0.001;
+    const step = def.speed * 3; // px/tick, monsterSpeed의 관례와 맞춘 값
+
+    // 갈 수 있는 길이 없어서 직선으로 다가가는 경우에만, 코앞이 막혀 있으면
+    // 이동 대신 그 칸을 두드린다.
+    if (!bestField || bestDist === Infinity) {
+        const aheadX = z.x + Math.cos(z.facing) * (def.radius + 12);
+        const aheadY = z.y + Math.sin(z.facing) * (def.radius + 12);
+        const aheadIdx = zombieCellIndexOfPos(aheadX, aheadY);
+        if (room.grid[aheadIdx]) {
+            if (now < z.nextAttackAt) return;
+            z.nextAttackAt = now + def.attackCooldown;
+            damageZombieStructure(roomId, room, aheadIdx, def.structureDamage);
+            return;
+        }
+    }
+
+    const move = Math.min(step, dist);
+    z.x += Math.cos(z.facing) * move;
+    z.y += Math.sin(z.facing) * move;
+}
+
+// 제작대 근처에서 지은 터렛의 자동 공격. 사거리 안의 가장 가까운 좀비를 쏜다.
+function tickZombieTurrets(roomId, room, now) {
+    room.grid.forEach((cell, index) => {
+        if (!cell || cell.type !== 'turret') return;
+        if (now < (cell.nextAttackAt || 0)) return;
+        const center = zombieCellCenter(index);
+        let nearestId = null, nearest = null, nearestDist = Infinity;
+        for (const [zid, z] of Object.entries(room.zombies)) {
+            const d = Math.hypot(z.x - center.x, z.y - center.y);
+            if (d < nearestDist) { nearestDist = d; nearest = z; nearestId = zid; }
+        }
+        if (!nearest || nearestDist > ZOMBIE_TURRET_DEF.range) return;
+        cell.nextAttackAt = now + ZOMBIE_TURRET_DEF.attackCooldown;
+        nearest.hp -= ZOMBIE_TURRET_DEF.damage;
+        io.to(roomId).emit('zombieTurretFired', { index, targetId: nearestId });
+        if (nearest.hp <= 0) {
+            delete room.zombies[nearestId];
+            room.coins += ZOMBIE_COIN_PER_KILL;
+            io.to(roomId).emit('zombieKilled', { id: nearestId, coins: room.coins });
+        }
+    });
 }
 
 function checkZombieWipe(roomId, room) {
@@ -4430,6 +4530,10 @@ function tickZombieRoom(roomId) {
         io.to(roomId).emit('zombieTreeSpawned', { id, ...room.trees[id] });
     }
 
+    recomputeZombieFields(room);
+    tickZombieTurrets(roomId, room, now);
+    if (!rooms[roomId]) return;
+
     for (const [zid, z] of Object.entries(room.zombies)) {
         tickZombie(roomId, room, zid, z, alivePlayers, now);
         if (!rooms[roomId]) return;
@@ -4438,7 +4542,7 @@ function tickZombieRoom(roomId) {
     io.to(roomId).emit('zombieTick', {
         players: publicZombiePlayers(room),
         zombies: room.zombies,
-        fences: room.fences,
+        grid: room.grid,
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
         pendingSpawns: room.pendingSpawns || 0,
         wood: room.wood, coins: room.coins
@@ -6617,7 +6721,7 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
         if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        if (Math.hypot(x, y) > ZOMBIE_ARENA_RADIUS + 1) return;
+        if (Math.abs(x) > ZOMBIE_ARENA_HALF + 1 || Math.abs(y) > ZOMBIE_ARENA_HALF + 1) return;
         p.x = x; p.y = y;
         if (typeof facing === 'number') p.facing = facing;
     });
@@ -6665,20 +6769,33 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('zombieBuildWall', ({ slot }) => {
+    // 울타리/제작대/용광로는 목록에서 고르면 바로 지을 수 있고, 터렛은 그
+    // 대상 칸의 건설 가능 범위(내 근처 이웃 칸) 안에 이미 지어 둔 제작대가
+    // 있어야만 만들 수 있다 -- "제작대에서" 만든다는 게 그런 뜻이라 목록에는
+    // 안 뜨고 이 조건이 될 때만 클라이언트가 보여준다 (여기서도 다시 검증).
+    socket.on('zombieBuild', ({ type, index }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'zombie' || room.state !== 'fighting') return;
         const p = room.players[socket.id];
         if (!p || !p.alive) return;
-        if (!Number.isInteger(slot) || slot < 0 || slot >= ZOMBIE_WALL_SLOTS) return;
-        if (room.fences[slot]) return;
-        if (room.wood < ZOMBIE_FENCE_WOOD_COST) return;
-        const pos = ZOMBIE_WALL_SLOT_POSITIONS[slot];
-        if (Math.hypot(p.x - pos.x, p.y - pos.y) > ZOMBIE_BUILD_RANGE) return;
-        room.wood -= ZOMBIE_FENCE_WOOD_COST;
-        room.fences[slot] = { hp: ZOMBIE_FENCE_HP, maxHp: ZOMBIE_FENCE_HP };
-        io.to(roomId).emit('zombieWallBuilt', { slot, wood: room.wood });
+        if (!Number.isInteger(index) || index < 0 || index >= ZOMBIE_CELL_COUNT) return;
+        if (room.grid[index]) return;
+
+        const def = type === 'turret' ? ZOMBIE_TURRET_DEF : ZOMBIE_BUILDABLES[type];
+        if (!def) return;
+        if (room.wood < def.wood) return;
+
+        const { col, row } = zombieColRowOfPos(p.x, p.y);
+        const buildable = zombieBuildableCellsFrom(col, row);
+        if (!buildable.includes(index)) return;
+        if (type === 'turret' && !buildable.some(i => room.grid[i] && room.grid[i].type === 'workbench')) return;
+
+        room.wood -= def.wood;
+        room.grid[index] = type === 'turret'
+            ? { type: 'turret', hp: def.hp, maxHp: def.hp, nextAttackAt: 0 }
+            : { type, hp: def.hp, maxHp: def.hp };
+        io.to(roomId).emit('zombieBuilt', { index, type, wood: room.wood });
     });
 
     socket.on('disconnect', () => {
