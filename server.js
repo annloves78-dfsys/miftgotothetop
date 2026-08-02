@@ -17,7 +17,8 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES,
     ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS,
     ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_WORKBENCH_ITEMS, ZOMBIE_MINER_ORE_INTERVAL_MS,
-    ZOMBIE_FURNACE_SMELT_MS, zombieAttackUpgradeCost, zombieCellIndex, zombieCellColRow,
+    ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT,
+    zombieAttackUpgradeCost, zombieCellIndex, zombieCellColRow,
     zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
     ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
     zombieWaveReward } = require('./public/js/shared.js');
@@ -4262,7 +4263,8 @@ function makeZombiePlayer(charType, equip, slotIndex) {
         facing: 0,
         hp: maxHp, maxHp,
         alive: true, ready: false,
-        lastAttackTime: 0
+        lastAttackTime: 0,
+        nextHouseHealAt: 0 // 집 위에 서 있을 때 다음 회복 시각
     };
 }
 
@@ -4510,6 +4512,18 @@ function tickZombieEconomy(room, now) {
     });
 }
 
+// 집 칸 위에 서 있는 살아있는 플레이어를 0.5초마다 1씩 회복시킨다.
+function tickZombieHouseHealing(room, now) {
+    for (const p of Object.values(room.players)) {
+        if (!p.alive || p.hp >= p.maxHp) continue;
+        const cell = room.grid[zombieCellIndexOfPos(p.x, p.y)];
+        if (!cell || cell.type !== 'house') continue;
+        if (now < (p.nextHouseHealAt || 0)) continue;
+        p.hp = Math.min(p.maxHp, p.hp + ZOMBIE_HOUSE_HEAL_AMOUNT);
+        p.nextHouseHealAt = now + ZOMBIE_HOUSE_HEAL_INTERVAL_MS;
+    }
+}
+
 function checkZombieWipe(roomId, room) {
     if (!Object.values(room.players).some(p => p.alive)) endZombieRoom(roomId);
 }
@@ -4559,6 +4573,7 @@ function tickZombieRoom(roomId) {
     tickZombieTurrets(roomId, room, now);
     if (!rooms[roomId]) return;
     tickZombieEconomy(room, now);
+    tickZombieHouseHealing(room, now);
 
     for (const [zid, z] of Object.entries(room.zombies)) {
         tickZombie(roomId, room, zid, z, alivePlayers, now);
