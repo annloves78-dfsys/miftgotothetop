@@ -1,7 +1,7 @@
 // ==================== 좀비막기 ====================
 // 가로로 긴 아레나에서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서 고른
 // 것을 그대로 쓴다(게스트 레이드처럼 파티를 새로 짜지 않는다). 아레나
-// 전체가 격자로 나뉘어 있고, B를 누르면 뜨는 목록에서 울타리/제작대/용광로/
+// 전체가 격자로 나뉘어 있고, F를 누르면 뜨는 목록에서 울타리/제작대/용광로/
 // 채굴기를 고른 뒤 내 근처 칸을 클릭해서 짓는다. 제작대 근처에서는 목록에
 // 터렛/강화대/강화 울타리/강화 터렛이 추가로 뜬다. 강화대를 지은 뒤 그걸
 // 클릭하면 코인으로 공격력을 강화하는 패널이 뜬다(이 강화는 이 판에서만
@@ -65,7 +65,7 @@ let zombieMouseX = null, zombieMouseY = null;
 let zombieLocal = null;     // 내 캐릭터의 로컬 예측 { x, y, facing, lastAttackClientTime, attackEffectUntil }
 let zombieLastMoveEmit = 0;
 let zombieBuildHintTimer = null;
-let zombiePendingBuildType = null; // B 메뉴에서 고른 것. null이면 그냥 공격 모드.
+let zombiePendingBuildType = null; // F 메뉴에서 고른 것. null이면 그냥 공격 모드.
 let zombieTurretFlashes = [];      // [{fromX,fromY,toX,toY,until}] 터렛이 쏜 순간의 반짝임
 
 function zombieHintShow(text) {
@@ -350,6 +350,8 @@ zombieBuildItemEls.forEach(el => {
         }
         zombiePendingBuildType = type;
         zombieBuildItemEls.forEach(b => b.classList.toggle('selected', b === el));
+        // 목록이 뜬 채로 있으면 지을 칸이 가려지니, 고르자마자 접는다.
+        zombieBuildMenuEl.classList.add('hidden');
         zombieHintShow('지을 칸을 클릭하세요 (Esc로 취소)');
     });
 });
@@ -385,7 +387,7 @@ function zombieNearbyUpgradeTableIndex() {
 
 document.addEventListener('keydown', (e) => {
     if (!zombieState || screens.zombieFight.classList.contains('hidden')) return;
-    if (e.key === 'b' || e.key === 'B') toggleZombieBuildMenu();
+    if (e.key === 'f' || e.key === 'F') toggleZombieBuildMenu();
     else if (e.key === 'Escape') { cancelZombiePendingBuild(); closeZombieUpgradePanel(); }
 });
 
