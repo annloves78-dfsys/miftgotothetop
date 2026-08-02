@@ -314,16 +314,17 @@ function zombieMyBuildableCells() {
     return SHARED.zombieBuildableCellsFrom(col, row);
 }
 
-// 근처에 이미 지어 둔 제작대가 있어야 터렛 항목이 뜬다.
-function zombieNearWorkbench() {
+// 맵 어딘가에 제작대가 하나라도 지어져 있으면 (바로 옆일 필요는 없다) 터렛
+// 등 제작대 전용 항목이 뜬다.
+function zombieHasWorkbenchAnywhere() {
     if (!zombieState) return false;
-    return zombieMyBuildableCells().some(i => zombieState.grid[i] && zombieState.grid[i].type === 'workbench');
+    return zombieState.grid.some(c => c && c.type === 'workbench');
 }
 
 function openZombieBuildMenu() {
     if (!zombieState) return;
-    const near = zombieNearWorkbench();
-    zombieWorkbenchGatedEls.forEach(el => el.classList.toggle('hidden', !near));
+    const hasWorkbench = zombieHasWorkbenchAnywhere();
+    zombieWorkbenchGatedEls.forEach(el => el.classList.toggle('hidden', !hasWorkbench));
     zombieBuildMenuEl.classList.remove('hidden');
 }
 function closeZombieBuildMenu() {

@@ -6798,9 +6798,9 @@ io.on('connection', (socket) => {
 
     // 울타리/제작대/용광로/채굴기는 목록에서 고르면 바로 지을 수 있고,
     // ZOMBIE_WORKBENCH_ITEMS에 있는 것들(터렛/강화대/강화 울타리/강화 터렛)은
-    // 그 대상 칸의 건설 가능 범위(내 근처 이웃 칸) 안에 이미 지어 둔 제작대가
-    // 있어야만 만들 수 있다 -- "제작대에서" 만든다는 게 그런 뜻이라 목록에는
-    // 안 뜨고 이 조건이 될 때만 클라이언트가 보여준다 (여기서도 다시 검증).
+    // 맵 어딘가에 제작대가 하나라도 지어져 있어야만 만들 수 있다 -- 바로
+    // 옆일 필요는 없고, 있기만 하면 내 근처 아무 칸에나 지을 수 있다. 그
+    // 조건이 될 때만 클라이언트 목록에 뜨고, 여기서도 다시 검증한다.
     socket.on('zombieBuild', ({ type, index }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
@@ -6819,7 +6819,7 @@ io.on('connection', (socket) => {
         const { col, row } = zombieColRowOfPos(p.x, p.y);
         const buildable = zombieBuildableCellsFrom(col, row);
         if (!buildable.includes(index)) return;
-        if (needsWorkbench && !buildable.some(i => room.grid[i] && room.grid[i].type === 'workbench')) return;
+        if (needsWorkbench && !room.grid.some(c => c && c.type === 'workbench')) return;
 
         room.wood -= def.wood;
         room.iron -= (def.iron || 0);
