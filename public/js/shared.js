@@ -3938,7 +3938,7 @@ function computeStockPrices() {
 // 가로로 긴 직사각형 아레나에서 파티가 몰려오는 좀비 웨이브를 막아내는 생존
 // 모드. 보스 레이드처럼 캐릭터 하나(장비 포함)로 1~2인이 함께 하지만, 상대는
 // 정해진 패턴을 쓰는 보스가 아니라 웨이브마다 불어나는 좀비 무리다. 아레나
-// 전체를 12x4(48칸) 격자로 나눠 두고, 준비 시간에 나무를 베어 모은 목재로 그
+// 전체를 12x6(72칸) 격자로 나눠 두고, 준비 시간에 나무를 베어 모은 목재로 그
 // 격자 위 아무 칸에나(내 근처 칸만) 울타리/제작대/용광로를 짓는다. 제작대
 // 근처에서는 나무만으로 자동 공격 터렛도 만들 수 있다. 좀비는 아레나 오른쪽
 // 가장자리에서만 나타나 왼쪽으로 밀려오고, 이 칸들을 장애물 삼아 제대로
@@ -3947,7 +3947,7 @@ function computeStockPrices() {
 // 수만큼 보상을 받는다 -- 이기고 지는 모드가 아니라 얼마나 오래 버티는지가
 // 전부다.
 const ZOMBIE_GRID_COLS = 12;
-const ZOMBIE_GRID_ROWS = 4; // 12x4 = 48칸
+const ZOMBIE_GRID_ROWS = 6; // 12x6 = 72칸
 const ZOMBIE_CELL_SIZE = 80;
 const ZOMBIE_ARENA_HALF_W = (ZOMBIE_GRID_COLS * ZOMBIE_CELL_SIZE) / 2;
 const ZOMBIE_ARENA_HALF_H = (ZOMBIE_GRID_ROWS * ZOMBIE_CELL_SIZE) / 2;
