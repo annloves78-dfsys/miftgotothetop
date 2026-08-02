@@ -1890,7 +1890,7 @@ backFromShopBtn.addEventListener('click', () => showScreen('lobby'));
 // 낼 때마다 그 배열에 이벤트 하나를 추가하면 서버 없이도 모든 플레이어가
 // 같은 시세를 보게 된다. 보유 주식/투자원금은 계정 세이브(gameData.stocks)에
 // 저장되고, 다른 재화들과 같은 경로로 클라우드에 동기화된다.
-const stocksBtn = document.getElementById('menu-stocks-btn');
+const stocksBtn = document.getElementById('stocks-btn');
 const backFromStocksBtn = document.getElementById('back-from-stocks-btn');
 const stocksListEl = document.getElementById('stocks-list');
 const stocksEventsEl = document.getElementById('stocks-events');
@@ -2016,7 +2016,6 @@ if (stocksListEl) {
 
 if (stocksBtn) {
     stocksBtn.addEventListener('click', () => {
-        sideMenu.classList.add('hidden');
         renderStocksScreen();
         showScreen('stocks');
     });

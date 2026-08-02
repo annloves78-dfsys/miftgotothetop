@@ -2050,6 +2050,19 @@ body.mc-on .gacha-odds-row {
     filter: brightness(1.15);
 }
 
+/* 플레이 버튼(우측 하단 고정)의 바로 위에 뜨는 주식 버튼. */
+.stocks-lobby-btn {
+    position: absolute;
+    right: 30px;
+    bottom: 100px;
+    background: linear-gradient(180deg, #16a085, #0e6655);
+    border-color: #1abc9c;
+}
+
+body.mc-on .stocks-lobby-btn {
+    bottom: 76px;
+}
+
 .boss-card.selected {
     border-color: #f1c40f;
     box-shadow: 0 0 16px rgba(241, 196, 15, 0.5);
