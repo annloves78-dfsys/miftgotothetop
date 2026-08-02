@@ -862,6 +862,7 @@ const CHARACTERS = {
         attackType: 'homing_burst',
         attackHoming: true,
         attackProjectileCount: 4,
+        attackProjectileStaggerMs: 100, // 4발이 한 번에 안 나가고 0.1초 간격으로 하나씩 나간다
         attackProjectileSpreadDeg: 18, // 발사 순간 4발이 부채꼴로 퍼지는 각도
         attackProjectileRadius: 8,
         attackProjectileSpeed: 380,

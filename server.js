@@ -1306,14 +1306,26 @@ function spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev, fac
 }
 
 // 쿠키맛쿠키 기본공격: attackProjectileCount발을 attackProjectileSpreadDeg 안에서
-// 부채꼴로 한 번에 쏜다. 각 발은 spawnPlayerProjectile이 homing:true로 표시하므로
-// 이후 각 room의 tickPlayerProjectiles steer 콜백이 알아서 가장 가까운 목표로 튼다.
+// 부채꼴로 쏜다. 한 번에 다 나가면 눈에 잘 안 띄어서 attackProjectileStaggerMs
+// 간격으로 하나씩 내보낸다. 각 발은 spawnPlayerProjectile이 homing:true로
+// 표시하므로 이후 각 room의 tickPlayerProjectiles steer 콜백이 알아서 가장
+// 가까운 목표로 튼다.
 function fireHomingBurst(roomId, room, ownerId, p, character, now, ev) {
     const count = character.attackProjectileCount || 1;
     const spread = (character.attackProjectileSpreadDeg || 0) * Math.PI / 180;
+    const stagger = character.attackProjectileStaggerMs || 0;
+    const fire = (facing) => {
+        const rm = rooms[roomId];
+        if (!rm || rm.state !== 'fighting') return;
+        const pl = rm.players[ownerId];
+        if (!pl || !pl.alive) return;
+        spawnPlayerProjectile(roomId, rm, ownerId, pl, character, Date.now(), ev, facing);
+    };
     for (let i = 0; i < count; i++) {
         const offset = count > 1 ? spread * (i / (count - 1) - 0.5) : 0;
-        spawnPlayerProjectile(roomId, room, ownerId, p, character, now, ev, p.facing + offset);
+        const facing = p.facing + offset;
+        if (i === 0) fire(facing);
+        else setTimeout(() => fire(facing), stagger * i);
     }
 }
 

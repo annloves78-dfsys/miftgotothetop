@@ -842,7 +842,7 @@ function describeAbility(stats, kind) {
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'homing_burst') {
-            return `빛의 구슬 ${stats.attackProjectileCount}개를 부채꼴로 동시에 쏩니다. 구슬은 저마다 가장 가까운 적을 스스로 쫓아가며, 맞으면 1개당 ${stats.attackDamage}의 피해를 줍니다.`
+            return `빛의 구슬 ${stats.attackProjectileCount}개를 부채꼴로 ${stats.attackProjectileStaggerMs / 1000}초 간격으로 하나씩 쏩니다. 구슬은 저마다 가장 가까운 적을 스스로 쫓아가며, 맞으면 1개당 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 최대 ${stats.attackRange}px까지 날아가고, 그 안에 목표를 따라잡지 못하면 빗나갑니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         let text = `전방 ${stats.attackRange}px 범위를 공격해 ${stats.attackDamage}의 피해를 줍니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
