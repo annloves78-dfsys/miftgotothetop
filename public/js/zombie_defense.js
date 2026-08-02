@@ -160,7 +160,7 @@ function zombieMyStats() {
 
 socket.on('zombieStarted', (data) => {
     zombieState = {
-        players: data.players, zombies: {}, grid: data.grid || new Array(64).fill(null),
+        players: data.players, zombies: {}, grid: data.grid || new Array(SHARED.ZOMBIE_CELL_COUNT).fill(null),
         wave: data.wave, wavePhase: data.wavePhase, phaseUntil: data.phaseUntil,
         pendingSpawns: 0, wood: data.wood, coins: data.coins
     };
@@ -357,7 +357,7 @@ function zombieWorldFromMouse() {
 function tryZombiePlaceAtMouse() {
     if (!zombieState || zombieMouseX === null) return;
     const w = zombieWorldFromMouse();
-    if (Math.abs(w.x) > SHARED.ZOMBIE_ARENA_HALF || Math.abs(w.y) > SHARED.ZOMBIE_ARENA_HALF) return;
+    if (Math.abs(w.x) > SHARED.ZOMBIE_ARENA_HALF_W || Math.abs(w.y) > SHARED.ZOMBIE_ARENA_HALF_H) return;
     const index = SHARED.zombieCellIndexOfPos(w.x, w.y);
     const buildable = zombieMyBuildableCells();
     if (!buildable.includes(index)) {
@@ -423,9 +423,9 @@ function zombieFrame() {
         if (keys['a'] || keys['A']) dx -= speed;
         if (keys['d'] || keys['D']) dx += speed;
         if (dx !== 0 || dy !== 0) {
-            const H = SHARED.ZOMBIE_ARENA_HALF;
-            zombieLocal.x = Math.max(-H, Math.min(H, zombieLocal.x + dx));
-            zombieLocal.y = Math.max(-H, Math.min(H, zombieLocal.y + dy));
+            const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H;
+            zombieLocal.x = Math.max(-HW, Math.min(HW, zombieLocal.x + dx));
+            zombieLocal.y = Math.max(-HH, Math.min(HH, zombieLocal.y + dy));
         }
         if (autoAimEnabled) {
             const target = zombieNearestZombieWorldPos();
@@ -452,19 +452,23 @@ const ZOMBIE_STRUCT_COLORS = {
 };
 
 function zombieDrawGrid(ctx, now) {
-    const H = SHARED.ZOMBIE_ARENA_HALF, C = SHARED.ZOMBIE_CELL_SIZE, N = SHARED.ZOMBIE_GRID_SIZE;
+    const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H, C = SHARED.ZOMBIE_CELL_SIZE;
+    const COLS = SHARED.ZOMBIE_GRID_COLS, ROWS = SHARED.ZOMBIE_GRID_ROWS;
     ctx.save();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
-    for (let i = 0; i <= N; i++) {
-        const p = -H + i * C;
-        ctx.beginPath(); ctx.moveTo(p, -H); ctx.lineTo(p, H); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-H, p); ctx.lineTo(H, p); ctx.stroke();
+    for (let i = 0; i <= COLS; i++) {
+        const p = -HW + i * C;
+        ctx.beginPath(); ctx.moveTo(p, -HH); ctx.lineTo(p, HH); ctx.stroke();
+    }
+    for (let i = 0; i <= ROWS; i++) {
+        const p = -HH + i * C;
+        ctx.beginPath(); ctx.moveTo(-HW, p); ctx.lineTo(HW, p); ctx.stroke();
     }
 
     const buildable = (zombiePendingBuildType && zombieLocal) ? zombieMyBuildableCells() : [];
 
-    for (let index = 0; index < N * N; index++) {
+    for (let index = 0; index < SHARED.ZOMBIE_CELL_COUNT; index++) {
         const cell = zombieState.grid[index];
         const center = SHARED.zombieCellCenter(index);
         if (cell) {
@@ -585,12 +589,12 @@ function zombieRender(now) {
     zombieCtx.save();
     zombieCtx.translate(zombieCanvas.width / 2, zombieCanvas.height / 2);
 
-    const H = SHARED.ZOMBIE_ARENA_HALF;
+    const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H;
     zombieCtx.fillStyle = '#2a3320';
-    zombieCtx.fillRect(-H, -H, H * 2, H * 2);
+    zombieCtx.fillRect(-HW, -HH, HW * 2, HH * 2);
     zombieCtx.strokeStyle = 'rgba(241, 196, 15, 0.4)';
     zombieCtx.lineWidth = 4;
-    zombieCtx.strokeRect(-H, -H, H * 2, H * 2);
+    zombieCtx.strokeRect(-HW, -HH, HW * 2, HH * 2);
 
     if (!zombieState) { zombieCtx.restore(); return; }
 
