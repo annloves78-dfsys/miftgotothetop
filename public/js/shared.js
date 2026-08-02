@@ -843,8 +843,8 @@ const CHARACTERS = {
         ultimateZoneAttackBonusBurn: 1,
         ultimateCooldownMs: 30000
     },
-    // 유누 엄마 신청작. 빛 속성 원거리 딜러 -- 이 게임에서 가장 두꺼운 몸으로
-    // 멀리서 구슬을 계속 퍼붓는 컨셉이다.
+    // 유누 엄마 신청작. 빛 속성 원거리 힐러 -- 이 게임에서 가장 두꺼운 몸으로
+    // 멀리서 구슬을 퍼부으면서, 얼리기로 자힐하고 궁극기로 팀을 회복시키는 컨셉이다.
     plaincookie: {
         name: '쿠키맛 쿠키',
         shortName: '쿠키맛', // shown on the lobby's character-select button
@@ -853,7 +853,7 @@ const CHARACTERS = {
         colorRight: '#c8791b', // 진한 금갈색
         grade: '게스트',
         element: '빛',
-        role: '대미지 딜러',
+        role: '힐러',
         health: 250,
         speed: 2,
         // 빛의 구슬 4개를 부채꼴로 쏘아, 저마다 가장 가까운 적을 스스로 쫓아
