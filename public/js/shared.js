@@ -4342,6 +4342,16 @@ const ITEMS = {
         desc: '모으면 랜덤 각성 장비 하나로 바뀝니다.',
         goal: AWAKEN_FRAGMENT_GOAL,
         becomes: AWAKEN_GEAR_ITEM_KEY
+    },
+    soulStoneChoice: {
+        name: '선택 영혼석 100개', icon: '💠',
+        desc: '사용하면 케릭터를 하나 선택해서 그 케릭터에게 영혼석 100개를 줍니다.',
+        usable: true
+    },
+    randomLegendaryGear: {
+        name: '랜덤 레전더리 장비', icon: '🌟',
+        desc: '사용하면 레전더리 장비 하나가 무작위로 나옵니다.',
+        usable: true
     }
 };
 const ITEM_KEYS = Object.keys(ITEMS);

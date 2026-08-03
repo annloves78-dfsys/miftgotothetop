@@ -452,6 +452,20 @@ function useRandomAwakenGear() {
     return { ok: true, got, msg: item ? `${item.icon} ${item.name} 획득!` : '' };
 }
 
+// 랜덤 레전더리 장비 한 개를 쓴다. 레전더리 등급 장비 중 하나가 무작위로 나온다.
+function useRandomLegendaryGear() {
+    if (itemCount('randomLegendaryGear') <= 0) {
+        return { ok: false, msg: '랜덤 레전더리 장비가 없습니다.' };
+    }
+    const pool = SHARED.legendaryEquipmentIds();
+    if (!pool.length) return { ok: false, msg: '나올 수 있는 레전더리 장비가 없습니다.' };
+    itemBag().randomLegendaryGear -= 1;
+    const got = grantEquipment(pool[Math.floor(Math.random() * pool.length)]);
+    saveGameData(gameData);
+    const item = got && SHARED.equipmentFor(got.itemId);
+    return { ok: true, got, msg: item ? `${item.icon} ${item.name} 획득!` : '' };
+}
+
 // 클리어할 때마다 그 출처의 드랍 표에서 하나를 뽑는다.
 function rollClearDrop(key) {
     const table = SHARED.clearDropsFor(key);
@@ -2035,11 +2049,25 @@ const SHOP_CATEGORIES = {
     iap: '아직 판매 중인 상품이 없습니다.',
     item: '아직 판매 중인 아이템이 없습니다.'
 };
-// 다이아로 사는 아이템 목록. 여기 하나 추가하면 '아이템' 탭에 카드가 뜬다.
+// 다이아로 사는 것들. category: 상점의 어느 탭('item'|'currency')에 카드로 뜨는지.
+// grantsTo: 사면 어디로 들어가는지 -- 'currencies'(기본)면 바로 재화로, 'items'면
+// 아이템창(gameData.items)에 들어가서 나중에 "사용" 버튼으로 쓴다.
 const SHOP_ITEMS = [
-    { key: 'ticketNormal', cost: 200, costCurrency: 'diamonds' },
-    { key: 'ticketDemon', cost: 300, costCurrency: 'diamonds' }
+    { key: 'ticketNormal', cost: 200, costCurrency: 'diamonds', category: 'item', grantsTo: 'currencies' },
+    { key: 'ticketDemon', cost: 300, costCurrency: 'diamonds', category: 'item', grantsTo: 'currencies' },
+    { key: 'soulStoneChoice', cost: 500, costCurrency: 'diamonds', category: 'currency', grantsTo: 'items' },
+    { key: 'randomLegendaryGear', cost: 1000, costCurrency: 'diamonds', category: 'currency', grantsTo: 'items' }
 ];
+
+function shopGoodName(item) {
+    return item.grantsTo === 'items' ? SHARED.ITEMS[item.key].name : (CURRENCY_LABELS[item.key] || item.key);
+}
+function shopGoodIcon(item) {
+    return item.grantsTo === 'items' ? SHARED.ITEMS[item.key].icon : (CURRENCY_ICONS[item.key] || '🎁');
+}
+function shopGoodOwnedText(item) {
+    return item.grantsTo === 'items' ? String(itemCount(item.key)) : currencyText(item.key);
+}
 
 function buyShopItem(key) {
     const item = SHOP_ITEMS.find(it => it.key === key);
@@ -2047,21 +2075,22 @@ function buyShopItem(key) {
     if (currencyAmount(item.costCurrency) < item.cost) {
         return { ok: false, msg: `${CURRENCY_LABELS[item.costCurrency] || item.costCurrency}가 부족합니다.` };
     }
-    const bag = { [item.key]: 1 };
-    if (!adminPowerOn('currencies')) bag[item.costCurrency] = -item.cost;
-    grantCurrencies(bag);
-    return { ok: true, msg: `${CURRENCY_LABELS[item.key] || item.key}을(를) 구매했습니다.` };
+    if (!adminPowerOn('currencies')) grantCurrencies({ [item.costCurrency]: -item.cost });
+    if (item.grantsTo === 'items') grantItems({ [item.key]: 1 });
+    else grantCurrencies({ [item.key]: 1 });
+    return { ok: true, msg: `${shopGoodName(item)}을(를) 구매했습니다.` };
 }
 
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
-    shopContent.classList.toggle('shop-content-list', key === 'item' && SHOP_ITEMS.length > 0);
-    if (key === 'item' && SHOP_ITEMS.length) {
-        shopContent.innerHTML = SHOP_ITEMS.map(item => `
+    const goods = SHOP_ITEMS.filter(it => it.category === key);
+    shopContent.classList.toggle('shop-content-list', goods.length > 0);
+    if (goods.length) {
+        shopContent.innerHTML = goods.map(item => `
             <div class="shop-item-card" data-key="${item.key}">
-                <span class="shop-item-icon">${CURRENCY_ICONS[item.key] || '🎁'}</span>
-                <span class="shop-item-name">${CURRENCY_LABELS[item.key] || item.key}</span>
-                <span class="shop-item-owned">보유 ${currencyText(item.key)}</span>
+                <span class="shop-item-icon">${shopGoodIcon(item)}</span>
+                <span class="shop-item-name">${shopGoodName(item)}</span>
+                <span class="shop-item-owned">보유 ${shopGoodOwnedText(item)}</span>
                 <button class="shop-item-buy-btn">${CURRENCY_ICONS[item.costCurrency] || ''} ${item.cost}</button>
             </div>`).join('') + '<p id="shop-item-msg" class="shop-item-msg hidden"></p>';
         return;
@@ -2077,8 +2106,9 @@ shopContent.addEventListener('click', (e) => {
     const btn = e.target.closest('.shop-item-buy-btn');
     if (!btn) return;
     const card = btn.closest('.shop-item-card');
-    const res = buyShopItem(card.dataset.key);
-    if (res.ok) renderShopCategory('item');
+    const key = card.dataset.key;
+    const res = buyShopItem(key);
+    if (res.ok) renderShopCategory(SHOP_ITEMS.find(it => it.key === key).category);
     const msgEl = document.getElementById('shop-item-msg');
     if (msgEl) {
         msgEl.textContent = res.msg;
@@ -2297,10 +2327,33 @@ function renderItems() {
 itemsListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('.item-use-btn');
     if (!btn) return;
-    if (btn.dataset.key !== SHARED.AWAKEN_GEAR_ITEM_KEY) return;
-    const res = useRandomAwakenGear();
-    showItemsMsg(res.msg, res.ok);
-    renderItems();
+    const key = btn.dataset.key;
+    if (key === SHARED.AWAKEN_GEAR_ITEM_KEY) {
+        const res = useRandomAwakenGear();
+        showItemsMsg(res.msg, res.ok);
+        renderItems();
+        return;
+    }
+    if (key === 'randomLegendaryGear') {
+        const res = useRandomLegendaryGear();
+        showItemsMsg(res.msg, res.ok);
+        renderItems();
+        return;
+    }
+    if (key === 'soulStoneChoice') {
+        if (itemCount(key) <= 0) { showItemsMsg('선택 영혼석이 없습니다.', false); return; }
+        // 케릭터 선택 화면에서 고르면 그 케릭터에게 영혼석 100개를 주고 아이템창으로 돌아온다.
+        openCharacterSelect('items', {
+            selectedId: null,
+            onPick: (charType) => {
+                itemBag()[key] -= 1;
+                gameData.soulStones[charType] = (gameData.soulStones[charType] || 0) + 100;
+                saveGameData(gameData);
+                showItemsMsg(`${SHARED.CHARACTERS[charType].name}에게 영혼석 100개를 줬어요.`, true);
+                renderItems();
+            }
+        });
+    }
 });
 
 itemsBtn.addEventListener('click', () => {
