@@ -2668,6 +2668,39 @@ function updateEventBadge() {
     eventBadge.classList.toggle('hidden', n === 0);
 }
 
+// 로비 새로고침: 로그인 상태면 클라우드 세이브를 다시 받아와 다른 기기/관리자
+// 지급 등으로 바뀐 데이터를 반영한다. 게스트는 localStorage를 다시 읽기만 한다.
+const lobbyRefreshBtn = document.getElementById('lobby-refresh-btn');
+async function refreshLobbyData() {
+    if (currentUser && currentUser.session_token) {
+        try {
+            const { data, error } = await sb.rpc('br_get_me', { p_token: currentUser.session_token });
+            if (error) throw error;
+            currentUser = { ...data, session_token: currentUser.session_token };
+            updateMenuAuthUI();
+            await applyCloudGameData(data.game_data);
+        } catch (e) {
+            // 네트워크 오류 등이면 로컬 데이터를 그대로 둔다.
+        }
+    } else {
+        gameData = loadGameData();
+    }
+    renderCurrencyBar();
+    renderItemsBadge();
+    updateEventBadge();
+    updateSelectedCharLabel();
+}
+if (lobbyRefreshBtn) {
+    lobbyRefreshBtn.addEventListener('click', async () => {
+        if (lobbyRefreshBtn.disabled) return;
+        lobbyRefreshBtn.disabled = true;
+        lobbyRefreshBtn.classList.add('spinning');
+        await Promise.all([refreshLobbyData(), new Promise(r => setTimeout(r, 400))]);
+        lobbyRefreshBtn.classList.remove('spinning');
+        lobbyRefreshBtn.disabled = false;
+    });
+}
+
 
 // The 전체 클리어 bonus is the only thing here you press a button to take --
 // stage tickets are paid the moment the stage is first cleared.

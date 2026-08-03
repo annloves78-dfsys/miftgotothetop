@@ -3186,6 +3186,20 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     right: 76px;
 }
 
+/* 아이템 버튼 왼쪽에 나란히 서는 새로고침 버튼. */
+.corner-btn-2 {
+    right: 128px;
+}
+
+.corner-btn-2.spinning {
+    animation: refresh-spin 0.6s linear;
+}
+
+@keyframes refresh-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* ---- 아이템창 ---- */
 /* 재화 바에 없는, "쓰는" 것들. 조각처럼 모으는 아이템은 개수 대신 진행 막대로 */
 /* 보여줘서 얼마나 남았는지 한눈에 보이게 한다. */
