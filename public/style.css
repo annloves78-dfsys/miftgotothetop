@@ -1710,32 +1710,37 @@ body.mc-on .boss-card .icon.char-swatch {
 /* Mode select: 5 fixed-220px cards in a non-wrapping row add up to ~1220px --
    wider than any phone screen, and with no scroll available the later cards
    (게스트 레이드/각성모드/좀비막기) were pushed off the right edge entirely,
-   unreachable. Wrap them into rows and shrink to fit instead. */
+   unreachable. Let the row scroll horizontally instead of trying to cram
+   everything into the viewport width. */
 body.mc-on .mode-list {
-    flex-wrap: wrap;
-    justify-content: center;
-    width: 92vw;
-    max-width: 420px;
-    gap: 14px;
+    width: 100vw;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    justify-content: flex-start;
+    gap: 16px;
     margin: 20px 0;
+    padding: 4px 24px;
 }
 
 body.mc-on .mode-card {
-    width: 128px;
-    height: 148px;
+    flex-shrink: 0;
+    width: 170px;
+    height: 200px;
+    scroll-snap-align: center;
 }
 
 body.mc-on .mode-card .icon {
-    font-size: 32px;
-    margin-bottom: 8px;
+    font-size: 46px;
+    margin-bottom: 12px;
 }
 
 body.mc-on .mode-card .name {
-    font-size: 14px;
+    font-size: 17px;
 }
 
 body.mc-on .mode-card .sub {
-    font-size: 11px;
+    font-size: 12px;
 }
 
 /* Character detail */
