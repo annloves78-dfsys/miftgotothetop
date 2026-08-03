@@ -2774,8 +2774,15 @@ function applyGachaResults(results) {
         if (r.kind === 'soul') {
             gameData.soulStones[r.charType] = (gameData.soulStones[r.charType] || 0) + (r.amount || 1);
             changed = true;
-        } else if (r.kind === 'char' && !gameData.unlockedCharacters.includes(r.charType)) {
-            gameData.unlockedCharacters.push(r.charType);
+        } else if (r.kind === 'char') {
+            if (gameData.unlockedCharacters.includes(r.charType)) {
+                // 이미 보유한 케릭터가 또 나오면 그 케릭터 영혼석으로 대신 지급한다.
+                r.duplicate = true;
+                r.soulAmount = SHARED.DUPLICATE_CHAR_SOUL_STONES;
+                gameData.soulStones[r.charType] = (gameData.soulStones[r.charType] || 0) + r.soulAmount;
+            } else {
+                gameData.unlockedCharacters.push(r.charType);
+            }
             changed = true;
         }
     }
@@ -2801,6 +2808,15 @@ function gachaResultsHtml(results) {
             return `<div class="gacha-card soul">
                 <div class="gacha-card-icon soul-icon" style="background: ${charIconBackground(stats)}">💎</div>
                 <div class="gacha-card-name">${stats.name}의 영혼석${r.amount > 1 ? ` x${r.amount}` : ''}</div>
+                <div class="gacha-card-sub">${have} / ${SHARED.SOUL_STONES_PER_CHARACTER}</div>
+            </div>`;
+        }
+        if (r.duplicate) {
+            const have = gameData.soulStones[r.charType] || 0;
+            return `<div class="gacha-card soul">
+                <div class="gacha-card-icon soul-icon" style="background: ${charIconBackground(stats)}">💎</div>
+                <span class="${gradeClass(stats.grade)}">${stats.grade}</span>
+                <div class="gacha-card-name">${stats.name} (보유 중) → 영혼석 x${r.soulAmount}</div>
                 <div class="gacha-card-sub">${have} / ${SHARED.SOUL_STONES_PER_CHARACTER}</div>
             </div>`;
         }
