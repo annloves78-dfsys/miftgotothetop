@@ -1,6 +1,6 @@
 {
-    "name": "Boss Raid",
-    "short_name": "보스레이드",
+    "name": "mift:gotothetop",
+    "short_name": "mift",
     "description": "2인 협동 보스 레이드 게임",
     "start_url": "/",
     "scope": "/",
