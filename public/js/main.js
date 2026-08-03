@@ -2899,7 +2899,10 @@ function gachaResultsHtml(results) {
 }
 
 function renderSoulStones() {
+    // 이미 보유한 캐릭터는 영혼석으로 "또" 얻을 수 없다 -- 그 캐릭터의 영혼석은
+    // 대신 본능해제(캐릭터 상세화면)에 쓴다.
     const owned = Object.keys(SHARED.CHARACTERS)
+        .filter(id => !isCharacterUnlocked(id))
         .map(id => ({ id, count: gameData.soulStones[id] || 0 }))
         .filter(e => e.count > 0)
         .sort((a, b) => b.count - a.count);
@@ -2924,13 +2927,15 @@ function renderSoulStones() {
     }).join('');
 }
 
-// Spends a full set of one cookie's soul stones to unlock it.
+// Spends a full set of one cookie's soul stones to unlock it. Only for cookies
+// not owned yet -- an already-unlocked cookie's soul stones go to 본능해제 instead.
 function claimCharacterFromSoulStones(charType) {
+    if (isCharacterUnlocked(charType)) return;
     const need = SHARED.SOUL_STONES_PER_CHARACTER;
     const have = gameData.soulStones[charType] || 0;
     if (have < need) return;
     gameData.soulStones[charType] = have - need;
-    if (!gameData.unlockedCharacters.includes(charType)) gameData.unlockedCharacters.push(charType);
+    gameData.unlockedCharacters.push(charType);
     saveGameData(gameData);
     renderSoulStones();
     const stats = SHARED.CHARACTERS[charType];
