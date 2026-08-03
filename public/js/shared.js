@@ -2104,6 +2104,106 @@ const MONSTERS = {
         laserRange: 620,
         laserWidth: 26,
         laserTrackSpeed: 80
+    },
+    // ---- 21층부터. 가면광대(20층)를 넘은 뒤 남은 서커스 잔당. ----
+    // 21층: 몸빵. 오래 버티고, 한 번은 반드시 버틴다.
+    circus_strongman: {
+        name: '서커스 차력사',
+        color: '#d35400',
+        colorLeft: '#f0b27a',
+        colorRight: '#7e3300',
+        health: 420,
+        speed: 3,
+        aggroRange: 780,
+        preferredDistance: 75,
+        attackRange: 190,
+        attackDamage: 30,
+        attackCooldown: 2600,
+        telegraphMs: 550,
+        lowHpGuard: { atHp: 90, heal: 80, shield: 100 }
+    },
+    // 23층: 원거리 딜이 지금까지 나온 포탑 아닌 몹 중 가장 세다. 붙어서 끊어야 한다.
+    fire_juggler: {
+        name: '불쇼 저글러',
+        color: '#f39c12',
+        colorLeft: '#fdebd0',
+        colorRight: '#9c640c',
+        health: 220,
+        speed: 4,
+        aggroRange: 780,
+        preferredDistance: 260,
+        projectileSpeed: 560,
+        attackRange: 400,
+        attackDamage: 20,
+        attackCooldown: 1800,
+        telegraphMs: 380
+    },
+    // 25층: 가면광대처럼 반사/거울 속임수. 쓰러뜨리면 조각으로 갈라진다.
+    mirror_clown: {
+        name: '거울광대',
+        color: '#9b59b6',
+        colorLeft: '#d2b4de',
+        colorRight: '#512e5f',
+        health: 300,
+        speed: 4,
+        aggroRange: 800,
+        preferredDistance: 65,
+        attackRange: 170,
+        attackDamage: 22,
+        attackCooldown: 2200,
+        telegraphMs: 400,
+        splitOnDeath: { type: 'mirror_shard', count: 2, spread: 45 }
+    },
+    mirror_shard: {
+        name: '거울 조각',
+        color: '#bb8fce',
+        health: 90,
+        speed: 5.5,
+        aggroRange: 800,
+        preferredDistance: 40,
+        attackRange: 120,
+        attackDamage: 12,
+        attackCooldown: 1500,
+        telegraphMs: 300
+    },
+    // 27층: 지금까지 나온 포탑 중 빔이 가장 빨리 따라온다.
+    carnival_turret: {
+        name: '회전목마 포탑',
+        color: '#2980b9',
+        colorLeft: '#aed6f1',
+        colorRight: '#1b4f72',
+        health: 200,
+        speed: 0,
+        aggroRange: 640,
+        preferredDistance: 0,
+        attackRange: 640,
+        attackCooldown: 2200,
+        telegraphMs: 350,
+        laser: true,
+        laserDurationMs: 1300,
+        laserDamage: 4,
+        laserTickMs: 100,
+        laserRange: 640,
+        laserWidth: 44,
+        laserTrackSpeed: 150
+    },
+    // 29층: 30층 보스 직전 마지막 방을 지키는 서커스 단장. 체력이 40% 아래로
+    // 떨어지면 격노하고, 저글러를 계속 불러들인다.
+    ringmaster: {
+        name: '서커스 단장',
+        color: '#6c3483',
+        colorLeft: '#f1c40f',
+        colorRight: '#4a235a',
+        health: 550,
+        speed: 3,
+        aggroRange: 820,
+        preferredDistance: 85,
+        attackRange: 210,
+        attackDamage: 32,
+        attackCooldown: 2400,
+        telegraphMs: 500,
+        enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
+        summonOnTimer: { type: 'fire_juggler', count: 1, everyMs: 7000, max: 3 }
     }
 };
 
@@ -2840,6 +2940,354 @@ const STORY_FLOOR_DEFS = {
         ],
         star: { at: -5860 }
     }),
+    // ---- 21층부터. 20층(가면광대)을 넘은 뒤 남은 서커스 잔당이 나온다. ----
+    // 21층: 차력사 등장. 오래 버티는 몸빵이라 화력을 모아야 빨리 잡는다.
+    21: makePathFloor({
+        path: [[0, 0], [1000, 0], [1000, -950], [0, -950], [0, -1900], [1000, -1900], [1000, -2850], [0, -2850]],
+        laneHalfWidth: 95,
+        gates: [
+            { entrance: -700, exit: -1600, room: 0 },
+            { entrance: -1600, exit: -2900, room: 1 },
+            { entrance: -2900, exit: -4200, room: 2 },
+            { entrance: -4200, exit: -5600, room: 3 }
+        ],
+        monsters: [
+            { type: 'circus_strongman', at: -950, off: -40, room: 0 },
+            { type: 'thunder_orb', at: -1300, off: 0, room: 0 },
+            { type: 'circus_strongman', at: -1900, off: -45, room: 1 },
+            { type: 'circus_strongman', at: -1900, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -2250, off: 0, room: 1 },
+            { type: 'frost_lancer', at: -2450, off: -40, room: 1 },
+            { type: 'frost_lancer', at: -2450, off: 40, room: 1 },
+            { type: 'circus_strongman', at: -3200, off: -50, room: 2 },
+            { type: 'royal_guard', at: -3200, off: 50, room: 2 },
+            { type: 'choco_queen', at: -3550, off: 0, room: 2 },
+            { type: 'thunder_orb', at: -3800, off: -55, room: 2 },
+            { type: 'thunder_orb', at: -3800, off: 55, room: 2 },
+            { type: 'circus_strongman', at: -4500, off: -50, room: 3 },
+            { type: 'circus_strongman', at: -4500, off: 0, room: 3 },
+            { type: 'circus_strongman', at: -4500, off: 50, room: 3 },
+            { type: 'royal_guard', at: -4850, off: -45, room: 3 },
+            { type: 'royal_guard', at: -4850, off: 45, room: 3 },
+            { type: 'macaron_healer', at: -5100, off: 0, room: 3 },
+            { type: 'taffy_brute', at: -5350, off: -45, room: 3 },
+            { type: 'taffy_brute', at: -5350, off: 45, room: 3 }
+        ],
+        star: { at: -5950 }
+    }),
+    // 22층: 차력사가 근위대·여왕과 뒤섞여 나온다.
+    22: makePathFloor({
+        path: [[0, 0], [-1050, 0], [-1050, -1000], [0, -1000], [0, -2000], [-1050, -2000], [-1050, -3000], [0, -3000]],
+        laneHalfWidth: 95,
+        gates: [
+            { entrance: -750, exit: -1700, room: 0 },
+            { entrance: -1700, exit: -3050, room: 1 },
+            { entrance: -3050, exit: -4400, room: 2 },
+            { entrance: -4400, exit: -5900, room: 3 }
+        ],
+        monsters: [
+            { type: 'circus_strongman', at: -1050, off: -40, room: 0 },
+            { type: 'circus_strongman', at: -1050, off: 40, room: 0 },
+            { type: 'dark_cookie', at: -1400, off: 0, room: 0 },
+            { type: 'circus_strongman', at: -2100, off: -45, room: 1 },
+            { type: 'circus_strongman', at: -2100, off: 45, room: 1 },
+            { type: 'choco_queen', at: -2450, off: 0, room: 1 },
+            { type: 'thunder_orb', at: -2750, off: -55, room: 1 },
+            { type: 'thunder_orb', at: -2750, off: 55, room: 1 },
+            { type: 'macaron_healer', at: -2900, off: 0, room: 1 },
+            { type: 'circus_strongman', at: -3600, off: -50, room: 2 },
+            { type: 'circus_strongman', at: -3600, off: 50, room: 2 },
+            { type: 'royal_guard', at: -3900, off: -45, room: 2 },
+            { type: 'royal_guard', at: -3900, off: 45, room: 2 },
+            { type: 'taffy_brute', at: -4150, off: -30, room: 2 },
+            { type: 'thunder_orb', at: -4150, off: 30, room: 2 },
+            { type: 'circus_strongman', at: -5000, off: -50, room: 3 },
+            { type: 'circus_strongman', at: -5000, off: 0, room: 3 },
+            { type: 'circus_strongman', at: -5000, off: 50, room: 3 },
+            { type: 'royal_guard', at: -5350, off: -45, room: 3 },
+            { type: 'royal_guard', at: -5350, off: 45, room: 3 },
+            { type: 'choco_queen', at: -5600, off: -50, room: 3 },
+            { type: 'choco_queen', at: -5600, off: 50, room: 3 },
+            { type: 'macaron_healer', at: -5750, off: -40, room: 3 },
+            { type: 'macaron_healer', at: -5750, off: 40, room: 3 }
+        ],
+        star: { at: -6250 }
+    }),
+    // 23층: 불쇼 저글러 등장. 원거리 딜이 세니 붙어서 끊어야 한다.
+    23: makePathFloor({
+        path: [[0, 0], [0, -1050], [1050, -1050], [1050, -2100], [0, -2100], [0, -3150], [1050, -3150], [1050, -4200]],
+        laneHalfWidth: 95,
+        gates: [
+            { entrance: -750, exit: -1750, room: 0 },
+            { entrance: -1750, exit: -3100, room: 1 },
+            { entrance: -3100, exit: -4500, room: 2 },
+            { entrance: -4500, exit: -6000, room: 3 }
+        ],
+        monsters: [
+            { type: 'fire_juggler', at: -1050, off: -40, room: 0 },
+            { type: 'circus_strongman', at: -1050, off: 40, room: 0 },
+            { type: 'thunder_orb', at: -1400, off: 0, room: 0 },
+            { type: 'fire_juggler', at: -2200, off: -45, room: 1 },
+            { type: 'fire_juggler', at: -2200, off: 45, room: 1 },
+            { type: 'circus_strongman', at: -2200, off: 0, room: 1 },
+            { type: 'macaron_healer', at: -2600, off: 0, room: 1 },
+            { type: 'royal_guard', at: -2850, off: -40, room: 1 },
+            { type: 'royal_guard', at: -2850, off: 40, room: 1 },
+            { type: 'fire_juggler', at: -3600, off: -50, room: 2 },
+            { type: 'fire_juggler', at: -3600, off: 50, room: 2 },
+            { type: 'royal_guard', at: -3900, off: -45, room: 2 },
+            { type: 'royal_guard', at: -3900, off: 45, room: 2 },
+            { type: 'thunder_orb', at: -4200, off: -30, room: 2 },
+            { type: 'choco_queen', at: -4200, off: 30, room: 2 },
+            { type: 'fire_juggler', at: -5100, off: -50, room: 3 },
+            { type: 'fire_juggler', at: -5100, off: 50, room: 3 },
+            { type: 'circus_strongman', at: -5350, off: -45, room: 3 },
+            { type: 'circus_strongman', at: -5350, off: 45, room: 3 },
+            { type: 'choco_queen', at: -5600, off: -50, room: 3 },
+            { type: 'choco_queen', at: -5600, off: 50, room: 3 },
+            { type: 'royal_guard', at: -5800, off: -40, room: 3 },
+            { type: 'royal_guard', at: -5800, off: 40, room: 3 }
+        ],
+        star: { at: -6350 }
+    }),
+    // 24층: 차력사 + 저글러가 본격적으로 섞인다.
+    24: makePathFloor({
+        path: [[0, 0], [-1100, 0], [-1100, -1050], [0, -1050], [0, -2100], [-1100, -2100], [-1100, -3150], [0, -3150]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -800, exit: -1850, room: 0 },
+            { entrance: -1850, exit: -3250, room: 1 },
+            { entrance: -3250, exit: -4700, room: 2 },
+            { entrance: -4700, exit: -6250, room: 3 }
+        ],
+        monsters: [
+            { type: 'circus_strongman', at: -1150, off: -40, room: 0 },
+            { type: 'fire_juggler', at: -1150, off: 40, room: 0 },
+            { type: 'thunder_orb', at: -1500, off: 0, room: 0 },
+            { type: 'circus_strongman', at: -2300, off: -45, room: 1 },
+            { type: 'circus_strongman', at: -2300, off: 45, room: 1 },
+            { type: 'fire_juggler', at: -2600, off: -50, room: 1 },
+            { type: 'fire_juggler', at: -2600, off: 50, room: 1 },
+            { type: 'macaron_healer', at: -2900, off: 0, room: 1 },
+            { type: 'circus_strongman', at: -3600, off: -50, room: 2 },
+            { type: 'circus_strongman', at: -3600, off: 50, room: 2 },
+            { type: 'fire_juggler', at: -3900, off: -55, room: 2 },
+            { type: 'fire_juggler', at: -3900, off: 55, room: 2 },
+            { type: 'royal_guard', at: -4200, off: -45, room: 2 },
+            { type: 'royal_guard', at: -4200, off: 45, room: 2 },
+            { type: 'choco_queen', at: -4450, off: 0, room: 2 },
+            { type: 'circus_strongman', at: -5100, off: -50, room: 3 },
+            { type: 'circus_strongman', at: -5100, off: 50, room: 3 },
+            { type: 'fire_juggler', at: -5400, off: -55, room: 3 },
+            { type: 'fire_juggler', at: -5400, off: 0, room: 3 },
+            { type: 'fire_juggler', at: -5400, off: 55, room: 3 },
+            { type: 'royal_guard', at: -5700, off: -45, room: 3 },
+            { type: 'royal_guard', at: -5700, off: 45, room: 3 },
+            { type: 'taffy_brute', at: -5950, off: -40, room: 3 },
+            { type: 'taffy_brute', at: -5950, off: 40, room: 3 },
+            { type: 'macaron_healer', at: -6100, off: 0, room: 3 }
+        ],
+        star: { at: -6600 }
+    }),
+    // 25층: 거울광대 등장. 쓰러뜨리면 거울 조각으로 갈라진다.
+    25: makePathFloor({
+        path: [[0, 0], [0, -1150], [1150, -1150], [1150, -2300], [0, -2300], [0, -3450], [1150, -3450], [1150, -4600]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -800, exit: -1900, room: 0 },
+            { entrance: -1900, exit: -3350, room: 1 },
+            { entrance: -3350, exit: -4850, room: 2 },
+            { entrance: -4850, exit: -6450, room: 3 }
+        ],
+        monsters: [
+            { type: 'mirror_clown', at: -1200, off: -40, room: 0 },
+            { type: 'fire_juggler', at: -1200, off: 40, room: 0 },
+            { type: 'mirror_clown', at: -2400, off: -45, room: 1 },
+            { type: 'mirror_clown', at: -2400, off: 45, room: 1 },
+            { type: 'circus_strongman', at: -2700, off: 0, room: 1 },
+            { type: 'macaron_healer', at: -3000, off: 0, room: 1 },
+            { type: 'mirror_clown', at: -3800, off: -50, room: 2 },
+            { type: 'mirror_clown', at: -3800, off: 50, room: 2 },
+            { type: 'fire_juggler', at: -4100, off: -55, room: 2 },
+            { type: 'fire_juggler', at: -4100, off: 55, room: 2 },
+            { type: 'royal_guard', at: -4400, off: -30, room: 2 },
+            { type: 'thunder_orb', at: -4400, off: 30, room: 2 },
+            { type: 'mirror_clown', at: -5300, off: -50, room: 3 },
+            { type: 'mirror_clown', at: -5300, off: 50, room: 3 },
+            { type: 'circus_strongman', at: -5600, off: -45, room: 3 },
+            { type: 'circus_strongman', at: -5600, off: 45, room: 3 },
+            { type: 'fire_juggler', at: -5900, off: -55, room: 3 },
+            { type: 'fire_juggler', at: -5900, off: 55, room: 3 },
+            { type: 'choco_queen', at: -6200, off: -50, room: 3 },
+            { type: 'choco_queen', at: -6200, off: 50, room: 3 }
+        ],
+        star: { at: -6800 }
+    }),
+    // 26층: 거울광대까지 섞인 종합전.
+    26: makePathFloor({
+        path: [[0, 0], [-1200, 0], [-1200, -1100], [0, -1100], [0, -2200], [-1200, -2200], [-1200, -3300], [0, -3300]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -850, exit: -2000, room: 0 },
+            { entrance: -2000, exit: -3500, room: 1 },
+            { entrance: -3500, exit: -5050, room: 2 },
+            { entrance: -5050, exit: -6700, room: 3 }
+        ],
+        monsters: [
+            { type: 'mirror_clown', at: -1300, off: -40, room: 0 },
+            { type: 'circus_strongman', at: -1300, off: 40, room: 0 },
+            { type: 'thunder_orb', at: -1650, off: 0, room: 0 },
+            { type: 'mirror_clown', at: -2600, off: -45, room: 1 },
+            { type: 'mirror_clown', at: -2600, off: 45, room: 1 },
+            { type: 'fire_juggler', at: -2900, off: -50, room: 1 },
+            { type: 'fire_juggler', at: -2900, off: 50, room: 1 },
+            { type: 'macaron_healer', at: -3250, off: 0, room: 1 },
+            { type: 'mirror_clown', at: -4000, off: -50, room: 2 },
+            { type: 'mirror_clown', at: -4000, off: 50, room: 2 },
+            { type: 'circus_strongman', at: -4300, off: -55, room: 2 },
+            { type: 'circus_strongman', at: -4300, off: 55, room: 2 },
+            { type: 'royal_guard', at: -4650, off: -45, room: 2 },
+            { type: 'royal_guard', at: -4650, off: 45, room: 2 },
+            { type: 'choco_queen', at: -4900, off: 0, room: 2 },
+            { type: 'mirror_clown', at: -5600, off: -50, room: 3 },
+            { type: 'mirror_clown', at: -5600, off: 50, room: 3 },
+            { type: 'fire_juggler', at: -5900, off: -55, room: 3 },
+            { type: 'fire_juggler', at: -5900, off: 55, room: 3 },
+            { type: 'circus_strongman', at: -6200, off: -45, room: 3 },
+            { type: 'circus_strongman', at: -6200, off: 45, room: 3 },
+            { type: 'royal_guard', at: -6450, off: -40, room: 3 },
+            { type: 'royal_guard', at: -6450, off: 40, room: 3 },
+            { type: 'taffy_brute', at: -6600, off: 0, room: 3 }
+        ],
+        star: { at: -7050 }
+    }),
+    // 27층: 회전목마 포탑 등장. 지금까지 나온 포탑 중 빔이 가장 빨리 따라온다.
+    27: makePathFloor({
+        path: [[0, 0], [0, -1200], [1200, -1200], [1200, -2400], [0, -2400], [0, -3600], [1200, -3600], [1200, -4800]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -850, exit: -2050, room: 0 },
+            { entrance: -2050, exit: -3600, room: 1 },
+            { entrance: -3600, exit: -5200, room: 2 },
+            { entrance: -5200, exit: -6900, room: 3 }
+        ],
+        monsters: [
+            { type: 'carnival_turret', at: -1350, off: 0, room: 0 },
+            { type: 'fire_juggler', at: -1650, off: 0, room: 0 },
+            { type: 'carnival_turret', at: -2700, off: -50, room: 1 },
+            { type: 'carnival_turret', at: -2700, off: 50, room: 1 },
+            { type: 'mirror_clown', at: -3000, off: 0, room: 1 },
+            { type: 'circus_strongman', at: -3300, off: 0, room: 1 },
+            { type: 'carnival_turret', at: -4100, off: -55, room: 2 },
+            { type: 'carnival_turret', at: -4100, off: 55, room: 2 },
+            { type: 'fire_juggler', at: -4400, off: -50, room: 2 },
+            { type: 'fire_juggler', at: -4400, off: 50, room: 2 },
+            { type: 'royal_guard', at: -4800, off: -45, room: 2 },
+            { type: 'royal_guard', at: -4800, off: 45, room: 2 },
+            { type: 'macaron_healer', at: -5050, off: 0, room: 2 },
+            { type: 'carnival_turret', at: -5700, off: -55, room: 3 },
+            { type: 'carnival_turret', at: -5700, off: 55, room: 3 },
+            { type: 'mirror_clown', at: -6000, off: -50, room: 3 },
+            { type: 'mirror_clown', at: -6000, off: 50, room: 3 },
+            { type: 'circus_strongman', at: -6300, off: -45, room: 3 },
+            { type: 'circus_strongman', at: -6300, off: 45, room: 3 },
+            { type: 'choco_queen', at: -6600, off: -50, room: 3 },
+            { type: 'choco_queen', at: -6600, off: 50, room: 3 }
+        ],
+        star: { at: -7250 }
+    }),
+    // 28층: 29층 직전. 지금까지 나온 서커스 잔당(차력사·저글러·거울광대·
+    // 회전목마 포탑)이 전부 뒤섞인 마지막 방이 기다린다.
+    28: makePathFloor({
+        path: [[0, 0], [-1250, 0], [-1250, -1150], [0, -1150], [0, -2300], [-1250, -2300], [-1250, -3450], [0, -3450], [0, -4600]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -900, exit: -2150, room: 0 },
+            { entrance: -2150, exit: -3800, room: 1 },
+            { entrance: -3800, exit: -5500, room: 2 },
+            { entrance: -5500, exit: -7300, room: 3 }
+        ],
+        monsters: [
+            { type: 'carnival_turret', at: -1400, off: -30, room: 0 },
+            { type: 'mirror_clown', at: -1400, off: 30, room: 0 },
+            { type: 'fire_juggler', at: -1800, off: 0, room: 0 },
+            { type: 'carnival_turret', at: -2700, off: -50, room: 1 },
+            { type: 'carnival_turret', at: -2700, off: 50, room: 1 },
+            { type: 'circus_strongman', at: -3100, off: -45, room: 1 },
+            { type: 'circus_strongman', at: -3100, off: 45, room: 1 },
+            { type: 'macaron_healer', at: -3500, off: 0, room: 1 },
+            { type: 'carnival_turret', at: -4200, off: -55, room: 2 },
+            { type: 'carnival_turret', at: -4200, off: 55, room: 2 },
+            { type: 'mirror_clown', at: -4500, off: -50, room: 2 },
+            { type: 'mirror_clown', at: -4500, off: 50, room: 2 },
+            { type: 'fire_juggler', at: -4900, off: -50, room: 2 },
+            { type: 'fire_juggler', at: -4900, off: 50, room: 2 },
+            { type: 'royal_guard', at: -5250, off: -45, room: 2 },
+            { type: 'royal_guard', at: -5250, off: 45, room: 2 },
+            { type: 'carnival_turret', at: -5900, off: -55, room: 3 },
+            { type: 'carnival_turret', at: -5900, off: 55, room: 3 },
+            { type: 'circus_strongman', at: -6200, off: -50, room: 3 },
+            { type: 'circus_strongman', at: -6200, off: 50, room: 3 },
+            { type: 'mirror_clown', at: -6500, off: -45, room: 3 },
+            { type: 'mirror_clown', at: -6500, off: 45, room: 3 },
+            { type: 'fire_juggler', at: -6800, off: -50, room: 3 },
+            { type: 'fire_juggler', at: -6800, off: 50, room: 3 },
+            { type: 'choco_queen', at: -7050, off: -55, room: 3 },
+            { type: 'choco_queen', at: -7050, off: 55, room: 3 },
+            { type: 'royal_guard', at: -7200, off: -40, room: 3 },
+            { type: 'royal_guard', at: -7200, off: 40, room: 3 }
+        ],
+        star: { at: -7650 }
+    }),
+    // 29층: 30층 보스 직전 마지막 층. 마지막 방에서 서커스 단장이 저글러를
+    // 계속 불러들이며 버틴다 -- 19층의 마지막 방(여왕 둘 + 근위대 셋)이
+    // 그랬듯, 사실상 작은 보스전이다.
+    29: makePathFloor({
+        path: [[0, 0], [0, -1300], [1300, -1300], [1300, -2600], [0, -2600], [0, -3900], [1300, -3900], [1300, -5200], [0, -5200]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -900, exit: -2250, room: 0 },
+            { entrance: -2250, exit: -4000, room: 1 },
+            { entrance: -4000, exit: -5900, room: 2 },
+            { entrance: -5900, exit: -8100, room: 3 }
+        ],
+        monsters: [
+            { type: 'carnival_turret', at: -1500, off: -50, room: 0 },
+            { type: 'mirror_clown', at: -1500, off: 0, room: 0 },
+            { type: 'fire_juggler', at: -1500, off: 50, room: 0 },
+            { type: 'circus_strongman', at: -1900, off: 0, room: 0 },
+            { type: 'circus_strongman', at: -3000, off: -45, room: 1 },
+            { type: 'circus_strongman', at: -3000, off: 45, room: 1 },
+            { type: 'mirror_clown', at: -3300, off: -50, room: 1 },
+            { type: 'mirror_clown', at: -3300, off: 50, room: 1 },
+            { type: 'fire_juggler', at: -3600, off: -55, room: 1 },
+            { type: 'fire_juggler', at: -3600, off: 55, room: 1 },
+            { type: 'macaron_healer', at: -3850, off: 0, room: 1 },
+            { type: 'carnival_turret', at: -4700, off: -55, room: 2 },
+            { type: 'carnival_turret', at: -4700, off: 55, room: 2 },
+            { type: 'circus_strongman', at: -5000, off: -50, room: 2 },
+            { type: 'circus_strongman', at: -5000, off: 50, room: 2 },
+            { type: 'mirror_clown', at: -5300, off: -45, room: 2 },
+            { type: 'mirror_clown', at: -5300, off: 45, room: 2 },
+            { type: 'royal_guard', at: -5600, off: -40, room: 2 },
+            { type: 'royal_guard', at: -5600, off: 40, room: 2 },
+            { type: 'choco_queen', at: -5800, off: 0, room: 2 },
+            { type: 'ringmaster', at: -6800, off: 0, room: 3 },
+            { type: 'circus_strongman', at: -7100, off: -50, room: 3 },
+            { type: 'circus_strongman', at: -7100, off: 50, room: 3 },
+            { type: 'fire_juggler', at: -7350, off: -55, room: 3 },
+            { type: 'fire_juggler', at: -7350, off: 55, room: 3 },
+            { type: 'mirror_clown', at: -7600, off: -50, room: 3 },
+            { type: 'mirror_clown', at: -7600, off: 50, room: 3 },
+            { type: 'royal_guard', at: -7800, off: -45, room: 3 },
+            { type: 'royal_guard', at: -7800, off: 45, room: 3 },
+            { type: 'choco_queen', at: -7950, off: -50, room: 3 },
+            { type: 'choco_queen', at: -7950, off: 50, room: 3 },
+            { type: 'macaron_healer', at: -8050, off: -40, room: 3 },
+            { type: 'macaron_healer', at: -8050, off: 40, room: 3 }
+        ],
+        star: { at: -8450 }
+    }),
     // 20층: 첫 타워 보스전. 10층(케이크)과 같은 방식(직선 다리 위에 몬스터
     // 하나)이지만, 폭을 넓게 잡아서 부채꼴/9칸 격자/좌우 반쪽 같은 패턴이
     // 움직일 공간을 준다.
@@ -2917,6 +3365,17 @@ const CLEAR_REWARDS = {
     story17: { material: 44, materialRare: 23, potion: 44, potionRare: 14, coins: 5100, diamonds: 42, ticketNormal: 2 },
     story18: { material: 47, materialRare: 25, potion: 47, potionRare: 15, coins: 5400, diamonds: 44, ticketNormal: 2 },
     story19: { material: 50, materialRare: 28, potion: 50, potionRare: 17, coins: 5800, diamonds: 46, ticketNormal: 2 },
+    // 21층부터는 20층(가면광대) 보스전을 넘긴 뒤라 뽑기 티켓이 한 장 더 늘어
+    // 3장씩 준다. 29층이 30층 보스 직전 마지막 층이라 다른 층보다 조금 더 굵다.
+    story21: { material: 54, materialRare: 22, potion: 54, potionRare: 18, coins: 6200, diamonds: 48, ticketNormal: 3 },
+    story22: { material: 57, materialRare: 24, potion: 57, potionRare: 19, coins: 6500, diamonds: 50, ticketNormal: 3 },
+    story23: { material: 60, materialRare: 26, potion: 60, potionRare: 20, coins: 6800, diamonds: 52, ticketNormal: 3 },
+    story24: { material: 63, materialRare: 28, potion: 63, potionRare: 21, coins: 7100, diamonds: 54, ticketNormal: 3 },
+    story25: { material: 66, materialRare: 30, potion: 66, potionRare: 22, coins: 7400, diamonds: 56, ticketNormal: 3 },
+    story26: { material: 69, materialRare: 32, potion: 69, potionRare: 23, coins: 7700, diamonds: 58, ticketNormal: 3 },
+    story27: { material: 72, materialRare: 34, potion: 72, potionRare: 24, coins: 8000, diamonds: 60, ticketNormal: 3 },
+    story28: { material: 75, materialRare: 36, potion: 75, potionRare: 25, coins: 8300, diamonds: 62, ticketNormal: 3 },
+    story29: { material: 80, materialRare: 40, potion: 80, potionRare: 28, coins: 8800, diamonds: 66, ticketNormal: 3 },
     // 게스트 레이드. 악마 뽑기 티켓은 오직 여기서만 나온다.
     guest1: { materialRare: 15, potionRare: 12, coins: 4000, diamonds: 60, ticketDemon: 3 },
     guest1_phase1: { materialRare: 5, potionRare: 4, coins: 1500, diamonds: 20, ticketDemon: 1 },
@@ -2946,6 +3405,17 @@ const CLEAR_DROPS = {
     story17: ['cream_greaves', 'cream_plate', 'spirit_armor'],
     story18: ['frost_boots', 'cream_plate', 'cream_greaves', 'storm_greaves'],
     story19: ['cream_plate', 'cream_greaves', 'frost_boots', 'gale_boots'],
+    // 21~29층도 11~19층과 같은 방침: 지금 있는 장비들 중 좋은 쪽이 계속
+    // 나온다. 새 장비는 유누가 만들어 주면 여기 이름만 바꿔 넣으면 된다.
+    story21: ['cream_plate', 'frost_boots', 'ice_spear'],
+    story22: ['cream_greaves', 'frost_boots', 'spirit_armor'],
+    story23: ['cream_plate', 'storm_greaves', 'ice_spear'],
+    story24: ['frost_boots', 'cream_greaves', 'gale_boots'],
+    story25: ['cream_plate', 'spirit_armor', 'storm_greaves'],
+    story26: ['cream_greaves', 'frost_boots', 'mint_blade'],
+    story27: ['cream_plate', 'cream_greaves', 'gale_boots'],
+    story28: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
+    story29: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
     // story20(가면광대)은 CLEAR_DROPS에 따로 안 적는다 -- clearDropsFor()의
