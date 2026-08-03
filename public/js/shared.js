@@ -4579,6 +4579,51 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackBurnTicks: 7 },
             desc: '기본 공격의 화상 총 피해가 7이 됩니다.'
         }
+    },
+    // 오렌지 레몬맛 쿠키: awakening_rapid 궁극기(연타)를 강화한다.
+    orangelemon: {
+        3: {
+            effect: { ultimateDurationMs: 15000 },
+            desc: '궁극기(각성) 지속시간이 15초로 늘어납니다.'
+        },
+        4: {
+            effect: { instinctRapidSpeedBonus: 1 },
+            desc: '궁극기를 쓰는 동안 이동 속도가 1 빨라집니다.'
+        },
+        5: {
+            effect: { attackDamageRight: 11, attackDamageLeft: 12, health: 150 },
+            desc: '공격력이 4 올라(오른쪽 11 · 왼쪽 12) 세지고, 체력이 150으로 늘어납니다.'
+        }
+    },
+    // 용과맛 쿠키: team_guard 궁극기와 기본공격 패시브(회복·화상)를 강화한다.
+    dragonfruit: {
+        3: {
+            effect: { ultimateHealRatio: 0.4 },
+            desc: '궁극기 회복량이 최대 체력의 40%로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateShieldAmount: 70 },
+            desc: '궁극기 보호막이 70으로 강해집니다.'
+        },
+        5: {
+            effect: { attackHealOnUse: 2, attackBurnTicks: 3 },
+            desc: '패시브로 공격 적중 시 팀 회복량이 2로 늘고, 화상 총 피해가 3이 됩니다.'
+        }
+    },
+    // 블랙 슈거맛 쿠키: guard_surge 궁극기와 항상 켜져 있는 패시브 피해 감소를 강화한다.
+    blacksugar: {
+        3: {
+            effect: { ultimateShieldAmount: 100 },
+            desc: '궁극기 보호막이 100으로 강해집니다.'
+        },
+        4: {
+            effect: { ultimateHealAmount: 40 },
+            desc: '궁극기 회복량이 40으로 늘어납니다.'
+        },
+        5: {
+            effect: { passiveDamageMultiplier: 0.7 },
+            desc: '패시브로 받는 피해가 70%로 줄어듭니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {

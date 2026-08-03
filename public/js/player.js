@@ -177,7 +177,7 @@ function withEquipSpeed(base, equipSpeed) {
     return Math.max(0.5, base + (equipSpeed || 0));
 }
 
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed) {
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil) {
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
         return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
@@ -190,6 +190,10 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
         return stats.speed * stats.ultimateSpeedMultiplier;
+    }
+    // 본능해제 4강(오렌지레몬맛): awakening_rapid 궁극기가 켜져 있는 동안 이동속도를 더한다.
+    if (stats.ultimateType === 'awakening_rapid' && stats.instinctRapidSpeedBonus && now < (rapidStrikeUntil || 0)) {
+        return withEquipSpeed(stats.speed + stats.instinctRapidSpeedBonus, equipSpeed);
     }
     return stats.speed;
 }
@@ -267,7 +271,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
