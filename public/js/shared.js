@@ -4639,6 +4639,36 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveHitHealChance: 0.25 },
             desc: '패시브 회복 확률이 25%로 늘어납니다.'
         }
+    },
+    // 바다펄맛 쿠키: 궁극기 자리인 특수스킬(밀물, 4단계 순환)과 패시브 부활을 강화한다.
+    // skillStages는 배열이라 덮어쓸 때마다 이전 강화분까지 포함한 배열 전체를 다시 적는다.
+    seapearl: {
+        3: {
+            effect: {
+                skillStages: [
+                    { windupMs: 0, healRatio: 0.1, shieldAmount: 20 },
+                    { windupMs: 1000, damageRatio: 0.2, healRatio: 0.25, shieldAmount: 50 },
+                    { windupMs: 3000, damageRatio: 0.3, healRatio: 0.5, shieldAmount: 70 },
+                    { windupMs: 5000, damageRatio: 0.4, healRatio: 0.8, shieldAmount: 100 }
+                ]
+            },
+            desc: '특수스킬(밀물) 2단계 보호막이 50으로 강해집니다.'
+        },
+        4: {
+            effect: {
+                skillStages: [
+                    { windupMs: 0, healRatio: 0.1, shieldAmount: 20 },
+                    { windupMs: 1000, damageRatio: 0.2, healRatio: 0.25, shieldAmount: 50 },
+                    { windupMs: 3000, damageRatio: 0.3, healRatio: 0.5, shieldAmount: 70 },
+                    { windupMs: 3000, damageRatio: 0.4, healRatio: 0.8, shieldAmount: 100 }
+                ]
+            },
+            desc: '특수스킬(밀물) 4단계 예열 시간이 5초에서 3초로 줄어듭니다.'
+        },
+        5: {
+            effect: { passiveReviveCount: 1, passiveReviveHpRatio: 0.5 },
+            desc: '패시브로 쓰러졌을 때 한 번, 체력 50%로 부활합니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
