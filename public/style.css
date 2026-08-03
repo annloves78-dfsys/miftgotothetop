@@ -1707,6 +1707,37 @@ body.mc-on .boss-card .icon.char-swatch {
     height: 46px;
 }
 
+/* Mode select: 5 fixed-220px cards in a non-wrapping row add up to ~1220px --
+   wider than any phone screen, and with no scroll available the later cards
+   (게스트 레이드/각성모드/좀비막기) were pushed off the right edge entirely,
+   unreachable. Wrap them into rows and shrink to fit instead. */
+body.mc-on .mode-list {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 92vw;
+    max-width: 420px;
+    gap: 14px;
+    margin: 20px 0;
+}
+
+body.mc-on .mode-card {
+    width: 128px;
+    height: 148px;
+}
+
+body.mc-on .mode-card .icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+body.mc-on .mode-card .name {
+    font-size: 14px;
+}
+
+body.mc-on .mode-card .sub {
+    font-size: 11px;
+}
+
 /* Character detail */
 /* The "← 뒤로" corner button is absolutely positioned over the screen (z-index
    5), so on a phone -- where the panel grows to nearly full height -- it lands
