@@ -4518,6 +4518,22 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackBurnTicks: 4 },
             desc: '기본 공격의 화상 피해가 4번 들어갑니다.'
         }
+    },
+    // 슈가 플라이맛 쿠키: butterfly_mode 궁극기(토글, 켜져 있는 동안 자기 체력이
+    // 깎인다)와 기본공격 패시브 회복을 강화한다.
+    sugarfly: {
+        3: {
+            effect: { ultimateAttackDamage: 9 },
+            desc: '궁극기(나비모드)를 쓰는 동안 공격력이 9로 강해집니다.'
+        },
+        4: {
+            effect: { ultimateSelfDamageIntervalMs: 3000 },
+            desc: '나비모드로 자기 체력이 깎이는 주기가 2초에서 3초로 늘어나 덜 자주 깎입니다.'
+        },
+        5: {
+            effect: { attackHealEveryHits: 3 },
+            desc: '패시브로 기본 공격을 3번 적중시킬 때마다 체력을 2 회복합니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
