@@ -25,7 +25,7 @@ CREATE OR REPLACE FUNCTION public.br_verify_token(p_token text)
 RETURNS public.br_users
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   found_user br_users;
@@ -46,7 +46,7 @@ CREATE OR REPLACE FUNCTION public.br_signup(p_email text, p_password text, p_nic
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   new_user br_users;
@@ -81,7 +81,7 @@ CREATE OR REPLACE FUNCTION public.br_login(p_email text, p_password text)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   found_user br_users;
@@ -107,7 +107,7 @@ CREATE OR REPLACE FUNCTION public.br_get_me(p_token text)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
@@ -124,7 +124,7 @@ CREATE OR REPLACE FUNCTION public.br_save_data(p_token text, p_data jsonb)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
@@ -147,7 +147,7 @@ CREATE OR REPLACE FUNCTION public.br_verify_admin(p_token text)
 RETURNS public.br_users
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
@@ -167,7 +167,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_login(p_email text, p_password text)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   found_user br_users;
@@ -197,7 +197,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_me(p_token text)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
@@ -212,7 +212,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_stats(p_token text)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM br_verify_admin(p_token);
@@ -237,7 +237,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_list_users(
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   q text := '%' || lower(trim(coalesce(p_search, ''))) || '%';
@@ -274,7 +274,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_get_user(p_token text, p_user_id uuid
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   target br_users;
@@ -297,7 +297,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_set_nickname(p_token text, p_user_id 
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM br_verify_admin(p_token);
@@ -317,7 +317,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_set_game_data(p_token text, p_user_id
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM br_verify_admin(p_token);
@@ -337,7 +337,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_reset_data(p_token text, p_user_id uu
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM br_verify_admin(p_token);
@@ -354,7 +354,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_reset_password(p_token text, p_user_i
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM br_verify_admin(p_token);
@@ -378,7 +378,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_set_admin(p_token text, p_user_id uui
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
@@ -401,7 +401,7 @@ CREATE OR REPLACE FUNCTION public.br_admin_delete_user(p_token text, p_user_id u
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   me br_users;
