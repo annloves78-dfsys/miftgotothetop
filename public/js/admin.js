@@ -64,7 +64,8 @@ const ERROR_MESSAGES = {
     CANNOT_DELETE_SELF: '자기 자신의 계정은 삭제할 수 없습니다.',
     INVALID_CURRENCY: '알 수 없는 재화 종류입니다.',
     INVALID_AMOUNT: '수량을 입력해주세요.',
-    INVALID_CHARACTER: '알 수 없는 캐릭터입니다.'
+    INVALID_CHARACTER: '알 수 없는 캐릭터입니다.',
+    CANNOT_REVOKE_KICKER: '자두맛 쿠키는 제거할 수 없습니다.'
 };
 
 // main.js의 CURRENCY_LABELS와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
@@ -378,6 +379,16 @@ $('grant-character-btn').addEventListener('click', () => {
         'br_admin_grant_character',
         { p_user_id: openUser.id, p_character: character },
         `${CHARACTER_LABELS[character]}를(을) 지급했습니다.`
+    );
+});
+
+$('revoke-character-btn').addEventListener('click', () => {
+    const character = $('character-select').value;
+    if (!confirm(`${openUser.nickname}님의 ${CHARACTER_LABELS[character]}를(을) 제거할까요?`)) return;
+    runAction(
+        'br_admin_revoke_character',
+        { p_user_id: openUser.id, p_character: character },
+        `${CHARACTER_LABELS[character]}를(을) 제거했습니다.`
     );
 });
 
