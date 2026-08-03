@@ -541,21 +541,28 @@ const INSTINCT_LEVEL_DESCRIPTIONS = {
     1: `기본 능력치 강화 — 체력 +${SHARED.INSTINCT_L1_BONUS_HEALTH}, 공격력 +${SHARED.INSTINCT_L1_BONUS_ATTACK}`,
     2: `스킬 강화 — 스킬 피해 +${SHARED.INSTINCT_L2_SKILL_DAMAGE_BONUS}, 보호막 +${SHARED.INSTINCT_L2_SKILL_SHIELD_BONUS}, 회복 +${SHARED.INSTINCT_L2_SKILL_HEAL_BONUS}`
 };
-function instinctLevelDesc(level) {
+// 3강부터는 캐릭터마다 다르다 -- 없으면 아직 디자인 전이라 "준비 중"으로 보인다.
+function instinctLevelDesc(charType, level) {
     if (level <= 0) return '아직 해제되지 않았습니다.';
-    return INSTINCT_LEVEL_DESCRIPTIONS[level] || `${level}강 (궁극기 강화 — 준비 중)`;
+    if (level <= 2) return INSTINCT_LEVEL_DESCRIPTIONS[level];
+    return SHARED.instinctCharLevelDesc(charType, level) || `${level}강 (궁극기 강화 — 준비 중)`;
 }
-// 소울스톤을 써서 한 단계 강화한다. 지금은 2강까지만 실제로 동작한다
-// (3강부터는 궁극기 강화라 캐릭터별로 나중에 채워 넣을 예정).
+// 다음 레벨이 실제로 강화 가능한지 (1~2강은 항상, 3강부터는 그 캐릭터의
+// 효과가 정의돼 있을 때만).
+function instinctNextLevelReady(charType, nextLevel) {
+    return nextLevel <= 2 || !!SHARED.instinctCharLevelEffect(charType, nextLevel);
+}
+// 소울스톤을 써서 한 단계 강화한다.
 function upgradeInstinct(charType) {
     const level = instinctLevelOfChar(charType);
-    if (level >= 2) return false;
+    const nextLevel = level + 1;
+    if (!instinctNextLevelReady(charType, nextLevel)) return false;
     const cost = SHARED.instinctNextCost(level);
     if (cost == null) return false;
     const have = gameData.soulStones[charType] || 0;
     if (have < cost) return false;
     gameData.soulStones[charType] = have - cost;
-    gameData.instinctLevels[charType] = level + 1;
+    gameData.instinctLevels[charType] = nextLevel;
     saveGameData(gameData);
     return true;
 }
@@ -565,7 +572,7 @@ function upgradeInstinct(charType) {
 // 실제로 싸울 때의 숫자가 그대로 보인다.
 function statsWithGear(charType) {
     const base = SHARED.characterWithGear(charType, equipPayload(charType)) || SHARED.CHARACTERS.kicker;
-    return SHARED.characterWithInstinct(base, instinctLevelOfChar(charType));
+    return SHARED.characterWithInstinct(base, instinctLevelOfChar(charType), charType);
 }
 
 // 장비 하나의 능력치를 사람이 읽을 수 있는 한 줄로.
@@ -1082,7 +1089,7 @@ function charIconBackground(stats) {
 function selectCharDetailAbility(kind) {
     const stats = statsWithGear(viewingCharacterId);
     charDetailDesc.textContent = kind === 'instinct'
-        ? instinctLevelDesc(instinctLevelOfChar(viewingCharacterId))
+        ? instinctLevelDesc(viewingCharacterId, instinctLevelOfChar(viewingCharacterId))
         : describeAbility(stats, kind);
     charDetailInstinctRow.classList.toggle('hidden', kind !== 'instinct');
     [
@@ -1919,15 +1926,16 @@ function renderCharDetailInstinct(charType) {
     charDetailInstinctBadge.textContent = `${level}강`;
     const cost = SHARED.instinctNextCost(level);
     const have = gameData.soulStones[charType] || 0;
-    if (level >= 2) {
-        // 3강부터는 궁극기 강화라 아직 준비 중이다.
-        charDetailInstinctCostEl.textContent = cost == null ? '' : `${level + 1}강 — 준비 중`;
+    const nextLevel = level + 1;
+    if (cost == null || !instinctNextLevelReady(charType, nextLevel)) {
+        // 최대 강화이거나, 3강 이상인데 그 캐릭터의 효과가 아직 없다.
+        charDetailInstinctCostEl.textContent = cost == null ? '' : `${nextLevel}강 — 준비 중`;
         charDetailInstinctBtn.disabled = true;
-        charDetailInstinctBtn.textContent = '준비 중';
+        charDetailInstinctBtn.textContent = cost == null ? '최대 강화' : '준비 중';
     } else {
         charDetailInstinctCostEl.textContent = `💎 ${have} / ${cost}`;
         charDetailInstinctBtn.disabled = have < cost;
-        charDetailInstinctBtn.textContent = `${level + 1}강 (영혼석 ${cost})`;
+        charDetailInstinctBtn.textContent = `${nextLevel}강 (영혼석 ${cost})`;
     }
 }
 

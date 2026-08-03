@@ -4394,15 +4394,126 @@ function instinctStatBonus(level) {
     return lv >= 1 ? { health: INSTINCT_L1_BONUS_HEALTH, attack: INSTINCT_L1_BONUS_ATTACK } : { health: 0, attack: 0 };
 }
 
-// 캐릭터 사본에 2강 스킬 강화를 반영한다. 바꿀 게 없으면 원본을 그대로 돌려준다
-// (사본을 만들지 않으므로 === 비교도 그대로 통한다).
-function characterWithInstinct(character, level) {
+// 캐릭터별 3~5강(궁극기/패시브 강화). 사용자가 캐릭터마다 직접 디자인해서 채워
+// 넣는 자리 -- 없는 캐릭터/레벨은 characterWithInstinct가 그냥 건너뛰고, 상세화면엔
+// "준비 중"으로 보인다. effect는 그 레벨에서 확정되는 최종값(더하기가 아니라 덮어쓰기)이라,
+// 예를 들어 ultimateDurationMs를 3강 8000 -> 4강 10000처럼 레벨마다 다시 정할 수 있다.
+const INSTINCT_CHAR_LEVELS = {
+    // 자두맛 쿠키: team_heal_over_time 궁극기(1초마다 10 회복)를 오래 켜 둔다.
+    kicker: {
+        3: {
+            effect: { ultimateDurationMs: 8000 },
+            desc: '궁극기 지속시간이 8초로 늘어나, 그동안 팀 전체를 1초마다 10씩 회복시킵니다.'
+        },
+        4: {
+            effect: { ultimateDurationMs: 10000 },
+            desc: '궁극기 지속시간이 10초로 늘어나, 그동안 팀 전체를 1초마다 10씩 회복시킵니다.'
+        },
+        5: {
+            effect: { passiveRegenAmount: 1, passiveRegenTickMs: 5000 },
+            desc: '패시브로 5초마다 체력을 1 회복합니다.'
+        }
+    },
+    // 시금치맛 쿠키: attack_heal_boost 궁극기(공격 적중 시 팀 회복) 위주로 강화한다.
+    spinach: {
+        3: {
+            effect: { instinctUltimateAttackSpeedMult: 0.2 },
+            desc: '궁극기를 쓰는 동안 공격속도가 5배(재사용 대기시간 20%)로 빨라집니다.'
+        },
+        4: {
+            effect: { ultimateDurationMs: 10000 },
+            desc: '궁극기 지속시간이 10초로 늘어납니다.'
+        },
+        5: {
+            effect: { attackHealChance: 1, attackHealOnUse: 2 },
+            desc: '패시브로 기본 공격이 적중할 때마다 100% 확률로 팀 전체를 2 회복시킵니다.'
+        }
+    },
+    // 청사과맛 쿠키: element_mark 궁극기(기본공격이 표식을 남기는 시간)를 강화한다.
+    greenapple: {
+        3: {
+            effect: { ultimateDurationMs: 10000 },
+            desc: '궁극기 지속시간이 5초에서 10초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateMarkUses: 5 },
+            desc: '궁극기 사용 중 남기는 속성표식이 5번씩 적용됩니다.'
+        },
+        5: {
+            effect: { attackKnockback: 40, attackMarkUses: 1, instinctAttackMarkChance: 0.3 },
+            desc: '기본 공격의 밀치기가 40픽셀로 강해지고, 궁극기가 꺼져 있어도 기본 공격 적중 시 30% 확률로 속성표식을 남깁니다.'
+        }
+    },
+    // 보드맛 쿠키: team_shield 궁극기와 물 속성 저항 패시브를 강화한다.
+    board: {
+        3: {
+            effect: { ultimateShieldAmount: 70 },
+            desc: '궁극기 보호막이 70으로 강해집니다.'
+        },
+        4: {
+            effect: { ultimateHealAmount: 10 },
+            desc: '궁극기를 쓰면 보호막과 함께 팀 전체 체력을 10 회복시킵니다.'
+        },
+        5: {
+            effect: { passiveResistMultiplier: 0.6 },
+            desc: '물 속성 표식이 붙은 상대에게 받는 피해가 60%로 줄어듭니다.'
+        }
+    },
+    // 전기줄맛 쿠키: body_fuse 궁극기(합체)를 강화한다.
+    electriccord: {
+        3: {
+            effect: { ultimateDurationMs: 15000 },
+            desc: '궁극기(합체) 지속시간이 15초로 늘어납니다.'
+        },
+        4: {
+            effect: { instinctFusedRegenAmount: 2, instinctFusedRegenTickMs: 1000 },
+            desc: '합체 상태인 동안 1초마다 체력을 2 회복합니다.'
+        },
+        5: {
+            effect: { upperAttackDamage: 5, lowerAttackDamage: 8 },
+            desc: '상체 공격력이 5로, 하체 공격력이 8로 강해집니다.'
+        }
+    },
+    // 레드 드레곤맛 쿠키: awakening 궁극기(속도·공격력 버프 + 자힐)를 강화한다.
+    reddragon: {
+        3: {
+            effect: { ultimateDurationMs: 10000 },
+            desc: '궁극기(각성) 지속시간이 10초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateAttackDamage: 11 },
+            desc: '궁극기(각성) 중 공격력이 11로 강해집니다.'
+        },
+        5: {
+            effect: { passiveDamageMultiplier: 0.8 },
+            desc: '패시브로 받는 피해가 항상 80%로 줄어듭니다.'
+        }
+    }
+};
+function instinctCharLevelEffect(charType, level) {
+    const t = INSTINCT_CHAR_LEVELS[charType];
+    return (t && t[level] && t[level].effect) || null;
+}
+function instinctCharLevelDesc(charType, level) {
+    const t = INSTINCT_CHAR_LEVELS[charType];
+    return (t && t[level] && t[level].desc) || null;
+}
+
+// 캐릭터 사본에 2강 스킬 강화 + 3~5강(있으면) 캐릭터별 강화를 반영한다.
+// 바꿀 게 없으면 원본을 그대로 돌려준다 (사본을 만들지 않으므로 === 비교도 그대로 통한다).
+function characterWithInstinct(character, level, charType) {
     const lv = clampInstinctLevel(level);
     if (!character || lv < 2) return character;
     const out = Object.assign({}, character);
     INSTINCT_SKILL_DAMAGE_KEYS.forEach(k => { if (out[k] != null) out[k] += INSTINCT_L2_SKILL_DAMAGE_BONUS; });
     INSTINCT_SKILL_HEAL_KEYS.forEach(k => { if (out[k] != null) out[k] += INSTINCT_L2_SKILL_HEAL_BONUS; });
     INSTINCT_SKILL_SHIELD_KEYS.forEach(k => { if (out[k] != null) out[k] += INSTINCT_L2_SKILL_SHIELD_BONUS; });
+    if (charType) {
+        for (let l = 3; l <= lv; l++) {
+            const eff = instinctCharLevelEffect(charType, l);
+            if (eff) Object.assign(out, eff);
+        }
+    }
     return out;
 }
 
@@ -4640,7 +4751,7 @@ function zombieWaveReward(wave) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 }

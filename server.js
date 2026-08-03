@@ -80,6 +80,29 @@ function pickTargetPosition(room) {
     return { x: target.x, y: target.y };
 }
 
+// 본능해제로 붙는 시간형 패시브(예: 자두맛 5강 체력 재생). character.passiveRegenAmount/
+// passiveRegenTickMs가 있는 플레이어만 대상이고, p.instinctRegenNextAt에 다음 회복
+// 시각을 들고 있다가 지나면 회복시키고 다음 틱을 예약한다. 좀비막기는 캐릭터
+// 고유 능력을 아예 재현하지 않는 모드라 이 훅을 부르지 않는다.
+function tickInstinctPassiveRegen(room, roomId, now, healedEvent) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        const character = charOf(p);
+        if (!character || !character.passiveRegenAmount || !character.passiveRegenTickMs) {
+            p.instinctRegenNextAt = 0; // 강화를 내려도(또는 캐릭터를 바꿔도) 다음번엔 새로 잰다
+            continue;
+        }
+        if (!p.instinctRegenNextAt) { p.instinctRegenNextAt = now + character.passiveRegenTickMs; continue; }
+        if (now < p.instinctRegenNextAt) continue;
+        p.instinctRegenNextAt += character.passiveRegenTickMs;
+        const healed = Math.min(p.maxHp, p.hp + character.passiveRegenAmount);
+        if (healed !== p.hp) {
+            p.hp = healed;
+            io.to(roomId).emit(healedEvent, { id, hp: p.hp });
+        }
+    }
+}
+
 function healTeam(room, roomId, amount) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
@@ -171,7 +194,7 @@ function bonusOf(p) { return (p && p.bonus) || NO_EQUIP_BONUS; }
 function charFrom(charType, equip, instinctLevel) {
     const resolved = CHARACTERS[charType] ? charType : 'kicker';
     const withGear = characterWithGear(resolved, (equip && typeof equip === 'object') ? equip : null);
-    return characterWithInstinct(withGear, instinctLevel);
+    return characterWithInstinct(withGear, instinctLevel, resolved);
 }
 function gearFrom(charType, equip) {
     if (!CHARACTERS[charType] || !equip || typeof equip !== 'object') return null;
@@ -317,12 +340,31 @@ function resetBodyFormIfNeeded(p) {
 }
 
 // 합체 10초가 다 되면 자동으로 풀린다. 매 틱 이 함수를 부른다.
-function tickBodyFusion(room, roomId, now, ev) {
+function tickBodyFusion(room, roomId, now, ev, healedEvent) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive || !p.fused) continue;
         const character = charOf(p);
         if (!character || character.ultimateType !== 'body_fuse') continue;
-        if (now < p.fusedUntil) continue;
+        if (now < p.fusedUntil) {
+            // 본능해제 4강(전기줄맛): 합체 중 일정 간격으로 체력을 재생한다.
+            if (character.instinctFusedRegenAmount && character.instinctFusedRegenTickMs) {
+                if (!p.fusedRegenNextAt) {
+                    p.fusedRegenNextAt = now + character.instinctFusedRegenTickMs;
+                } else if (now >= p.fusedRegenNextAt) {
+                    p.fusedRegenNextAt += character.instinctFusedRegenTickMs;
+                    const healed = Math.min(p.maxHp, p.hp + character.instinctFusedRegenAmount);
+                    if (healed !== p.hp) {
+                        p.hp = healed;
+                        syncBodyFormToParty(p);
+                        const payload = { id, hp: p.hp };
+                        if (p.party && p.partyHp) payload.partyHp = p.partyHp;
+                        io.to(roomId).emit(healedEvent, payload);
+                    }
+                }
+            }
+            continue;
+        }
+        p.fusedRegenNextAt = 0;
         const upperMax = character.upperHealth + bonusOf(p).health;
         p.fused = false;
         p.fusedUntil = 0;
@@ -512,12 +554,18 @@ function resolveAttack(character, p, now, rapid) {
 }
 
 // The combo's follow-up thrust opens far sooner than a fresh opening sweep.
-function attackCooldownFor(character, p, rapid) {
+function attackCooldownFor(character, p, rapid, now) {
     if (rapid) return character.ultimateRapidCooldown;
     if (character.attackType === 'combo_two_stage' && (p.comboStage || 0) === 1) {
         return character.comboFollowupCooldown;
     }
-    return character.attackCooldown;
+    let cooldown = character.attackCooldown;
+    // 본능해제 3강(시금치맛): attack_heal_boost 궁극기가 켜져 있는 동안 공격속도를 올린다.
+    if (character.instinctUltimateAttackSpeedMult && character.ultimateType === 'attack_heal_boost'
+        && p.attackHealBoostUntil && now < p.attackHealBoostUntil) {
+        cooldown *= character.instinctUltimateAttackSpeedMult;
+    }
+    return cooldown;
 }
 
 // Steps whichever "which swing comes next" counter this attack type keeps.
@@ -687,10 +735,11 @@ function tickRoom(roomId) {
     // 바다펄맛 패시브는 체력이 오르내릴 때마다 켜지고 꺼진다. 피해와 회복이
     // 여러 갈래로 들어오므로 한 곳에서 매 틱 다시 본다.
     for (const pl of Object.values(room.players)) refreshLowHpMode(charOf(pl), pl);
+    tickInstinctPassiveRegen(room, roomId, now, 'playerHealed');
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
-    tickBodyFusion(room, roomId, now, 'bodyFormChanged');
+    tickBodyFusion(room, roomId, now, 'bodyFormChanged', 'playerHealed');
 
     // Thrown drops, against the one thing in this arena worth hitting. The
     // raid boss never moves from the origin, so a homing shot just has to
@@ -2303,8 +2352,13 @@ function ultimateMarkOpts(character) {
 
 // 치즈만두맛 패시브: 기본공격이 적중할 때마다 스스로 표식을 남긴다. 각성하면
 // awakenedForm이 attackMarkUses를 0으로 덮어써서 더 이상 남기지 않는다.
+// 본능해제 5강(청사과맛): instinctAttackMarkChance가 있으면 매번이 아니라 그
+// 확률만큼만 표식을 남긴다 (없는 캐릭터는 지금까지처럼 항상 남긴다).
 function attackMarkChargesOf(character, p) {
-    return stat(character, p, 'attackMarkUses') || 0;
+    const charges = stat(character, p, 'attackMarkUses') || 0;
+    if (!charges) return 0;
+    if (character.instinctAttackMarkChance != null && Math.random() >= character.instinctAttackMarkChance) return 0;
+    return charges;
 }
 function attackMarkOpts(character, charges) {
     return { charges, multiplier: character.attackMarkMultiplier || 1.3 };
@@ -2751,10 +2805,11 @@ function tickStoryRoom(roomId) {
     // 바다펄맛 패시브는 체력이 오르내릴 때마다 켜지고 꺼진다. 피해와 회복이
     // 여러 갈래로 들어오므로 한 곳에서 매 틱 다시 본다.
     for (const pl of Object.values(room.players)) refreshLowHpMode(charOf(pl), pl);
+    tickInstinctPassiveRegen(room, roomId, now, 'storyPlayerHealed');
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToStoryPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
-    tickBodyFusion(room, roomId, now, 'storyBodyFormChanged');
+    tickBodyFusion(room, roomId, now, 'storyBodyFormChanged', 'storyPlayerHealed');
 
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
@@ -3886,7 +3941,7 @@ function tickGuestRoom(roomId) {
 
     tickButterflyMode(room, now, (id, pl, dmg) => applyDamageToGuestPlayer(roomId, id, dmg));
     if (!rooms[roomId]) return;
-    tickBodyFusion(room, roomId, now, 'guestBodyFormChanged');
+    tickBodyFusion(room, roomId, now, 'guestBodyFormChanged', 'guestPlayerHealed');
 
     // Team buffs (the healer's ultimate) tick independently of the boss.
     if (room.activeBuffs.length) {
@@ -4895,7 +4950,7 @@ io.on('connection', (socket) => {
         const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
-        const cooldown = attackCooldownFor(character, p, rapid);
+        const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
@@ -5503,6 +5558,8 @@ io.on('connection', (socket) => {
             }
         } else if (character.ultimateType === 'team_shield') {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+            // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
+            if (character.ultimateHealAmount) healStoryPlayer(room, roomId, character.ultimateHealAmount);
         } else if (character.ultimateType === 'undying_soul') {
             // Heals a share of max hp, then the timer is read by
             // effectiveAttackDamage (the speed part is client-side movement).
@@ -5553,7 +5610,7 @@ io.on('connection', (socket) => {
         const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
-        const cooldown = attackCooldownFor(character, p, rapid);
+        const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
@@ -6024,6 +6081,8 @@ io.on('connection', (socket) => {
             }
         } else if (character.ultimateType === 'team_shield') {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
+            // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
+            if (character.ultimateHealAmount) healTeam(room, roomId, character.ultimateHealAmount);
         } else if (character.ultimateType === 'undying_soul') {
             p.undyingSoulUntil = now + character.ultimateDurationMs;
             const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
@@ -6227,7 +6286,7 @@ io.on('connection', (socket) => {
         const character = charOf(p);
         const now = Date.now();
         const rapid = rapidStrikeActive(character, p, now);
-        if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid)) return;
+        if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid, now)) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
         if (character.attackType === 'throw_projectile') {
@@ -6696,6 +6755,8 @@ io.on('connection', (socket) => {
             }
         } else if (character.ultimateType === 'team_shield') {
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
+            if (character.ultimateHealAmount) healGuestTeam(room, roomId, character.ultimateHealAmount);
         } else if (character.ultimateType === 'undying_soul') {
             p.undyingSoulUntil = now + character.ultimateDurationMs;
             p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
