@@ -4534,6 +4534,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackHealEveryHits: 3 },
             desc: '패시브로 기본 공격을 3번 적중시킬 때마다 체력을 2 회복합니다.'
         }
+    },
+    // 번개전사맛 쿠키: lightning_strike 궁극기와 패시브 부활을 강화한다.
+    lightning: {
+        3: {
+            effect: { ultimateDamage: 23 },
+            desc: '궁극기 피해가 23으로 강해집니다.'
+        },
+        4: {
+            effect: { ultimateDamageDebuffMultiplier: 0.5 },
+            desc: '궁극기에 맞은 적이 10초 동안 주는 피해가 50%로 줄어듭니다.'
+        },
+        5: {
+            effect: { passiveReviveHpRatio: 1 },
+            desc: '쓰러졌을 때 체력 100%로 부활합니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
