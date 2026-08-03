@@ -855,6 +855,7 @@ html, body {
     justify-content: center;
     padding: 30px;
     gap: 16px;
+    overflow-y: auto;
 }
 
 .detail-right {
@@ -867,6 +868,7 @@ html, body {
     align-items: center;
     padding: 24px;
     gap: 14px;
+    overflow-y: auto;
 }
 
 .char-preview-row {
@@ -946,6 +948,7 @@ html, body {
     align-items: center;
     justify-content: center;
     padding: 24px;
+    overflow-y: auto;
 }
 
 .tower-floor-list {
@@ -992,6 +995,7 @@ html, body {
     align-items: center;
     padding: 24px;
     gap: 16px;
+    overflow-y: auto;
 }
 
 .char-icon-circle.small {
@@ -1748,6 +1752,60 @@ body.mc-on .skill-icon-box {
     width: 44px;
     height: 44px;
     font-size: 20px;
+}
+
+/* Boss/guest/zombie detail and the story tower share the same fixed-height
+   three-column layout as the character detail panel (.cd-panel), but were
+   missing its overflow/shrink treatment -- on a short phone screen the play
+   button at the bottom got pushed past the box edge with nothing scrollable
+   to reach it (the boxes themselves now scroll too; see .detail-right /
+   .detail-left / .tower-right / .tower-middle). Shrinking things here means
+   scrolling is rarely actually needed. */
+body.mc-on .detail-layout,
+body.mc-on .tower-layout {
+    height: 90vh;
+}
+
+body.mc-on .detail-left,
+body.mc-on .detail-right,
+body.mc-on .tower-right {
+    padding: 14px;
+    gap: 10px;
+}
+
+body.mc-on .tower-middle {
+    padding: 12px;
+}
+
+body.mc-on .tower-floor-list {
+    width: 200px;
+    gap: 10px;
+}
+
+body.mc-on .floor-card {
+    padding: 14px;
+    font-size: 16px;
+}
+
+body.mc-on .char-preview-row {
+    gap: 12px;
+}
+
+/* Scoped to .detail-left/.detail-right (the 100px default icon) so it doesn't
+   also inflate the tower screen's already-small .char-icon-circle.small
+   preview icon -- body.mc-on's extra element makes this more specific than
+   the plain .char-icon-circle.small rule, so an unscoped version here would
+   win and blow the tower icon back up to 70px. */
+body.mc-on .detail-left .char-icon-circle,
+body.mc-on .detail-right .char-icon-circle {
+    width: 70px;
+    height: 70px;
+}
+
+body.mc-on .boss-icon-circle {
+    width: 64px;
+    height: 64px;
+    font-size: 32px;
 }
 
 /* Gacha */
