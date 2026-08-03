@@ -418,6 +418,120 @@ BEGIN
 END;
 $$;
 
+-- ===== 캐릭터 전부 초기화 (자두맛만 남기고 해금/장착/영혼석 리셋) =====
+CREATE OR REPLACE FUNCTION public.br_admin_reset_characters(p_token text, p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  PERFORM br_verify_admin(p_token);
+  UPDATE br_users
+  SET game_data = game_data || jsonb_build_object(
+    'unlockedCharacters', '["kicker"]'::jsonb,
+    'selectedCharacter', '"kicker"'::jsonb,
+    'equipped', '{}'::jsonb,
+    'soulStones', '{}'::jsonb
+  )
+  WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+-- ===== 재화 전부 초기화 (모든 재화 종류를 0으로) =====
+CREATE OR REPLACE FUNCTION public.br_admin_reset_currencies(p_token text, p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  PERFORM br_verify_admin(p_token);
+  UPDATE br_users
+  SET game_data = game_data || jsonb_build_object('currencies', jsonb_build_object(
+    'coins', 0, 'diamonds', 0, 'ticketNormal', 0, 'material', 0, 'materialRare', 0,
+    'potion', 0, 'potionRare', 0, 'ticketDemon', 0, 'ticketWaterdrop', 0,
+    'ticketMagma', 0, 'ticketLightning', 0
+  ))
+  WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+-- ===== 진행도(보스/스토리 층/이벤트) 전부 초기화 =====
+CREATE OR REPLACE FUNCTION public.br_admin_reset_progress(p_token text, p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  PERFORM br_verify_admin(p_token);
+  UPDATE br_users
+  SET game_data = game_data || jsonb_build_object(
+    'clearedBosses', '[]'::jsonb,
+    'clearedStoryFloors', '[]'::jsonb,
+    'bestClearTimeMs', '{}'::jsonb,
+    'eventCleared', '[]'::jsonb,
+    'eventClaimed', '[]'::jsonb
+  )
+  WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+-- ===== 재화 지급/차감 (종류별로 하나씩, 음수면 차감, 0 밑으로는 안 내려감) =====
+CREATE OR REPLACE FUNCTION public.br_admin_grant_currency(p_token text, p_user_id uuid, p_currency text, p_amount bigint)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  cur_val bigint;
+  new_val bigint;
+  base jsonb;
+BEGIN
+  PERFORM br_verify_admin(p_token);
+  IF p_currency NOT IN (
+    'coins', 'diamonds', 'ticketNormal', 'material', 'materialRare',
+    'potion', 'potionRare', 'ticketDemon', 'ticketWaterdrop', 'ticketMagma', 'ticketLightning'
+  ) THEN
+    RAISE EXCEPTION 'INVALID_CURRENCY';
+  END IF;
+  IF p_amount IS NULL THEN
+    RAISE EXCEPTION 'INVALID_AMOUNT';
+  END IF;
+
+  SELECT game_data INTO base FROM br_users WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+  IF NOT (base ? 'currencies') THEN
+    base := base || '{"currencies":{}}'::jsonb;
+  END IF;
+
+  cur_val := COALESCE((base->'currencies'->>p_currency)::bigint, 0);
+  new_val := GREATEST(cur_val + p_amount, 0);
+
+  UPDATE br_users
+  SET game_data = jsonb_set(base, ARRAY['currencies', p_currency], to_jsonb(new_val), true)
+  WHERE id = p_user_id;
+
+  RETURN json_build_object('ok', true, 'currency', p_currency, 'value', new_val);
+END;
+$$;
+
 -- =============================================
 -- 첫 관리자 지정 (필수!)
 -- 아래 줄의 이메일을 본인 계정 이메일로 바꾼 뒤 실행하세요.

@@ -116,6 +116,16 @@
             </div>
 
             <div class="drawer-section">
+                <div class="section-title">재화 지급 / 차감</div>
+                <div class="inline-row">
+                    <select id="currency-select" class="field-input"></select>
+                    <input id="currency-amount-input" class="field-input amount-input" type="number" placeholder="수량">
+                    <button id="grant-currency-btn" class="primary-btn small">지급</button>
+                </div>
+                <p class="hint">음수를 넣으면 차감됩니다. 0 밑으로는 안 내려갑니다.</p>
+            </div>
+
+            <div class="drawer-section">
                 <div class="section-title">세이브 데이터</div>
                 <textarea id="detail-gamedata" class="json-editor" spellcheck="false"></textarea>
                 <div class="inline-row end">
@@ -126,6 +136,11 @@
 
             <div class="drawer-section danger-zone">
                 <div class="section-title">위험 구역</div>
+                <div class="inline-row end">
+                    <button id="reset-characters-btn" class="danger-btn small">캐릭터 전부 삭제</button>
+                    <button id="reset-currencies-btn" class="danger-btn small">재화 전부 삭제</button>
+                    <button id="reset-progress-btn" class="danger-btn small">진행도 전부 삭제</button>
+                </div>
                 <div class="inline-row end">
                     <button id="toggle-admin-btn" class="ghost-btn">관리자 권한 부여</button>
                     <button id="delete-user-btn" class="danger-btn">계정 삭제</button>

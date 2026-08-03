@@ -444,6 +444,15 @@ button:disabled {
     align-items: center;
 }
 
+.inline-row .amount-input {
+    flex: 0 0 100px;
+    width: 100px;
+}
+
+.inline-row select.field-input {
+    flex: 1 1 auto;
+}
+
 .inline-row.end {
     justify-content: flex-end;
     margin-top: 10px;

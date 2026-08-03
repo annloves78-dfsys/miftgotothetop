@@ -61,8 +61,28 @@ const ERROR_MESSAGES = {
     PASSWORD_WEAK: '비밀번호는 10자 이상, 영문/숫자/특수문자를 모두 포함해야 합니다.',
     INVALID_DATA: '세이브 데이터는 JSON 객체여야 합니다.',
     CANNOT_DEMOTE_SELF: '자기 자신의 관리자 권한은 해제할 수 없습니다.',
-    CANNOT_DELETE_SELF: '자기 자신의 계정은 삭제할 수 없습니다.'
+    CANNOT_DELETE_SELF: '자기 자신의 계정은 삭제할 수 없습니다.',
+    INVALID_CURRENCY: '알 수 없는 재화 종류입니다.',
+    INVALID_AMOUNT: '수량을 입력해주세요.'
 };
+
+// main.js의 CURRENCY_LABELS와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
+const CURRENCY_LABELS = {
+    coins: '코인',
+    diamonds: '다이아',
+    ticketNormal: '일반 뽑기 티켓',
+    material: '일반 장비강화 재료',
+    materialRare: '고급 장비강화 재료',
+    potion: '강화포션',
+    potionRare: '고급 강화포션',
+    ticketDemon: '악마 뽑기 티켓',
+    ticketWaterdrop: '물방울맛 뽑기 티켓',
+    ticketMagma: '마그마맛 뽑기 티켓',
+    ticketLightning: '번개전사맛 뽑기 티켓'
+};
+
+$('currency-select').innerHTML = Object.entries(CURRENCY_LABELS)
+    .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join('');
 
 function describeError(e) {
     const msg = (e && e.message) || '';
@@ -309,6 +329,33 @@ $('save-gamedata-btn').addEventListener('click', () => {
 $('reset-data-btn').addEventListener('click', () => {
     if (!confirm(`${openUser.nickname}님의 세이브 데이터를 초기화할까요? 되돌릴 수 없습니다.`)) return;
     runAction('br_admin_reset_data', { p_user_id: openUser.id }, '세이브 데이터를 초기화했습니다.');
+});
+
+$('grant-currency-btn').addEventListener('click', () => {
+    const currency = $('currency-select').value;
+    const amount = Number($('currency-amount-input').value);
+    if (!Number.isFinite(amount) || amount === 0) { toast('수량을 입력해주세요.', true); return; }
+    runAction(
+        'br_admin_grant_currency',
+        { p_user_id: openUser.id, p_currency: currency, p_amount: Math.trunc(amount) },
+        `${CURRENCY_LABELS[currency]}를(을) ${amount > 0 ? '지급' : '차감'}했습니다.`
+    );
+    $('currency-amount-input').value = '';
+});
+
+$('reset-characters-btn').addEventListener('click', () => {
+    if (!confirm(`${openUser.nickname}님의 캐릭터를 전부 삭제할까요? 자두맛만 남고 장착 장비/영혼석도 초기화되며 되돌릴 수 없습니다.`)) return;
+    runAction('br_admin_reset_characters', { p_user_id: openUser.id }, '캐릭터를 전부 삭제했습니다.');
+});
+
+$('reset-currencies-btn').addEventListener('click', () => {
+    if (!confirm(`${openUser.nickname}님의 재화를 전부 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    runAction('br_admin_reset_currencies', { p_user_id: openUser.id }, '재화를 전부 삭제했습니다.');
+});
+
+$('reset-progress-btn').addEventListener('click', () => {
+    if (!confirm(`${openUser.nickname}님의 보스/스토리 층/이벤트 진행도를 전부 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    runAction('br_admin_reset_progress', { p_user_id: openUser.id }, '진행도를 전부 삭제했습니다.');
 });
 
 $('toggle-admin-btn').addEventListener('click', () => {
