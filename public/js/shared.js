@@ -4624,6 +4624,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveDamageMultiplier: 0.7 },
             desc: '패시브로 받는 피해가 70%로 줄어듭니다.'
         }
+    },
+    // 번개악마맛 쿠키: great_slash 궁극기와 패시브 회복 확률을 강화한다.
+    lightningdevil: {
+        3: {
+            effect: { ultimateDamage: 65 },
+            desc: '궁극기(크게베기) 피해가 15 늘어나 65가 됩니다.'
+        },
+        4: {
+            effect: { ultimateHealRatio: 0.25 },
+            desc: '궁극기가 적중하면 최대 체력의 25%를 회복합니다.'
+        },
+        5: {
+            effect: { passiveHitHealChance: 0.25 },
+            desc: '패시브 회복 확률이 25%로 늘어납니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
