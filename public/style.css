@@ -3525,6 +3525,30 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 .awaken-party-title { color: #9fb1c1; font-size: 13px; }
 
+.awaken-mode-toggle {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+}
+
+.awaken-toggle-btn {
+    flex: 1;
+    padding: 6px 0;
+    border-radius: 8px;
+    border: 1px solid #34495e;
+    background: #22303f;
+    color: #9fb1c1;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.awaken-toggle-btn.selected {
+    background: #b9770e;
+    border-color: #f1c40f;
+    color: #fff;
+}
+
 .awaken-party {
     display: flex;
     flex-direction: column;

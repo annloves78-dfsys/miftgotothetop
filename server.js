@@ -4701,9 +4701,11 @@ io.on('connection', (socket) => {
 
     // ---- 각성모드 ----
     // 스토리 방을 그대로 쓴다. 판(floor)이 'awaken:쿠키:레벨' 꼴이면
-    // floorDefFor가 넓은 마당과 보스 한 마리를 만들어 준다. 다른 점은
-    // 쿠키 3명을 데려가고, 하나가 쓰러지면 다음 쿠키가 들어온다는 것뿐이다.
-    socket.on('joinAwakenBoss', ({ charType, level, party, equipParty, instinctParty }) => {
+    // floorDefFor가 넓은 마당과 보스 한 마리를 만들어 준다. 솔로는 쿠키 3명을
+    // 데려가서(하나가 쓰러지면 다음 쿠키가 들어온다) 혼자 싸우고, 멀티는
+    // 스토리 타워와 같은 방식으로 짝을 찾아(findOpenStoryRoom) 각자 캐릭터
+    // 하나씩만 데리고 함께 싸운다 -- 파티 교체는 멀티에는 없다.
+    socket.on('joinAwakenBoss', ({ charType, level, party, equipParty, instinctParty, solo, myChar, equip, instinct }) => {
         // 레벨은 여기서 자르지 않고 그대로 본다. awakenFloorKey는 범위를 넘는
         // 값을 10으로 맞추는데, 그러면 99를 보낸 사람이 10레벨을 받게 된다.
         if (!AWAKEN_BOSS_LEVELS[Number(level)]) return;
@@ -4711,41 +4713,70 @@ io.on('connection', (socket) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return;
 
-        const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
-        const chosen = wanted.slice(0, AWAKEN_PARTY_SIZE);
-        while (chosen.length < AWAKEN_PARTY_SIZE) chosen.push('kicker');
+        const isSolo = solo !== false;
 
-        const roomId = createStoryRoom(floor, true);
+        let roomId = !isSolo ? findOpenStoryRoom(floor) : null;
+        if (!roomId) {
+            roomId = createStoryRoom(floor, isSolo);
+            spawnStoryMonsters(rooms[roomId], floorDef);
+        }
         const room = rooms[roomId];
-        spawnStoryMonsters(room, floorDef);
 
-        const bonuses = chosen.map((id, i) => bonusFrom(equipParty && equipParty[i], id, instinctParty && instinctParty[i]));
-        const characters = chosen.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i]));
-        const gears = chosen.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
-        const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
-        room.players[socket.id] = {
-            x: 0, y: 0,
-            facing: Math.PI,
-            party: chosen,
-            partyBonus: bonuses,
-            partyCharacter: characters,
-            partyAwakenGear: gears,
-            partyMaxHp: maxHp.slice(),
-            partyHp: maxHp.slice(),
-            partyAlive: chosen.map(() => true),
-            active: 0,
-            charType: chosen[0],
-            character: characters[0],
-            awakenGear: gears[0],
-            bonus: bonuses[0],
-            hp: maxHp[0], maxHp: maxHp[0],
-            alive: true,
-            lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
-            ready: true
-        };
+        if (isSolo) {
+            const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
+            const chosen = wanted.slice(0, AWAKEN_PARTY_SIZE);
+            while (chosen.length < AWAKEN_PARTY_SIZE) chosen.push('kicker');
+
+            const bonuses = chosen.map((id, i) => bonusFrom(equipParty && equipParty[i], id, instinctParty && instinctParty[i]));
+            const characters = chosen.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i]));
+            const gears = chosen.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
+            const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
+            room.players[socket.id] = {
+                x: 0, y: 0,
+                facing: Math.PI,
+                party: chosen,
+                partyBonus: bonuses,
+                partyCharacter: characters,
+                partyAwakenGear: gears,
+                partyMaxHp: maxHp.slice(),
+                partyHp: maxHp.slice(),
+                partyAlive: chosen.map(() => true),
+                active: 0,
+                charType: chosen[0],
+                character: characters[0],
+                awakenGear: gears[0],
+                bonus: bonuses[0],
+                hp: maxHp[0], maxHp: maxHp[0],
+                alive: true,
+                lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+                ready: true
+            };
+        } else {
+            const myCharType = myChar && CHARACTERS[myChar] ? myChar : 'kicker';
+            const bonus = bonusFrom(equip, myCharType, instinct);
+            const character = charFrom(myCharType, equip, instinct);
+            const slot = Object.keys(room.players).length;
+            const spot = slot === 0 ? { x: 0, y: 0 } : fromAlongAcross(floorDef, 0, 30);
+            room.players[socket.id] = {
+                x: spot.x, y: spot.y,
+                facing: Math.PI,
+                bonus, character, awakenGear: gearFrom(myCharType, equip),
+                hp: character.health + bonus.health, maxHp: character.health + bonus.health,
+                charType: myCharType,
+                alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0, attackHealBoostUntil: 0,
+                ready: false
+            };
+        }
+
         socket.join(roomId);
         socket.data.roomId = roomId;
-        startStoryFight(roomId);
+
+        if (room.solo) { startStoryFight(roomId); return; }
+        io.to(roomId).emit('storyRoomUpdate', {
+            roomId, floor,
+            count: Object.keys(room.players).length,
+            players: publicStoryPlayers(room)
+        });
     });
 
     // 자유 교체. 살아 있는 쿠키끼리 아무 때나 바꿀 수 있고, 너무 자주 바꾸지

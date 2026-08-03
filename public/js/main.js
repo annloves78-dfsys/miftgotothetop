@@ -2334,11 +2334,33 @@ const awakenPartyEl = document.getElementById('awaken-party');
 const awakenPlayBtn = document.getElementById('awaken-play-btn');
 const awakenMsgEl = document.getElementById('awaken-msg');
 const backFromAwakenDetailBtn = document.getElementById('back-from-awaken-detail-btn');
+const awakenSoloBtn = document.getElementById('awaken-solo-btn');
+const awakenMultiBtn = document.getElementById('awaken-multi-btn');
+const awakenPartyTitleEl = document.getElementById('awaken-party-title');
+const awakenWaitingRowEl = document.getElementById('awaken-waiting-row');
+const awakenMyIconEl = document.getElementById('awaken-my-icon');
+const awakenMyNameEl = document.getElementById('awaken-my-name');
+const awakenMyReadyBadge = document.getElementById('awaken-my-ready');
+const awakenPartnerPreviewEl = document.getElementById('awaken-partner-preview');
+const awakenPartnerIconEl = document.getElementById('awaken-partner-icon');
+const awakenPartnerNameEl = document.getElementById('awaken-partner-name');
+const awakenPartnerReadyBadge = document.getElementById('awaken-partner-ready');
+const awakenCampfireEl = document.getElementById('awaken-campfire');
+const AWAKEN_WAIT_ELS = {
+    campfire: awakenCampfireEl, myReady: awakenMyReadyBadge, partnerReady: awakenPartnerReadyBadge
+};
 
 let awakenBossId = null;
 let awakenLevel = 1;
-// 3칸. 빈 칸은 null이고, 같은 쿠키를 두 칸에 넣지 못한다.
+// 3칸. 빈 칸은 null이고, 같은 쿠키를 두 칸에 넣지 못한다. 멀티에서는 0번
+// 칸 하나만 쓴다 (같이할 때는 캐릭터 하나씩만 골라서 한다).
 let awakenParty = new Array(SHARED.AWAKEN_PARTY_SIZE).fill(null);
+// 혼자(파티 3명) / 같이(캐릭터 1명씩, 스토리 타워처럼 짝을 찾는다).
+let awakenIsMulti = false;
+let awakenPhase = 'idle'; // 'idle' | 'searching' | 'matched'
+let awakenMyReady = false;
+let awakenSearchStartAt = 0;
+let awakenSearchHandle = null;
 
 // 이 쿠키의 각성 장비 (보스 카드에 무엇이 걸려 있는지 보여주려고).
 function awakenGearOwnedBy(charType) {
@@ -2414,14 +2436,15 @@ function renderAwakenLevelChips() {
         const chip = document.createElement('button');
         chip.className = 'awaken-level-chip' + (lv === awakenLevel ? ' selected' : '');
         chip.textContent = `${lv}레벨`;
-        chip.addEventListener('click', () => { awakenLevel = lv; renderAwakenDetail(); });
+        chip.addEventListener('click', () => { leaveAwakenRoomIfWaiting(); awakenLevel = lv; renderAwakenDetail(); });
         awakenLevelChipsEl.appendChild(chip);
     }
 }
 
 function renderAwakenParty() {
     awakenPartyEl.innerHTML = '';
-    awakenParty.forEach((id, i) => {
+    const slots = awakenIsMulti ? awakenParty.slice(0, 1) : awakenParty;
+    slots.forEach((id, i) => {
         const slot = document.createElement('div');
         slot.className = 'awaken-party-slot' + (id ? ' filled' : '');
         if (id) {
@@ -2433,6 +2456,7 @@ function renderAwakenParty() {
             slot.innerHTML = '<div class="icon">＋</div><div class="name">비어 있음</div>';
         }
         slot.addEventListener('click', () => {
+            leaveAwakenRoomIfWaiting();
             openCharacterSelect('awakenDetail', {
                 selectedId: id,
                 onPick: (picked) => {
@@ -2447,6 +2471,68 @@ function renderAwakenParty() {
         awakenPartyEl.appendChild(slot);
     });
 }
+
+// ---- 각성모드: 혼자 / 같이 ----
+function stopAwakenSearchTimer() {
+    if (awakenSearchHandle) clearInterval(awakenSearchHandle);
+    awakenSearchHandle = null;
+}
+
+function updateAwakenSearchLabel() {
+    const secs = Math.floor((Date.now() - awakenSearchStartAt) / 1000);
+    awakenPlayBtn.textContent = `대기중 (${secs}초)`;
+}
+
+function updateAwakenPlayBtnLabel() {
+    if (awakenPhase === 'searching') return; // 타이머가 초 단위로 계속 고쳐 쓴다.
+    if (awakenPhase === 'matched') {
+        awakenPlayBtn.textContent = awakenMyReady ? '준비 완료 (대기중)' : '▶ 준비';
+        return;
+    }
+    awakenPlayBtn.textContent = awakenIsMulti ? '▶ 같이하기' : '▶ 시작';
+}
+
+function updateAwakenPlayBtnState() {
+    if (awakenPhase === 'searching' || awakenMyReady) { awakenPlayBtn.disabled = true; return; }
+    awakenPlayBtn.disabled = awakenIsMulti ? !awakenParty[0] : awakenParty.some(id => !id);
+}
+
+// 화면을 뜨거나 레벨/보스/캐릭터를 바꾸면 짝 찾던 방에서 나온다.
+function resetAwakenActions() {
+    awakenPhase = 'idle';
+    awakenMyReady = false;
+    stopAwakenSearchTimer();
+    awakenWaitingRowEl.classList.add('hidden');
+    awakenPartnerPreviewEl.classList.add('hidden');
+    updateAwakenPlayBtnLabel();
+    updateAwakenPlayBtnState();
+}
+
+function leaveAwakenRoomIfWaiting() {
+    if (awakenPhase !== 'idle') socket.emit('leaveStoryRoom');
+    resetAwakenActions();
+}
+
+function syncAwakenModeButtons() {
+    awakenSoloBtn.classList.toggle('selected', !awakenIsMulti);
+    awakenMultiBtn.classList.toggle('selected', awakenIsMulti);
+    awakenPartyTitleEl.textContent = awakenIsMulti ? '내 캐릭터' : '파티 3명';
+}
+
+awakenSoloBtn.addEventListener('click', () => {
+    if (!awakenIsMulti) return;
+    leaveAwakenRoomIfWaiting();
+    awakenIsMulti = false;
+    syncAwakenModeButtons();
+    renderAwakenDetail();
+});
+awakenMultiBtn.addEventListener('click', () => {
+    if (awakenIsMulti) return;
+    leaveAwakenRoomIfWaiting();
+    awakenIsMulti = true;
+    syncAwakenModeButtons();
+    renderAwakenDetail();
+});
 
 function renderAwakenDetail() {
     if (!awakenBossId) return;
@@ -2468,13 +2554,16 @@ function renderAwakenDetail() {
         <div class="awaken-drop">${awakenDropText(awakenLevel)}</div>
         <div class="reward-chips">${rewardChipsHtml(reward)}</div>`;
     renderAwakenParty();
-    awakenPlayBtn.disabled = awakenParty.some(id => !id);
+    updateAwakenPlayBtnLabel();
+    updateAwakenPlayBtnState();
 }
 
 function openAwakenDetail(charType) {
+    leaveAwakenRoomIfWaiting();
     awakenBossId = charType;
     if (!SHARED.awakenLevelStats(awakenLevel)) awakenLevel = 1;
     showAwakenMsg('');
+    syncAwakenModeButtons();
     renderAwakenDetail();
     showScreen('awakenDetail');
 }
@@ -2491,9 +2580,48 @@ awakenModeCard.addEventListener('click', () => {
     showScreen('awakenBoss');
 });
 backFromAwakenBossBtn.addEventListener('click', () => showScreen('modeSelect'));
-backFromAwakenDetailBtn.addEventListener('click', () => showScreen('awakenBoss'));
+backFromAwakenDetailBtn.addEventListener('click', () => {
+    leaveAwakenRoomIfWaiting();
+    showScreen('awakenBoss');
+});
 
 awakenPlayBtn.addEventListener('click', () => {
+    if (awakenPlayBtn.disabled) return;
+
+    if (awakenIsMulti) {
+        const myChar = awakenParty[0];
+        if (!myChar) {
+            showAwakenMsg('캐릭터를 선택해 주세요.');
+            return;
+        }
+        showAwakenMsg('');
+        if (awakenPhase === 'idle') {
+            awakenPhase = 'searching';
+            awakenSearchStartAt = Date.now();
+            updateAwakenSearchLabel();
+            awakenPlayBtn.disabled = true;
+            stopAwakenSearchTimer();
+            awakenSearchHandle = setInterval(updateAwakenSearchLabel, 1000);
+            awakenWaitingRowEl.classList.remove('hidden');
+            awakenMyIconEl.style.background = charIconBackground(SHARED.CHARACTERS[myChar]);
+            awakenMyNameEl.textContent = (SHARED.CHARACTERS[myChar] || {}).name || '';
+            socket.emit('joinAwakenBoss', {
+                charType: awakenBossId,
+                level: awakenLevel,
+                solo: false,
+                myChar,
+                equip: equipPayload(myChar),
+                instinct: instinctPayload(myChar)
+            });
+        } else if (awakenPhase === 'matched' && !awakenMyReady) {
+            awakenMyReady = true;
+            awakenPlayBtn.disabled = true;
+            updateAwakenPlayBtnLabel();
+            socket.emit('storyPlayerReady');
+        }
+        return;
+    }
+
     if (awakenParty.some(id => !id)) {
         showAwakenMsg('파티 3명을 모두 채워 주세요.');
         return;
@@ -2502,6 +2630,7 @@ awakenPlayBtn.addEventListener('click', () => {
     socket.emit('joinAwakenBoss', {
         charType: awakenBossId,
         level: awakenLevel,
+        solo: true,
         party: awakenParty,
         equipParty: awakenParty.map(id => equipPayload(id)),
         instinctParty: awakenParty.map(id => instinctPayload(id))
@@ -2511,6 +2640,7 @@ awakenPlayBtn.addEventListener('click', () => {
 // 한 판이 끝났을 때. 이겼으면 그 레벨의 드랍을 굴려 조각이나 각성 장비를 준다.
 function showAwakenResult(awaken, result) {
     const stats = SHARED.CHARACTERS[awaken.charType] || SHARED.CHARACTERS.kicker;
+    resetAwakenActions();
     resultReturnScreen = 'awakenDetail';
     resultBackBtn.textContent = '각성모드로';
     awakenBossId = awaken.charType;
@@ -3442,6 +3572,38 @@ towerPlayBtn.addEventListener('click', () => {
 
 // 짝이 붙거나 떨어질 때마다 버튼과 파트너 칸을 고쳐 그린다.
 socket.on('storyRoomUpdate', (data) => {
+    // 각성모드 같이하기도 이 이벤트를 그대로 쓴다 (findOpenStoryRoom/스토리
+    // 방을 그대로 재사용하기 때문). 짝 찾는 중이면 여기서 갈라진다.
+    if (awakenPhase !== 'idle') {
+        if (data.count >= 2) {
+            awakenPhase = 'matched';
+            stopAwakenSearchTimer();
+            const partner = Object.entries(data.players).find(([id]) => id !== socket.id);
+            if (partner) {
+                const pStats = SHARED.CHARACTERS[partner[1].charType] || SHARED.CHARACTERS.kicker;
+                awakenPartnerIconEl.style.background = charIconBackground(pStats);
+                awakenPartnerNameEl.textContent = pStats.name;
+                awakenPartnerPreviewEl.classList.remove('hidden');
+            }
+            renderWaitingScene(AWAKEN_WAIT_ELS, data.players, true);
+            if (!awakenMyReady) {
+                awakenPlayBtn.textContent = '▶ 준비';
+                awakenPlayBtn.disabled = false;
+            }
+        } else {
+            // 같이 기다리던 사람이 나갔다 -- 다시 혼자 기다린다.
+            awakenPhase = 'searching';
+            awakenMyReady = false;
+            awakenPartnerPreviewEl.classList.add('hidden');
+            renderWaitingScene(AWAKEN_WAIT_ELS, data.players, false);
+            awakenPlayBtn.disabled = true;
+            awakenSearchStartAt = Date.now();
+            updateAwakenSearchLabel();
+            stopAwakenSearchTimer();
+            awakenSearchHandle = setInterval(updateAwakenSearchLabel, 1000);
+        }
+        return;
+    }
     if (screens.storyTower.classList.contains('hidden')) return;
     if (data.count >= 2) {
         storyPhase = 'matched';

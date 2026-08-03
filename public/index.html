@@ -338,9 +338,13 @@
                 <div class="awaken-col-title">레벨</div>
                 <div id="awaken-level-chips" class="awaken-level-chips"></div>
             </div>
-            <!-- 가운데: 데리고 갈 쿠키 3명 -->
+            <!-- 가운데: 혼자/같이 선택 + 데리고 갈 쿠키 -->
             <div class="awaken-party-col">
-                <div class="awaken-col-title">파티 3명</div>
+                <div class="awaken-mode-toggle">
+                    <button id="awaken-solo-btn" class="awaken-toggle-btn selected">혼자</button>
+                    <button id="awaken-multi-btn" class="awaken-toggle-btn">같이</button>
+                </div>
+                <div id="awaken-party-title" class="awaken-col-title">파티 3명</div>
                 <div id="awaken-party" class="awaken-party"></div>
             </div>
             <!-- 오른쪽: 보스 정보와 보상, 그리고 시작 -->
@@ -351,6 +355,23 @@
                 <div id="awaken-level-info" class="awaken-level-info"></div>
                 <button id="awaken-play-btn" class="play-btn">▶ 시작</button>
                 <div id="awaken-msg" class="equip-picker-msg hidden"></div>
+            </div>
+        </div>
+        <!-- 같이하기: 짝을 기다리는 모닥불 화면 (스토리 타워와 같은 UI) -->
+        <div id="awaken-waiting-row" class="char-preview-row waiting-row hidden">
+            <div id="awaken-my-preview" class="char-preview">
+                <div id="awaken-my-ready" class="ready-badge hidden">✅ READY</div>
+                <div id="awaken-my-icon" class="char-icon-circle small"></div>
+                <div id="awaken-my-name" class="char-name"></div>
+            </div>
+            <div id="awaken-campfire" class="campfire hidden" aria-hidden="true">
+                <div class="campfire-flame">🔥</div>
+                <div class="campfire-logs">🪵</div>
+            </div>
+            <div id="awaken-partner-preview" class="char-preview hidden">
+                <div id="awaken-partner-ready" class="ready-badge hidden">✅ READY</div>
+                <div id="awaken-partner-icon" class="char-icon-circle small"></div>
+                <div id="awaken-partner-name" class="char-name"></div>
             </div>
         </div>
         <button id="back-from-awaken-detail-btn" class="secondary-btn">뒤로</button>
