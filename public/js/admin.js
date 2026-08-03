@@ -63,7 +63,8 @@ const ERROR_MESSAGES = {
     CANNOT_DEMOTE_SELF: '자기 자신의 관리자 권한은 해제할 수 없습니다.',
     CANNOT_DELETE_SELF: '자기 자신의 계정은 삭제할 수 없습니다.',
     INVALID_CURRENCY: '알 수 없는 재화 종류입니다.',
-    INVALID_AMOUNT: '수량을 입력해주세요.'
+    INVALID_AMOUNT: '수량을 입력해주세요.',
+    INVALID_CHARACTER: '알 수 없는 캐릭터입니다.'
 };
 
 // main.js의 CURRENCY_LABELS와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
@@ -82,6 +83,34 @@ const CURRENCY_LABELS = {
 };
 
 $('currency-select').innerHTML = Object.entries(CURRENCY_LABELS)
+    .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join('');
+
+// shared.js의 CHARACTERS 키/name과 같은 표. kicker(자두맛)는 모든 유저가 기본 보유라 목록에서 뺐다.
+const CHARACTER_LABELS = {
+    sweetpotato: '자색 고구마맛 쿠키',
+    spinach: '시금치맛 쿠키',
+    reddragon: '레드 드레곤맛 쿠키',
+    volcano: '화산맛 쿠키',
+    greenapple: '청사과맛 쿠키',
+    orangelemon: '오렌지 레몬맛 쿠키',
+    board: '보드맛 쿠키',
+    electriccord: '전기줄맛 쿠키',
+    lightning: '번개전사맛 쿠키',
+    waterdrop: '물방울맛 쿠키',
+    magma: '마그마맛 쿠키',
+    blacksugar: '블랙 슈거맛 쿠키',
+    dragonfruit: '용과맛 쿠키',
+    sugarfly: '슈가 플라이맛 쿠키',
+    lightningdevil: '번개악마맛 쿠키',
+    seapearl: '바다펄맛 쿠키',
+    lightninghell: '번개지옥맛 쿠키',
+    cheesedumpling: '치즈만두맛 쿠키',
+    hellflavor: '지옥맛 쿠키',
+    flamefairy: '불꽃요정맛 쿠키',
+    plaincookie: '쿠키맛 쿠키'
+};
+
+$('character-select').innerHTML = Object.entries(CHARACTER_LABELS)
     .map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join('');
 
 function describeError(e) {
@@ -341,6 +370,15 @@ $('grant-currency-btn').addEventListener('click', () => {
         `${CURRENCY_LABELS[currency]}를(을) ${amount > 0 ? '지급' : '차감'}했습니다.`
     );
     $('currency-amount-input').value = '';
+});
+
+$('grant-character-btn').addEventListener('click', () => {
+    const character = $('character-select').value;
+    runAction(
+        'br_admin_grant_character',
+        { p_user_id: openUser.id, p_character: character },
+        `${CHARACTER_LABELS[character]}를(을) 지급했습니다.`
+    );
 });
 
 $('reset-characters-btn').addEventListener('click', () => {

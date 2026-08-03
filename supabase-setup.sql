@@ -532,6 +532,46 @@ BEGIN
 END;
 $$;
 
+-- ===== 캐릭터 개별 지급 (unlockedCharacters에 하나 추가) =====
+CREATE OR REPLACE FUNCTION public.br_admin_grant_character(p_token text, p_user_id uuid, p_character text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  base jsonb;
+  unlocked jsonb;
+BEGIN
+  PERFORM br_verify_admin(p_token);
+  -- shared.js CHARACTERS의 플레이어 캐릭터 키와 같은 목록 (보스/몬스터 제외)
+  IF p_character NOT IN (
+    'kicker', 'sweetpotato', 'spinach', 'reddragon', 'volcano', 'greenapple', 'orangelemon',
+    'board', 'electriccord', 'lightning', 'waterdrop', 'magma', 'blacksugar', 'dragonfruit',
+    'sugarfly', 'lightningdevil', 'seapearl', 'lightninghell', 'cheesedumpling', 'hellflavor',
+    'flamefairy', 'plaincookie'
+  ) THEN
+    RAISE EXCEPTION 'INVALID_CHARACTER';
+  END IF;
+
+  SELECT game_data INTO base FROM br_users WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+
+  unlocked := COALESCE(base->'unlockedCharacters', '[]'::jsonb);
+  IF NOT (unlocked @> to_jsonb(p_character)) THEN
+    unlocked := unlocked || to_jsonb(p_character);
+  END IF;
+
+  UPDATE br_users
+  SET game_data = jsonb_set(base, ARRAY['unlockedCharacters'], unlocked, true)
+  WHERE id = p_user_id;
+
+  RETURN json_build_object('ok', true, 'character', p_character);
+END;
+$$;
+
 -- =============================================
 -- 첫 관리자 지정 (필수!)
 -- 아래 줄의 이메일을 본인 계정 이메일로 바꾼 뒤 실행하세요.
