@@ -4699,6 +4699,23 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveReviveCount: 2 },
             desc: '패시브로 부활할 수 있는 횟수가 한 번 더 늘어나 총 2번이 됩니다.'
         }
+    },
+    // 치즈만두맛 쿠키: dumpling_zone 궁극기(화산맛 마그마 지대와 같은 방식)와
+    // 부활(=각성) 시의 공격력을 강화한다.
+    cheesedumpling: {
+        3: {
+            effect: { ultimateZoneDurationMs: 15000 },
+            desc: '궁극기(만두 덩어리) 지속시간이 15초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateZoneDamagePerTick: 6 },
+            desc: '궁극기 지대의 초당 피해가 4 늘어나 6이 됩니다.'
+        },
+        5: {
+            // awakenedForm은 통째로 덮어써야 해서 원래 값을 그대로 옮기고 attackDamage만 바꾼다.
+            effect: { awakenedForm: { health: 200, attackDamage: 9, attackMarkUses: 0, keepsOwnMarks: false, markEatBonus: 5 } },
+            desc: '부활(각성)했을 때 공격력이 3 올라 9가 됩니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
