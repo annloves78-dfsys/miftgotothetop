@@ -1277,29 +1277,21 @@ html, body {
     gap: 10px;
 }
 
-/* 본능해제: 소울스톤으로 캐릭터를 영구 강화하는 패널. 스킬 섹션과 같은 톤으로 맞춘다. */
-.cd-instinct-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.instinct-level-badge {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 8px;
-    border-radius: 10px;
+/* 본능해제: 스킬 아이콘 줄에 패시브 바로 옆 5번째 아이콘으로 얹는다.
+   나머지 스킬/궁극기 탭과 같은 선택 방식(.skill-icon-box.selected)을 그대로 쓴다. */
+.instinct-icon-badge {
+    position: absolute;
+    left: 50%;
+    bottom: -9px;
+    transform: translateX(-50%);
+    padding: 0 5px;
+    border-radius: 8px;
     background: #2c3e50;
+    border: 1px solid #34495e;
     color: #f1c40f;
-    font-size: 13px;
-}
-
-.cd-instinct-section .char-desc-box {
-    min-height: 0;
-    flex: none;
-    padding: 8px 10px;
-    font-size: 13px;
-    color: #bdc3c7;
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
 }
 
 .cd-instinct-row {
@@ -1307,6 +1299,7 @@ html, body {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    margin-top: 4px;
 }
 
 .cd-instinct-cost {

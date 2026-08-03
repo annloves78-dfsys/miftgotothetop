@@ -108,8 +108,9 @@ const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-ico
 const charDetailPassiveIcon = document.getElementById('char-detail-passive-icon');
 const charDetailDesc = document.getElementById('char-detail-desc');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
-const charDetailInstinctLevelEl = document.getElementById('char-detail-instinct-level');
-const charDetailInstinctDescEl = document.getElementById('char-detail-instinct-desc');
+const charDetailInstinctIcon = document.getElementById('char-detail-instinct-icon');
+const charDetailInstinctBadge = document.getElementById('char-detail-instinct-badge');
+const charDetailInstinctRow = document.getElementById('char-detail-instinct-row');
 const charDetailInstinctCostEl = document.getElementById('char-detail-instinct-cost');
 const charDetailInstinctBtn = document.getElementById('char-detail-instinct-btn');
 
@@ -1080,12 +1081,16 @@ function charIconBackground(stats) {
 
 function selectCharDetailAbility(kind) {
     const stats = statsWithGear(viewingCharacterId);
-    charDetailDesc.textContent = describeAbility(stats, kind);
+    charDetailDesc.textContent = kind === 'instinct'
+        ? instinctLevelDesc(instinctLevelOfChar(viewingCharacterId))
+        : describeAbility(stats, kind);
+    charDetailInstinctRow.classList.toggle('hidden', kind !== 'instinct');
     [
         [charDetailAttackIcon, 'attack'],
         [charDetailSkillIcon, 'skill'],
         [charDetailUltimateIcon, 'ultimate'],
-        [charDetailPassiveIcon, 'passive']
+        [charDetailPassiveIcon, 'passive'],
+        [charDetailInstinctIcon, 'instinct']
     ].forEach(([el, k]) => el.classList.toggle('selected', k === kind));
 }
 
@@ -1093,6 +1098,7 @@ charDetailAttackIcon.addEventListener('click', () => selectCharDetailAbility('at
 charDetailSkillIcon.addEventListener('click', () => selectCharDetailAbility('skill'));
 charDetailUltimateIcon.addEventListener('click', () => selectCharDetailAbility('ultimate'));
 charDetailPassiveIcon.addEventListener('click', () => selectCharDetailAbility('passive'));
+charDetailInstinctIcon.addEventListener('click', () => selectCharDetailAbility('instinct'));
 
 const SKILL_ICONS = {
     melee_kick: '🗡',
@@ -1906,11 +1912,11 @@ function openCharacterDetail(id) {
     showScreen('characterDetail');
 }
 
-// 본능해제 패널: 현재 레벨/효과와 다음 강화 비용·버튼을 그린다.
+// 본능해제 패널: 아이콘의 레벨 배지와 다음 강화 비용·버튼을 그린다.
+// 설명 텍스트 자체는 selectCharDetailAbility('instinct')가 공용 desc 박스에 그린다.
 function renderCharDetailInstinct(charType) {
     const level = instinctLevelOfChar(charType);
-    charDetailInstinctLevelEl.textContent = `${level}강`;
-    charDetailInstinctDescEl.textContent = instinctLevelDesc(level);
+    charDetailInstinctBadge.textContent = `${level}강`;
     const cost = SHARED.instinctNextCost(level);
     const have = gameData.soulStones[charType] || 0;
     if (level >= 2) {
@@ -1927,7 +1933,10 @@ function renderCharDetailInstinct(charType) {
 
 charDetailInstinctBtn.addEventListener('click', () => {
     if (!viewingCharacterId) return;
-    if (upgradeInstinct(viewingCharacterId)) openCharacterDetail(viewingCharacterId);
+    if (upgradeInstinct(viewingCharacterId)) {
+        openCharacterDetail(viewingCharacterId);
+        selectCharDetailAbility('instinct');
+    }
 });
 
 charDetailBackBtn.addEventListener('click', () => showScreen('characterSelect'));
