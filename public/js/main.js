@@ -113,6 +113,10 @@ const charDetailInstinctBadge = document.getElementById('char-detail-instinct-ba
 const charDetailInstinctRow = document.getElementById('char-detail-instinct-row');
 const charDetailInstinctCostEl = document.getElementById('char-detail-instinct-cost');
 const charDetailInstinctBtn = document.getElementById('char-detail-instinct-btn');
+const charDetailInstinctNav = document.getElementById('char-detail-instinct-nav');
+const charDetailInstinctPrevBtn = document.getElementById('char-detail-instinct-prev-btn');
+const charDetailInstinctNextBtn = document.getElementById('char-detail-instinct-next-btn');
+const charDetailInstinctNavLabel = document.getElementById('char-detail-instinct-nav-label');
 
 // ---- Auth (login / signup / persistent session) ----
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1086,12 +1090,20 @@ function charIconBackground(stats) {
     return stats.color;
 }
 
+// 본능해제 탭에서 좌우 화살표로 훑어보는 중인 강화 단계. 실제 보유 레벨과는
+// 별개다 -- 탭에 처음 들어올 때만 보유 레벨(없으면 1강)로 되돌아간다.
+let instinctViewLevel = 1;
+
 function selectCharDetailAbility(kind) {
     const stats = statsWithGear(viewingCharacterId);
-    charDetailDesc.textContent = kind === 'instinct'
-        ? instinctLevelDesc(viewingCharacterId, instinctLevelOfChar(viewingCharacterId))
-        : describeAbility(stats, kind);
+    if (kind === 'instinct') {
+        instinctViewLevel = Math.max(1, instinctLevelOfChar(viewingCharacterId));
+        renderInstinctBrowse();
+    } else {
+        charDetailDesc.textContent = describeAbility(stats, kind);
+    }
     charDetailInstinctRow.classList.toggle('hidden', kind !== 'instinct');
+    charDetailInstinctNav.classList.toggle('hidden', kind !== 'instinct');
     [
         [charDetailAttackIcon, 'attack'],
         [charDetailSkillIcon, 'skill'],
@@ -1100,6 +1112,29 @@ function selectCharDetailAbility(kind) {
         [charDetailInstinctIcon, 'instinct']
     ].forEach(([el, k]) => el.classList.toggle('selected', k === kind));
 }
+
+// instinctViewLevel이 가리키는 단계의 설명을 보여준다. 보유한 레벨보다 높은
+// 단계를 보는 중이면 라벨을 회색으로(아직 안 배운 강화라는 뜻) 표시한다.
+function renderInstinctBrowse() {
+    const charType = viewingCharacterId;
+    const actualLevel = instinctLevelOfChar(charType);
+    charDetailDesc.textContent = instinctLevelDesc(charType, instinctViewLevel);
+    charDetailInstinctNavLabel.textContent = `${instinctViewLevel}강`;
+    charDetailInstinctNavLabel.classList.toggle('locked', instinctViewLevel > actualLevel);
+    charDetailInstinctPrevBtn.disabled = instinctViewLevel <= 1;
+    charDetailInstinctNextBtn.disabled = instinctViewLevel >= SHARED.INSTINCT_MAX_LEVEL;
+}
+
+charDetailInstinctPrevBtn.addEventListener('click', () => {
+    if (instinctViewLevel <= 1) return;
+    instinctViewLevel--;
+    renderInstinctBrowse();
+});
+charDetailInstinctNextBtn.addEventListener('click', () => {
+    if (instinctViewLevel >= SHARED.INSTINCT_MAX_LEVEL) return;
+    instinctViewLevel++;
+    renderInstinctBrowse();
+});
 
 charDetailAttackIcon.addEventListener('click', () => selectCharDetailAbility('attack'));
 charDetailSkillIcon.addEventListener('click', () => selectCharDetailAbility('skill'));

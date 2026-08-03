@@ -1294,6 +1294,48 @@ html, body {
     white-space: nowrap;
 }
 
+/* 본능해제 탭 안에서 좌우 화살표로 1~5강 설명을 훑어보는 줄. 실제 보유 레벨과
+   상관없이 어떤 강화가 뭘 주는지 미리/다시 볼 수 있다. */
+.cd-instinct-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.cd-instinct-arrow {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: #1a1f2b;
+    border: 1px solid #34495e;
+    color: #ecf0f1;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.cd-instinct-arrow:hover:not(:disabled) {
+    border-color: #7f8c8d;
+}
+
+.cd-instinct-arrow:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.cd-instinct-nav-label {
+    min-width: 44px;
+    text-align: center;
+    font-weight: bold;
+    color: #f1c40f;
+}
+
+.cd-instinct-nav-label.locked {
+    color: #7f8c8d;
+}
+
 .cd-instinct-row {
     display: flex;
     align-items: center;
