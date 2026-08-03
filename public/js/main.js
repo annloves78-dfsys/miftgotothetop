@@ -4185,14 +4185,15 @@ socket.on('storyFloorResult', ({ result, floor }) => {
             }
         } else {
             resultDesc.textContent = `${floor}층을 클리어했습니다.`;
-            if (!gameData.clearedStoryFloors.includes(floor)) {
+            const firstClear = !gameData.clearedStoryFloors.includes(floor);
+            if (firstClear) {
                 gameData.clearedStoryFloors.push(floor);
                 saveGameData(gameData);
             }
-            // 깔 때마다 전액 -- 첫 클리어인지와 무관하다.
+            // 코인 등 기본 보상은 깰 때마다 전액. 장비 드랍만 첫 클리어 한정.
             const key = SHARED.storyRewardKey(floor);
             resultRewardsEl.innerHTML = rewardChipsHtml(payClearReward(key))
-                + equipDropChipHtml(rollClearDrop(key));
+                + (firstClear ? equipDropChipHtml(rollClearDrop(key)) : '');
         }
     } else {
         resultTitle.textContent = '패배...';
