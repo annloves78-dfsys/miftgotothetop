@@ -1277,6 +1277,43 @@ html, body {
     gap: 10px;
 }
 
+/* 본능해제: 소울스톤으로 캐릭터를 영구 강화하는 패널. 스킬 섹션과 같은 톤으로 맞춘다. */
+.cd-instinct-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.instinct-level-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: #2c3e50;
+    color: #f1c40f;
+    font-size: 13px;
+}
+
+.cd-instinct-section .char-desc-box {
+    min-height: 0;
+    flex: none;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: #bdc3c7;
+}
+
+.cd-instinct-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.cd-instinct-cost {
+    font-size: 13px;
+    color: #95a5a6;
+}
+
 .skill-icon-box {
     width: 48px;
     height: 48px;

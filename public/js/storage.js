@@ -28,6 +28,7 @@ const defaultData = {
     unlockedCharacters: ['kicker'],
     clearedStoryFloors: [],
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
+    instinctLevels: {}, // charType -> 0~INSTINCT_MAX_LEVEL; 본능해제, 그 캐릭터의 영혼석으로 강화한다
     currencies: { ...defaultCurrencies },
     // 이벤트: the stage ids already cleared, plus 'both' once the 전체 클리어
     // bonus has been taken.
@@ -87,6 +88,7 @@ function loadGameData() {
             data.items = (data.items && typeof data.items === 'object') ? data.items : {};
             data.adminOff = (data.adminOff && typeof data.adminOff === 'object') ? data.adminOff : {};
             data.stocks = (data.stocks && typeof data.stocks === 'object') ? data.stocks : {};
+            data.instinctLevels = (data.instinctLevels && typeof data.instinctLevels === 'object') ? data.instinctLevels : {};
             data.equipped = data.equipped || {};
             // uid는 가방에 이미 있는 번호보다 반드시 커야 한다 -- 안 그러면
             // 새 장비가 기존 장비와 같은 번호를 받아 섞인다.

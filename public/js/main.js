@@ -108,6 +108,10 @@ const charDetailUltimateIcon = document.getElementById('char-detail-ultimate-ico
 const charDetailPassiveIcon = document.getElementById('char-detail-passive-icon');
 const charDetailDesc = document.getElementById('char-detail-desc');
 const charDetailSelectBtn = document.getElementById('char-detail-select-btn');
+const charDetailInstinctLevelEl = document.getElementById('char-detail-instinct-level');
+const charDetailInstinctDescEl = document.getElementById('char-detail-instinct-desc');
+const charDetailInstinctCostEl = document.getElementById('char-detail-instinct-cost');
+const charDetailInstinctBtn = document.getElementById('char-detail-instinct-btn');
 
 // ---- Auth (login / signup / persistent session) ----
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -522,12 +526,45 @@ function equipBonusOf(charType) {
     return SHARED.equipBonusFor(equipPayload(charType), charType);
 }
 
+// ---- 본능해제 ----
+// 그 캐릭터 자신의 영혼석(중복 뽑기로 쌓인다)을 써서 영구 강화한다.
+function instinctLevelOfChar(charType) {
+    return SHARED.instinctLevelOf(gameData.instinctLevels, charType);
+}
+// 서버에 보낼 값: 레벨 숫자 하나뿐이다. 실제 보너스 계산은 서버가 shared.js
+// 표를 보고 직접 한다 (equipPayload와 같은 신뢰 모델).
+function instinctPayload(charType) {
+    return instinctLevelOfChar(charType);
+}
+const INSTINCT_LEVEL_DESCRIPTIONS = {
+    1: `기본 능력치 강화 — 체력 +${SHARED.INSTINCT_L1_BONUS_HEALTH}, 공격력 +${SHARED.INSTINCT_L1_BONUS_ATTACK}`,
+    2: `스킬 강화 — 스킬 피해 +${SHARED.INSTINCT_L2_SKILL_DAMAGE_BONUS}, 보호막 +${SHARED.INSTINCT_L2_SKILL_SHIELD_BONUS}, 회복 +${SHARED.INSTINCT_L2_SKILL_HEAL_BONUS}`
+};
+function instinctLevelDesc(level) {
+    if (level <= 0) return '아직 해제되지 않았습니다.';
+    return INSTINCT_LEVEL_DESCRIPTIONS[level] || `${level}강 (궁극기 강화 — 준비 중)`;
+}
+// 소울스톤을 써서 한 단계 강화한다. 지금은 2강까지만 실제로 동작한다
+// (3강부터는 궁극기 강화라 캐릭터별로 나중에 채워 넣을 예정).
+function upgradeInstinct(charType) {
+    const level = instinctLevelOfChar(charType);
+    if (level >= 2) return false;
+    const cost = SHARED.instinctNextCost(level);
+    if (cost == null) return false;
+    const have = gameData.soulStones[charType] || 0;
+    if (have < cost) return false;
+    gameData.soulStones[charType] = have - cost;
+    gameData.instinctLevels[charType] = level + 1;
+    saveGameData(gameData);
+    return true;
+}
+
 // 각성 장비를 낀 상태의 수치. 각성 장비는 능력치를 더하는 게 아니라 발차기
 // 피해나 궁극기 보호막을 통째로 바꾸기도 해서, 상세 화면은 이걸 읽어야
 // 실제로 싸울 때의 숫자가 그대로 보인다.
 function statsWithGear(charType) {
-    return SHARED.characterWithGear(charType, equipPayload(charType))
-        || SHARED.CHARACTERS.kicker;
+    const base = SHARED.characterWithGear(charType, equipPayload(charType)) || SHARED.CHARACTERS.kicker;
+    return SHARED.characterWithInstinct(base, instinctLevelOfChar(charType));
 }
 
 // 장비 하나의 능력치를 사람이 읽을 수 있는 한 줄로.
@@ -1847,23 +1884,51 @@ function openCharacterDetail(id) {
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
     const bonus = equipBonusOf(id);
+    const instinctBonus = SHARED.instinctStatBonus(instinctLevelOfChar(id));
+    const atkBonus = bonus.attack + instinctBonus.attack;
+    const hpBonus = bonus.health + instinctBonus.health;
     charDetailAtk.innerHTML = attackDamageText(stats)
-        + (bonus.attack ? `<span class="cd-stat-bonus">+${bonus.attack}</span>` : '');
+        + (atkBonus ? `<span class="cd-stat-bonus">+${atkBonus}</span>` : '');
     charDetailHp.innerHTML = (stats.health != null ? stats.health : '-')
-        + (bonus.health ? `<span class="cd-stat-bonus">+${bonus.health}</span>` : '');
-    // 지금까지 비어 있던 헤더의 숫자: 장비를 포함한 공격력+체력 합산.
+        + (hpBonus ? `<span class="cd-stat-bonus">+${hpBonus}</span>` : '');
+    // 지금까지 비어 있던 헤더의 숫자: 장비+본능해제를 포함한 공격력+체력 합산.
     charDetailPower.textContent = String(
-        (Number(String(attackDamageText(stats)).split(' / ')[0]) || 0) + bonus.attack
-        + (stats.health || 0) + bonus.health);
+        (Number(String(attackDamageText(stats)).split(' / ')[0]) || 0) + atkBonus
+        + (stats.health || 0) + hpBonus);
     charDetailAwakenSlot.classList.toggle('hidden', !SHARED.hasAwakenSlot(stats.grade));
     renderCharDetailEquipment(id);
     charDetailAttackIcon.innerHTML = skillIconHtml(stats.attackType, '🗡');
     charDetailSkillIcon.innerHTML = skillIconHtml(stats.skillType, '❔');
     charDetailUltimateIcon.innerHTML = skillIconHtml(stats.ultimateType, '❔');
     charDetailPassiveIcon.classList.toggle('empty', !hasPassive(stats));
+    renderCharDetailInstinct(id);
     selectCharDetailAbility('attack');
     showScreen('characterDetail');
 }
+
+// 본능해제 패널: 현재 레벨/효과와 다음 강화 비용·버튼을 그린다.
+function renderCharDetailInstinct(charType) {
+    const level = instinctLevelOfChar(charType);
+    charDetailInstinctLevelEl.textContent = `${level}강`;
+    charDetailInstinctDescEl.textContent = instinctLevelDesc(level);
+    const cost = SHARED.instinctNextCost(level);
+    const have = gameData.soulStones[charType] || 0;
+    if (level >= 2) {
+        // 3강부터는 궁극기 강화라 아직 준비 중이다.
+        charDetailInstinctCostEl.textContent = cost == null ? '' : `${level + 1}강 — 준비 중`;
+        charDetailInstinctBtn.disabled = true;
+        charDetailInstinctBtn.textContent = '준비 중';
+    } else {
+        charDetailInstinctCostEl.textContent = `💎 ${have} / ${cost}`;
+        charDetailInstinctBtn.disabled = have < cost;
+        charDetailInstinctBtn.textContent = `${level + 1}강 (영혼석 ${cost})`;
+    }
+}
+
+charDetailInstinctBtn.addEventListener('click', () => {
+    if (!viewingCharacterId) return;
+    if (upgradeInstinct(viewingCharacterId)) openCharacterDetail(viewingCharacterId);
+});
 
 charDetailBackBtn.addEventListener('click', () => showScreen('characterSelect'));
 
@@ -2386,7 +2451,8 @@ awakenPlayBtn.addEventListener('click', () => {
         charType: awakenBossId,
         level: awakenLevel,
         party: awakenParty,
-        equipParty: awakenParty.map(id => equipPayload(id))
+        equipParty: awakenParty.map(id => equipPayload(id)),
+        instinctParty: awakenParty.map(id => instinctPayload(id))
     });
 });
 
@@ -2688,7 +2754,7 @@ eventContentEl.addEventListener('click', (e) => {
 // is opened with (see floorDefFor in shared.js).
 function enterEventStage(id) {
     if (!SHARED.EVENT_STAGE_DEFS[id]) return;
-    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker') });
+    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker'), instinct: instinctPayload(gameData.selectedCharacter || 'kicker') });
 }
 
 eventBtn.addEventListener('click', () => {
@@ -3263,10 +3329,10 @@ towerPlayBtn.addEventListener('click', () => {
     const charType = gameData.selectedCharacter || 'kicker';
     // 11층부터는 쿠키 두 명을 같이 보낸다. 그 아래 층은 지금까지와 똑같다.
     const partyPayload = SHARED.storyPartySizeFor(selectedStoryFloor) > 1
-        ? { party: storyPartyIds(), equipParty: storyPartyIds().map(equipPayload) }
+        ? { party: storyPartyIds(), equipParty: storyPartyIds().map(equipPayload), instinctParty: storyPartyIds().map(instinctPayload) }
         : {};
     if (!storyIsMulti) {
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: true, ...partyPayload });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), solo: true, ...partyPayload });
         return;
     }
     if (storyPhase === 'idle') {
@@ -3275,7 +3341,7 @@ towerPlayBtn.addEventListener('click', () => {
         storySearchStartAt = Date.now();
         updateStorySearchLabel();
         storySearchHandle = setInterval(updateStorySearchLabel, 1000);
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), solo: false, ...partyPayload });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), solo: false, ...partyPayload });
     } else if (storyPhase === 'matched' && !storyMyReady) {
         storyMyReady = true;
         towerPlayBtn.disabled = true;
@@ -4900,11 +4966,11 @@ function handleMultiOrSoloClick(isMulti) {
             detailSoloBtn.disabled = true;
             detailLeaveBtn.classList.remove('hidden');
             startSearchTimer();
-            socket.emit('joinRaid', { bossId: selectedBossId, charType, equip: equipPayload(charType) });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, equip: equipPayload(charType), instinct: instinctPayload(charType) });
         } else {
             detailMultiBtn.disabled = true;
             detailSoloBtn.disabled = true;
-            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true, equip: equipPayload(charType) });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true, equip: equipPayload(charType), instinct: instinctPayload(charType) });
             socket.emit('startRaid');
         }
     } else if (raidPhase === 'matched' && !myReady) {
