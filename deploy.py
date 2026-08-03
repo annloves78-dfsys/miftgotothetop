@@ -16,13 +16,14 @@ def main():
             with open(filepath, "r", encoding="utf-8") as f:
                 files[filename] = {"content": f.read()}
 
-    # read public root files
+    # read public root files (index/admin pages + their stylesheets)
     public_dir = os.path.join(os.path.dirname(__file__), "public")
-    for filename in ["index.html", "style.css"]:
-        filepath = os.path.join(public_dir, filename)
-        if os.path.exists(filepath):
-            with open(filepath, "r", encoding="utf-8") as f:
-                files[f"public/{filename}"] = {"content": f.read()}
+    if os.path.exists(public_dir):
+        for filename in sorted(os.listdir(public_dir)):
+            if filename.endswith(".html") or filename.endswith(".css"):
+                filepath = os.path.join(public_dir, filename)
+                with open(filepath, "r", encoding="utf-8") as f:
+                    files[f"public/{filename}"] = {"content": f.read()}
 
     # read public js files
     js_dir = os.path.join(public_dir, "js")
