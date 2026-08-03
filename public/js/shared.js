@@ -4503,6 +4503,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackDamage: 9 },
             desc: '기본 공격력이 9로 강해집니다.'
         }
+    },
+    // 화산맛 쿠키: magma_zone 궁극기(지대 지속피해)와 기본공격 화상을 강화한다.
+    volcano: {
+        3: {
+            effect: { ultimateZoneDurationMs: 12000 },
+            desc: '궁극기(마그마 지대) 지속시간이 12초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateZoneDamagePerTick: 3 },
+            desc: '궁극기 지대의 초당 피해가 3으로 강해집니다.'
+        },
+        5: {
+            effect: { attackBurnTicks: 4 },
+            desc: '기본 공격의 화상 피해가 4번 들어갑니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
