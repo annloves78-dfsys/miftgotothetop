@@ -1471,10 +1471,11 @@ html, body {
     color: #2ecc71;
 }
 
-/* Landscape-only lock. body.mc-on is this codebase's "this is a phone" flag
-   (see applyMobileControlsVisibility in main.js), so the rotate prompt only
-   ever shows on a phone -- a desktop window that happens to be narrow/tall
-   never gets told to "rotate". */
+/* Landscape-only lock. body.mc-compact is this codebase's "this is a phone" flag
+   (see applyCompactModeVisibility in main.js), so the rotate prompt only
+   ever shows once the player has turned on 화면 크기 조정 -- a desktop window
+   that happens to be narrow/tall never gets told to "rotate", and the
+   joystick toggle alone (body.mc-touch) doesn't trigger it either. */
 .rotate-overlay {
     display: none;
     position: fixed;
@@ -1501,7 +1502,7 @@ html, body {
 }
 
 @media (orientation: portrait) {
-    body.mc-on .rotate-overlay {
+    body.mc-compact .rotate-overlay {
         display: flex;
     }
 }
@@ -1650,135 +1651,139 @@ html, body {
 }
 
 /* The joystick and action cluster occupy the bottom corners, where the HP bars
-   normally sit -- so with touch controls on, the HP bars move to the top
-   corners, below the back/settings buttons. */
-body.mc-on .hp-container.bottom-left {
+   normally sit -- so with the joystick on, the HP bars move to the top
+   corners, below the back/settings buttons. This depends on the joystick
+   itself (body.mc-touch), not on 화면 크기 조정. */
+body.mc-touch .hp-container.bottom-left {
     bottom: auto;
     top: 76px;
     left: 16px;
 }
 
-body.mc-on .hp-container.bottom-right {
+body.mc-touch .hp-container.bottom-right {
     bottom: auto;
     top: 76px;
     right: 16px;
 }
 
 /* ---- Mobile sizing ----
-   Turning on the touch controls also means "this is a phone", so everything
-   sized for a desktop window shrinks to fit a small (often landscape) screen.
-   All of it is scoped to body.mc-on so desktop layout is untouched. */
-body.mc-on .mc-joystick-zone {
+   Turning on 화면 크기 조정 means "this is a phone", so everything sized for a
+   desktop window shrinks to fit a small (often landscape) screen. This is
+   independent of the joystick toggle (body.mc-touch) -- these two only shrink
+   the joystick/action-button elements themselves, which are invisible anyway
+   unless the joystick is also on. All of it is scoped to body.mc-compact so
+   desktop layout is untouched. */
+body.mc-compact .mc-joystick-zone {
     width: 108px;
     height: 108px;
     left: 16px;
     bottom: 16px;
 }
 
-body.mc-on .mc-joystick-thumb {
+body.mc-compact .mc-joystick-thumb {
     width: 44px;
     height: 44px;
 }
 
-body.mc-on .mc-actions {
+body.mc-compact .mc-actions {
     width: 148px;
     height: 148px;
     right: 16px;
     bottom: 16px;
 }
 
-body.mc-on .mc-skill {
+body.mc-compact .mc-skill {
     width: 48px;
     height: 48px;
     font-size: 20px;
 }
 
-body.mc-on .mc-attack {
+body.mc-compact .mc-attack {
     width: 72px;
     height: 72px;
     right: 6px;
     font-size: 26px;
 }
 
-body.mc-on .mc-aim-zone {
+body.mc-compact .mc-aim-zone {
     width: 66px;
     height: 66px;
 }
 
-body.mc-on .mc-aim-thumb {
+body.mc-compact .mc-aim-thumb {
     width: 40px;
     height: 40px;
     font-size: 18px;
 }
 
 /* In-fight HUD */
-body.mc-on .hp-container {
+body.mc-compact .hp-container {
     width: 150px;
 }
 
-body.mc-on .hp-container.top {
+body.mc-compact .hp-container.top {
     width: 260px;
     top: 12px;
 }
 
-body.mc-on .hp-label,
-body.mc-on .cooldown-row {
+body.mc-compact .hp-label,
+body.mc-compact .cooldown-row {
     font-size: 11px;
 }
 
-body.mc-on .back-corner-btn {
+body.mc-compact .back-corner-btn {
     top: 12px;
     left: 12px;
     padding: 7px 14px;
     font-size: 13px;
 }
 
-body.mc-on .settings-btn {
+body.mc-compact .settings-btn {
     top: 12px;
     right: 12px;
     width: 34px;
     height: 34px;
 }
 
-body.mc-on .story-monsters-left {
+body.mc-compact .story-monsters-left {
     font-size: 12px;
 }
 
 /* Menus and full-screen panels */
-body.mc-on h1 {
+body.mc-compact h1 {
     font-size: 30px;
 }
 
-body.mc-on h2 {
+body.mc-compact h2 {
     font-size: 20px;
 }
 
-body.mc-on .lobby-char {
+body.mc-compact .lobby-char {
     gap: 12px;
 }
 
-body.mc-on .lobby-char-body {
+body.mc-compact .lobby-char-body {
     width: 110px;
     height: 110px;
     border-width: 4px;
 }
 
-body.mc-on .lobby-char-name {
+body.mc-compact .lobby-char-name {
     font-size: 18px;
 }
 
-body.mc-on .play-btn {
+body.mc-compact .play-btn {
     padding: 11px 24px;
     font-size: 17px;
 }
 
-body.mc-on .secondary-btn,
-body.mc-on .char-select-btn {
+body.mc-compact .secondary-btn,
+body.mc-compact .char-select-btn {
     padding: 8px 16px;
     font-size: 13px;
 }
 
-body.mc-on .menu-btn {
+body.mc-compact .menu-btn {
     top: 14px;
     right: 14px;
     width: 38px;
@@ -1786,30 +1791,30 @@ body.mc-on .menu-btn {
     font-size: 17px;
 }
 
-body.mc-on .side-menu {
+body.mc-compact .side-menu {
     top: 58px;
     right: 14px;
     width: 190px;
     padding: 10px;
 }
 
-body.mc-on .boss-list {
+body.mc-compact .boss-list {
     gap: 12px;
 }
 
-body.mc-on #character-list {
+body.mc-compact #character-list {
     grid-template-columns: repeat(3, 116px);
     gap: 10px;
     max-height: 62vh;
 }
 
-body.mc-on .boss-card {
+body.mc-compact .boss-card {
     width: 116px;
     padding: 10px;
     font-size: 12px;
 }
 
-body.mc-on .boss-card .icon.char-swatch {
+body.mc-compact .boss-card .icon.char-swatch {
     width: 46px;
     height: 46px;
 }
@@ -1819,7 +1824,7 @@ body.mc-on .boss-card .icon.char-swatch {
    (게스트 레이드/각성모드/좀비막기) were pushed off the right edge entirely,
    unreachable. Let the row scroll horizontally instead of trying to cram
    everything into the viewport width. */
-body.mc-on .mode-list {
+body.mc-compact .mode-list {
     width: 100vw;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -1830,23 +1835,23 @@ body.mc-on .mode-list {
     padding: 4px 24px;
 }
 
-body.mc-on .mode-card {
+body.mc-compact .mode-card {
     flex-shrink: 0;
     width: 170px;
     height: 200px;
     scroll-snap-align: center;
 }
 
-body.mc-on .mode-card .icon {
+body.mc-compact .mode-card .icon {
     font-size: 46px;
     margin-bottom: 12px;
 }
 
-body.mc-on .mode-card .name {
+body.mc-compact .mode-card .name {
     font-size: 17px;
 }
 
-body.mc-on .mode-card .sub {
+body.mc-compact .mode-card .sub {
     font-size: 12px;
 }
 
@@ -1855,17 +1860,17 @@ body.mc-on .mode-card .sub {
    5), so on a phone -- where the panel grows to nearly full height -- it lands
    on top of the header and hid the grade badge. Reserve room above the header
    for it. */
-body.mc-on .cd-panel {
+body.mc-compact .cd-panel {
     height: 88vh;
     padding: 48px 16px 14px;
     gap: 10px;
 }
 
-body.mc-on .cd-mini-stats {
+body.mc-compact .cd-mini-stats {
     gap: 10px;
 }
 
-body.mc-on .cd-name {
+body.mc-compact .cd-name {
     font-size: 19px;
     max-width: 46vw;
     overflow: hidden;
@@ -1873,25 +1878,25 @@ body.mc-on .cd-name {
     white-space: nowrap;
 }
 
-body.mc-on .cd-power {
+body.mc-compact .cd-power {
     font-size: 17px;
 }
 
-body.mc-on .char-icon-circle.huge {
+body.mc-compact .char-icon-circle.huge {
     width: 120px;
     height: 120px;
 }
 
-body.mc-on .equip-slot {
+body.mc-compact .equip-slot {
     padding: 5px 9px;
     font-size: 12px;
 }
 
-body.mc-on .equip-icon {
+body.mc-compact .equip-icon {
     font-size: 15px;
 }
 
-body.mc-on .skill-icon-box {
+body.mc-compact .skill-icon-box {
     width: 44px;
     height: 44px;
     font-size: 20px;
@@ -1904,83 +1909,83 @@ body.mc-on .skill-icon-box {
    to reach it (the boxes themselves now scroll too; see .detail-right /
    .detail-left / .tower-right / .tower-middle). Shrinking things here means
    scrolling is rarely actually needed. */
-body.mc-on .detail-layout,
-body.mc-on .tower-layout {
+body.mc-compact .detail-layout,
+body.mc-compact .tower-layout {
     height: 90vh;
 }
 
-body.mc-on .detail-left,
-body.mc-on .detail-right,
-body.mc-on .tower-right {
+body.mc-compact .detail-left,
+body.mc-compact .detail-right,
+body.mc-compact .tower-right {
     padding: 14px;
     gap: 10px;
 }
 
-body.mc-on .tower-middle {
+body.mc-compact .tower-middle {
     padding: 12px;
 }
 
-body.mc-on .tower-floor-list {
+body.mc-compact .tower-floor-list {
     width: 200px;
     gap: 10px;
 }
 
-body.mc-on .floor-card {
+body.mc-compact .floor-card {
     padding: 14px;
     font-size: 16px;
 }
 
-body.mc-on .char-preview-row {
+body.mc-compact .char-preview-row {
     gap: 12px;
 }
 
 /* Scoped to .detail-left/.detail-right (the 100px default icon) so it doesn't
    also inflate the tower screen's already-small .char-icon-circle.small
-   preview icon -- body.mc-on's extra element makes this more specific than
+   preview icon -- body.mc-compact's extra element makes this more specific than
    the plain .char-icon-circle.small rule, so an unscoped version here would
    win and blow the tower icon back up to 70px. */
-body.mc-on .detail-left .char-icon-circle,
-body.mc-on .detail-right .char-icon-circle {
+body.mc-compact .detail-left .char-icon-circle,
+body.mc-compact .detail-right .char-icon-circle {
     width: 70px;
     height: 70px;
 }
 
-body.mc-on .boss-icon-circle {
+body.mc-compact .boss-icon-circle {
     width: 64px;
     height: 64px;
     font-size: 32px;
 }
 
 /* Gacha */
-body.mc-on .gacha-banner-list {
+body.mc-compact .gacha-banner-list {
     width: 100%;
     gap: 9px;
     margin: 14px 0;
 }
 
-body.mc-on .gacha-banner {
+body.mc-compact .gacha-banner {
     padding: 11px 14px;
 }
 
-body.mc-on .gacha-banner-icon {
+body.mc-compact .gacha-banner-icon {
     font-size: 24px;
     width: 30px;
 }
 
-body.mc-on .gacha-banner-name {
+body.mc-compact .gacha-banner-name {
     font-size: 15px;
 }
 
 /* The three-column pull layout is too wide for a phone: keep the soul list and
    the pull buttons side by side under a full-width result area. */
-body.mc-on .gacha-pull-layout {
+body.mc-compact .gacha-pull-layout {
     flex-wrap: wrap;
     width: 98vw;
     gap: 8px;
     margin: 8px 0;
 }
 
-body.mc-on .gacha-result {
+body.mc-compact .gacha-result {
     order: -1;
     flex-basis: 100%;
     min-height: 108px;
@@ -1988,47 +1993,47 @@ body.mc-on .gacha-result {
     gap: 6px;
 }
 
-body.mc-on .gacha-soul-section {
+body.mc-compact .gacha-soul-section {
     width: auto;
     flex: 1;
     min-width: 0;
 }
 
-body.mc-on .gacha-soul-list {
+body.mc-compact .gacha-soul-list {
     max-height: 20vh;
 }
 
-body.mc-on .gacha-pull-actions {
+body.mc-compact .gacha-pull-actions {
     width: auto;
     flex-direction: row;
     gap: 8px;
     align-items: flex-start;
 }
 
-body.mc-on #gacha-pull-screen .play-btn {
+body.mc-compact #gacha-pull-screen .play-btn {
     width: auto; /* back to content width now that they sit in a row */
 }
 
-body.mc-on .gacha-card {
+body.mc-compact .gacha-card {
     width: 86px;
     padding: 8px 5px;
 }
 
-body.mc-on .gacha-card-icon {
+body.mc-compact .gacha-card-icon {
     width: 40px;
     height: 40px;
     font-size: 19px;
 }
 
-body.mc-on .gacha-card-name {
+body.mc-compact .gacha-card-name {
     font-size: 11px;
 }
 
-body.mc-on .gacha-odds-section {
+body.mc-compact .gacha-odds-section {
     margin-top: 2px;
 }
 
-body.mc-on .gacha-odds-row {
+body.mc-compact .gacha-odds-row {
     padding: 4px 8px;
     font-size: 11px;
 }
@@ -2315,7 +2320,7 @@ body.mc-on .gacha-odds-row {
     border-color: #1abc9c;
 }
 
-body.mc-on .stocks-lobby-btn {
+body.mc-compact .stocks-lobby-btn {
     bottom: 76px;
 }
 
@@ -2676,23 +2681,23 @@ body.mc-on .stocks-lobby-btn {
     gap: 8px;
 }
 
-body.mc-on .settings-panel {
+body.mc-compact .settings-panel {
     width: 92vw;
     max-height: 64vh;
     gap: 10px;
 }
 
-body.mc-on .settings-block {
+body.mc-compact .settings-block {
     padding: 10px;
     gap: 6px;
 }
 
-body.mc-on .settings-row,
-body.mc-on .menu-item-btn {
+body.mc-compact .settings-row,
+body.mc-compact .menu-item-btn {
     font-size: 12px;
 }
 
-body.mc-on .settings-hint {
+body.mc-compact .settings-hint {
     font-size: 10px;
 }
 
@@ -2907,13 +2912,13 @@ body.mc-on .settings-hint {
     to { opacity: 1; }
 }
 
-body.mc-on .guest-party-slot { width: 46px; }
-body.mc-on .guest-party-slot .slot-circle { width: 40px; height: 40px; font-size: 16px; }
-body.mc-on .guest-party-bar { bottom: 6px; gap: 6px; }
-body.mc-on .guest-party-member { width: 46px; padding: 3px; }
-body.mc-on .guest-party-member .pm-circle { width: 24px; height: 24px; }
-body.mc-on .guest-collapse-text { font-size: 26px; }
-body.mc-on .guest-collapse-sub { font-size: 14px; }
+body.mc-compact .guest-party-slot { width: 46px; }
+body.mc-compact .guest-party-slot .slot-circle { width: 40px; height: 40px; font-size: 16px; }
+body.mc-compact .guest-party-bar { bottom: 6px; gap: 6px; }
+body.mc-compact .guest-party-member { width: 46px; padding: 3px; }
+body.mc-compact .guest-party-member .pm-circle { width: 24px; height: 24px; }
+body.mc-compact .guest-collapse-text { font-size: 26px; }
+body.mc-compact .guest-collapse-sub { font-size: 14px; }
 
 /* ---- 클리어 보상 ---- */
 /* 칩 모양은 이벤트 화면의 .ev-reward-chip과 같은 계열이되, 여러 종류가
@@ -2967,9 +2972,9 @@ body.mc-on .guest-collapse-sub { font-size: 14px; }
 
 .currency-pill-icon { font-size: 14px; }
 
-body.mc-on .currency-bar { top: 10px; right: 12px; gap: 5px; }
-body.mc-on .currency-pill { padding: 4px 7px; font-size: 11px; }
-body.mc-on .reward-chip { min-width: 54px; padding: 5px 6px; }
+body.mc-compact .currency-bar { top: 10px; right: 12px; gap: 5px; }
+body.mc-compact .currency-pill { padding: 4px 7px; font-size: 11px; }
+body.mc-compact .reward-chip { min-width: 54px; padding: 5px 6px; }
 
 /* ---- 장비 ---- */
 .equip-slot.clickable { cursor: pointer; transition: 0.15s; }
@@ -3033,8 +3038,8 @@ body.mc-on .reward-chip { min-width: 54px; padding: 5px 6px; }
 
 .cd-stat-bonus { color: #2ecc71; font-size: 12px; margin-left: 4px; }
 
-body.mc-on .equip-picker-panel { padding: 12px; }
-body.mc-on .equip-item { padding: 7px 9px; }
+body.mc-compact .equip-picker-panel { padding: 12px; }
+body.mc-compact .equip-item { padding: 7px 9px; }
 
 /* 장비 칸이 여섯 개까지 늘어나면 한 줄로는 .cd-body 밖으로 넘치고, 넘친 부분을
    밑의 스킬 칸이 덮어버려서 마지막 칸(부츠)이 안 눌렸다. 스크롤은 불편하니,
@@ -3075,9 +3080,9 @@ body.mc-on .equip-item { padding: 7px 9px; }
     white-space: nowrap;
 }
 
-body.mc-on .cd-equip-col { gap: 6px; }
-body.mc-on .cd-equip-col .equip-slot { padding: 5px 8px; }
-body.mc-on .cd-equip-col .equip-value { font-size: 11px; }
+body.mc-compact .cd-equip-col { gap: 6px; }
+body.mc-compact .cd-equip-col .equip-slot { padding: 5px 8px; }
+body.mc-compact .cd-equip-col .equip-value { font-size: 11px; }
 
 .gacha-ticket-count {
     font-size: 15px;
@@ -3161,7 +3166,7 @@ body.mc-on .cd-equip-col .equip-value { font-size: 11px; }
 .equip-up-cost { color: #bdc3c7; font-size: 11px; }
 .equip-up-max { font-size: 12px; color: #f1c40f; }
 
-body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
+body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 
 /* 10층마다 오는 보스전은 타워에서 바로 눈에 띄어야 한다 */
 .floor-card.boss-floor {
@@ -3759,8 +3764,8 @@ body.mc-on .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 
 /* 모바일에서는 조작 버튼과 겹치지 않게 조금 작게. */
-body.mc-on .story-boss-bar { top: 6px; width: 70%; }
-body.mc-on .sbb-name { font-size: 14px; }
+body.mc-compact .story-boss-bar { top: 6px; width: 70%; }
+body.mc-compact .sbb-name { font-size: 14px; }
 
 /* ==================== 좀비막기 ==================== */
 .zombie-hud {
@@ -3808,7 +3813,7 @@ body.mc-on .sbb-name { font-size: 14px; }
     font-size: 15px;
 }
 
-body.mc-on .zombie-build-btn { display: none; }
+body.mc-compact .zombie-build-btn { display: none; }
 
 .zombie-build-menu {
     position: absolute;
@@ -3866,4 +3871,4 @@ body.mc-on .zombie-build-btn { display: none; }
     color: #fff;
     font-size: 14px;
 }
-body.mc-on .sbb-track { height: 16px; }
+body.mc-compact .sbb-track { height: 16px; }

@@ -26,13 +26,14 @@
     </script>
 </head>
 <body>
-    <!-- Shown only when 모바일 조작 is on (see applyMobileControlsVisibility in
-         main.js -- that flag is this codebase's "this is a phone" signal) and
-         the device is in portrait. Covers everything so the game is unusable
-         until the phone is rotated -- the manifest's orientation:landscape
-         lock only takes effect for an installed PWA on Android; this overlay
-         is what makes landscape-only actually hold in a plain mobile browser
-         tab too, on any platform including iOS. -->
+    <!-- Shown only when 화면 크기 조정 is on (see applyCompactModeVisibility in
+         main.js -- that flag is this codebase's "this is a phone" signal, kept
+         independent of the 조이스틱 toggle) and the device is in portrait.
+         Covers everything so the game is unusable until the phone is rotated --
+         the manifest's orientation:landscape lock only takes effect for an
+         installed PWA on Android; this overlay is what makes landscape-only
+         actually hold in a plain mobile browser tab too, on any platform
+         including iOS. -->
     <div id="rotate-overlay" class="rotate-overlay">
         <div class="rotate-icon">📱↻</div>
         <div>화면을 가로로 돌려주세요</div>
@@ -286,8 +287,10 @@
         <h2>조작</h2>
         <div class="settings-panel">
             <div class="settings-block">
-                <button id="controls-mobile-btn" class="menu-item-btn">📱 모바일 조작 <span id="controls-mobile-status" class="menu-toggle-status">꺼짐</span></button>
-                <p class="settings-hint">조이스틱과 버튼이 나오고, 화면 크기도 휴대폰에 맞게 작아져요.</p>
+                <button id="controls-joystick-btn" class="menu-item-btn">🕹️ 조이스틱 <span id="controls-joystick-status" class="menu-toggle-status">꺼짐</span></button>
+                <p class="settings-hint">화면에 조이스틱과 버튼이 나와서 터치로 조작할 수 있어요.</p>
+                <button id="controls-compact-btn" class="menu-item-btn">📱 화면 크기 조정 <span id="controls-compact-status" class="menu-toggle-status">꺼짐</span></button>
+                <p class="settings-hint">화면이 휴대폰에 맞게 작아지고, 세로로 보고 있으면 가로로 돌려달라고 안내해요.</p>
                 <button id="controls-autoaim-btn" class="menu-item-btn">🎯 자동조준 <span id="controls-autoaim-status" class="menu-toggle-status">꺼짐</span></button>
                 <p id="controls-autoaim-hint" class="settings-hint">켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.</p>
             </div>

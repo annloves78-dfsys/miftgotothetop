@@ -1247,12 +1247,20 @@ let gameData = loadGameData();
 // A device-local UI preference, not part of gameData -- deliberately kept
 // out of the cloud-synced save so it doesn't jump between a phone and a
 // desktop session under the same account.
+// 조이스틱(터치 조작)과 화면 크기 조정(휴대폰용 축소 레이아웃)은 서로 독립된
+// 설정이다 -- 예전엔 하나의 토글("모바일 조작")이 둘 다 겸했지만, 큰 태블릿에서
+// 조이스틱만 쓰거나 데스크톱 창을 좁게 열어 축소 레이아웃만 보고 싶은 경우처럼
+// 따로 켜고 싶을 수 있어 분리했다.
 const MOBILE_CONTROLS_KEY = 'boss_raid_mobile_controls';
+const COMPACT_MODE_KEY = 'boss_raid_compact_mode';
 const AUTO_AIM_KEY = 'boss_raid_auto_aim'; // same reasoning: device-local, not cloud-synced
 let mobileControlsEnabled = localStorage.getItem(MOBILE_CONTROLS_KEY) === '1';
+let compactModeEnabled = localStorage.getItem(COMPACT_MODE_KEY) === '1';
 let autoAimEnabled = localStorage.getItem(AUTO_AIM_KEY) === '1';
-const controlsMobileBtn = document.getElementById('controls-mobile-btn');
-const controlsMobileStatus = document.getElementById('controls-mobile-status');
+const controlsJoystickBtn = document.getElementById('controls-joystick-btn');
+const controlsJoystickStatus = document.getElementById('controls-joystick-status');
+const controlsCompactBtn = document.getElementById('controls-compact-btn');
+const controlsCompactStatus = document.getElementById('controls-compact-status');
 const controlsAutoAimBtn = document.getElementById('controls-autoaim-btn');
 const controlsAutoAimStatus = document.getElementById('controls-autoaim-status');
 const controlsAutoAimHint = document.getElementById('controls-autoaim-hint');
@@ -1278,18 +1286,20 @@ function autoAimActive() {
 }
 
 function updateControlsScreen() {
-    controlsMobileStatus.textContent = mobileControlsEnabled ? '켜짐' : '꺼짐';
-    controlsMobileStatus.classList.toggle('on', mobileControlsEnabled);
+    controlsJoystickStatus.textContent = mobileControlsEnabled ? '켜짐' : '꺼짐';
+    controlsJoystickStatus.classList.toggle('on', mobileControlsEnabled);
+    controlsCompactStatus.textContent = compactModeEnabled ? '켜짐' : '꺼짐';
+    controlsCompactStatus.classList.toggle('on', compactModeEnabled);
 
     const aimOn = autoAimActive();
     controlsAutoAimStatus.textContent = aimOn ? '켜짐' : '꺼짐';
     controlsAutoAimStatus.classList.toggle('on', aimOn);
-    // While mobile controls are on, auto-aim can't be switched off -- the mobile
+    // While the joystick is on, auto-aim can't be switched off -- the mobile
     // attack button has no other way to aim -- so the row goes unclickable.
     controlsAutoAimBtn.disabled = mobileControlsEnabled;
     controlsAutoAimBtn.classList.toggle('locked', mobileControlsEnabled);
     controlsAutoAimHint.textContent = mobileControlsEnabled
-        ? '모바일 조작을 켜면 자동조준은 항상 켜져 있어요. 끄려면 먼저 모바일 조작을 꺼주세요.'
+        ? '조이스틱을 켜면 자동조준은 항상 켜져 있어요. 끄려면 먼저 조이스틱을 꺼주세요.'
         : '켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.';
 }
 function applyMobileControlsVisibility() {
@@ -1298,15 +1308,25 @@ function applyMobileControlsVisibility() {
     mobileControlsStory.classList.toggle('hidden', !mobileControlsEnabled);
     const guestControls = document.getElementById('mobile-controls-guest');
     if (guestControls) guestControls.classList.toggle('hidden', !mobileControlsEnabled);
-    document.body.classList.toggle('mc-on', mobileControlsEnabled);
+    document.body.classList.toggle('mc-touch', mobileControlsEnabled);
+}
+function applyCompactModeVisibility() {
+    document.body.classList.toggle('mc-compact', compactModeEnabled);
 }
 updateControlsScreen();
 applyMobileControlsVisibility(); // restore the saved preference on load
-controlsMobileBtn.addEventListener('click', () => {
+applyCompactModeVisibility();
+controlsJoystickBtn.addEventListener('click', () => {
     mobileControlsEnabled = !mobileControlsEnabled;
     localStorage.setItem(MOBILE_CONTROLS_KEY, mobileControlsEnabled ? '1' : '0');
     updateControlsScreen();
     applyMobileControlsVisibility();
+});
+controlsCompactBtn.addEventListener('click', () => {
+    compactModeEnabled = !compactModeEnabled;
+    localStorage.setItem(COMPACT_MODE_KEY, compactModeEnabled ? '1' : '0');
+    updateControlsScreen();
+    applyCompactModeVisibility();
 });
 controlsAutoAimBtn.addEventListener('click', () => {
     if (mobileControlsEnabled) return; // locked on; see updateControlsScreen
