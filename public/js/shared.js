@@ -4669,6 +4669,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveReviveCount: 1, passiveReviveHpRatio: 0.5 },
             desc: '패시브로 쓰러졌을 때 한 번, 체력 50%로 부활합니다.'
         }
+    },
+    // 지옥맛 쿠키: sky_slam 궁극기와 처치 시 공격력이 쌓이는 패시브를 강화한다.
+    hellflavor: {
+        3: {
+            effect: { ultimateDamage: 70 },
+            desc: '궁극기(하늘 내려찍기) 피해가 10 늘어나 70이 됩니다.'
+        },
+        4: {
+            effect: { ultimateAttackBuffDurationMs: 15000 },
+            desc: '궁극기가 적중하면 공격력 버프가 10초에서 15초로 더 오래 유지됩니다.'
+        },
+        5: {
+            effect: { passiveKillAttackBuff: 3 },
+            desc: '패시브로 적을 쓰러뜨릴 때마다 공격력이 3씩(15초간) 쌓입니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
