@@ -4488,6 +4488,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveDamageMultiplier: 0.8 },
             desc: '패시브로 받는 피해가 항상 80%로 줄어듭니다.'
         }
+    },
+    // 자색 고구마맛 쿠키: targeted_aoe 궁극기(지정 범위 피해)를 강화한다.
+    sweetpotato: {
+        3: {
+            effect: { ultimateRadius: 120 },
+            desc: '궁극기 범위가 120픽셀로 넓어집니다.'
+        },
+        4: {
+            effect: { ultimateDamage: 20 },
+            desc: '궁극기 피해가 20으로 강해집니다.'
+        },
+        5: {
+            effect: { attackDamage: 9 },
+            desc: '기본 공격력이 9로 강해집니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
