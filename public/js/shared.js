@@ -4716,6 +4716,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { awakenedForm: { health: 200, attackDamage: 9, attackMarkUses: 0, keepsOwnMarks: false, markEatBonus: 5 } },
             desc: '부활(각성)했을 때 공격력이 3 올라 9가 됩니다.'
         }
+    },
+    // 불꽃요정맛 쿠키: fire_line_zone 궁극기와 기본공격 화상을 강화한다.
+    flamefairy: {
+        3: {
+            effect: { ultimateZoneDurationMs: 20000 },
+            desc: '궁극기(화염지대) 지속시간이 15초에서 20초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateZoneDamagePerTick: 5 },
+            desc: '화염지대 안의 적이 받는 초당 피해가 2 늘어나 5가 됩니다.'
+        },
+        5: {
+            effect: { attackBurnTicks: 7 },
+            desc: '기본 공격의 화상이 7번 들어가 총 피해가 14가 됩니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
