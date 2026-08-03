@@ -232,9 +232,6 @@ setCloudSyncHandler(syncGameDataToCloud);
 async function applyCloudGameData(cloudData) {
     if (cloudData && typeof cloudData === 'object' && Object.keys(cloudData).length > 0) {
         gameData = { ...freshDefaults(), ...cloudData };
-        Object.keys(SHARED.CHARACTERS).forEach(id => {
-            if (!gameData.unlockedCharacters.includes(id)) gameData.unlockedCharacters.push(id);
-        });
         saveGameData(gameData);
     } else {
         await syncGameDataToCloud();
