@@ -1399,6 +1399,41 @@ html, body {
     color: #2ecc71;
 }
 
+/* Landscape-only lock. body.mc-on is this codebase's "this is a phone" flag
+   (see applyMobileControlsVisibility in main.js), so the rotate prompt only
+   ever shows on a phone -- a desktop window that happens to be narrow/tall
+   never gets told to "rotate". */
+.rotate-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #1a1f2b;
+    color: #ecf0f1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    text-align: center;
+    padding: 20px;
+}
+
+.rotate-overlay .rotate-icon {
+    font-size: 48px;
+    animation: rotate-hint 1.6s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-90deg); }
+}
+
+@media (orientation: portrait) {
+    body.mc-on .rotate-overlay {
+        display: flex;
+    }
+}
+
 /* Mobile touch controls (joystick + action buttons), overlaid on the
    fight/story-fight canvases. Hidden unless the player enables them from
    the hamburger menu (see menu-mobile-controls-btn). */
