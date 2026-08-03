@@ -2814,6 +2814,21 @@ function tickStoryRoom(roomId) {
     const alivePlayers = Object.values(room.players).filter(p => p.alive);
     if (!alivePlayers.length) return; // applyDamageToStoryPlayer already ends the room on death
 
+    // 별은 공격으로 깨는 게 아니라 그 위로 걸어 올라가야 클리어된다 -- 별이
+    // 웨이브 바로 근처에 있을 때 공격 판정만으로 몬스터를 안 잡고 넘어가는
+    // 문제가 있었다.
+    const starFloorDef = floorDefFor(room.floor);
+    if (starFloorDef && starFloorDef.star && !room.starDefeated) {
+        for (const p of alivePlayers) {
+            if (Math.hypot(p.x - starFloorDef.star.x, p.y - starFloorDef.star.y) <= PLAYER_RADIUS + STAR_RADIUS) {
+                room.starDefeated = true;
+                io.to(roomId).emit('starHit', {});
+                endStoryRoom(roomId, 'win');
+                return;
+            }
+        }
+    }
+
     // 체력이 바닥나기 직전에 한 번만 버티는 몬스터(10층 케이크). 죽는 길이
     // 여럿이라 때리는 자리마다 붙이지 않고 여기서 한 번에 본다.
     for (const [mid, m] of Object.entries(room.monsters)) {
@@ -2948,9 +2963,6 @@ function tickStoryRoom(roomId) {
     tickMonsterProjectiles(ctx, targets, 50);
     if (!rooms[roomId]) return; // an arrow may have just killed the last player
 
-    // Thrown drops. A drop can also pop the stage's star, so 물방울맛 can
-    // actually finish a floor without ever touching anything.
-    const dropFloorDef = floorDefFor(room.floor);
     tickPlayerProjectiles(roomId, room, 50, (pr) => {
         for (const [mid, m] of Object.entries(room.monsters)) {
             if (!m.alive) continue;
@@ -2971,13 +2983,6 @@ function tickStoryRoom(roomId) {
             }
             return true;
         }
-        if (dropFloorDef && dropFloorDef.star && !room.starDefeated
-            && Math.hypot(pr.x - dropFloorDef.star.x, pr.y - dropFloorDef.star.y) <= pr.radius + STAR_RADIUS) {
-            room.starDefeated = true;
-            io.to(roomId).emit('starHit', {});
-            endStoryRoom(roomId, 'win');
-            return true;
-        }
         return false;
     }, 'storyDropGone', (pr, dt) => {
         let best = null, bestDist = Infinity;
@@ -2988,7 +2993,7 @@ function tickStoryRoom(roomId) {
         }
         if (best) steerProjectileToward(pr, best.x, best.y, dt);
     }, 'storyDropUpdate');
-    if (!rooms[roomId]) return; // a drop just hit the star
+    if (!rooms[roomId]) return; // a drop may have just killed the last player
 
     io.to(roomId).emit('storyTick', {
         monsters: publicMonsters(room),
@@ -5033,17 +5038,6 @@ io.on('connection', (socket) => {
         if (anyHit && character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
             const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
-        }
-
-        if (floorDef.star && !room.starDefeated) {
-            // Must use the resolved swing, not character.attackRange/Width --
-            // multi-stage attacks (combo_two_stage) leave those undefined, which
-            // made the star impossible to hit.
-            if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, swing.width, floorDef.star.x, floorDef.star.y, STAR_RADIUS)) {
-                room.starDefeated = true;
-                io.to(roomId).emit('starHit', {});
-                endStoryRoom(roomId, 'win');
-            }
         }
     });
 
