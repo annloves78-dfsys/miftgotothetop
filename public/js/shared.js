@@ -4549,6 +4549,36 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveReviveHpRatio: 1 },
             desc: '쓰러졌을 때 체력 100%로 부활합니다.'
         }
+    },
+    // 물방울맛 쿠키: mark_flood 궁극기(폭포, 표식만 남기고 피해는 없었다)를 강화한다.
+    waterdrop: {
+        3: {
+            effect: { ultimateMarkDurationMs: 15000 },
+            desc: '궁극기(폭포) 지속시간이 15초로 늘어납니다.'
+        },
+        4: {
+            effect: { instinctZoneDamagePerTick: 2, instinctZoneTickMs: 1000 },
+            desc: '궁극기(폭포) 범위 안의 적이 초당 2의 피해를 받습니다.'
+        },
+        5: {
+            effect: { attackProjectileSpeed: 560 },
+            desc: '기본 공격(물방울)의 날아가는 속도가 조금 빨라집니다.'
+        }
+    },
+    // 마그마맛 쿠키: magma_pour 궁극기와 기본공격 화상을 강화한다.
+    magma: {
+        3: {
+            effect: { ultimateDamage: 12 },
+            desc: '궁극기 피해에 불 데미지 2가 추가되어 12가 됩니다.'
+        },
+        4: {
+            effect: { ultimateRadius: 120 },
+            desc: '궁극기 범위가 120픽셀로 넓어집니다.'
+        },
+        5: {
+            effect: { attackBurnTicks: 7 },
+            desc: '기본 공격의 화상 총 피해가 7이 됩니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {

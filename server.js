@@ -5482,6 +5482,15 @@ io.on('connection', (socket) => {
             }
             markMonstersInCircle(roomId, room, spot.x, spot.y, character.ultimateRadius,
                 character.element, ultimateMarkOpts(character));
+            // 본능해제 4강(물방울맛): 표식만 남기던 폭포/마그마 쏟기 자리에 초당 피해를 더한다.
+            if (character.instinctZoneDamagePerTick) {
+                room.activeBuffs.push({
+                    type: 'magma_zone', casterId: socket.id, x: spot.x, y: spot.y,
+                    radius: character.ultimateRadius, damage: character.instinctZoneDamagePerTick,
+                    tickMs: character.instinctZoneTickMs || 1000,
+                    endAt: now + character.ultimateMarkDurationMs, lastTickAt: now
+                });
+            }
         } else if (character.ultimateType === 'lightning_strike') {
             const targetX = payload && payload.targetX;
             const targetY = payload && payload.targetY;
@@ -5925,6 +5934,15 @@ io.on('connection', (socket) => {
                 room.bossHp = Math.max(0, room.bossHp - character.ultimateDamage);
                 io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp, by: socket.id });
                 if (room.bossHp <= 0) endRoom(roomId, 'win');
+            }
+            // 본능해제 4강(물방울맛): 표식만 남기던 폭포/마그마 쏟기 자리에 초당 피해를 더한다.
+            if (character.instinctZoneDamagePerTick) {
+                room.activeBuffs.push({
+                    type: 'magma_zone', casterId: socket.id, x: spot.x, y: spot.y,
+                    radius: character.ultimateRadius, damage: character.instinctZoneDamagePerTick,
+                    tickMs: character.instinctZoneTickMs || 1000,
+                    endAt: now + character.ultimateMarkDurationMs, lastTickAt: now
+                });
             }
         } else if (character.ultimateType === 'targeted_aoe') {
             const targetX = payload && payload.targetX;
@@ -6640,6 +6658,15 @@ io.on('connection', (socket) => {
             if (character.ultimateDamage) {
                 const hit = guestCircleTargets(room, spot.x, spot.y, character.ultimateRadius);
                 if (hit.length) damageGuestTargets(roomId, room, hit, character.ultimateDamage, socket.id);
+            }
+            // 본능해제 4강(물방울맛): 표식만 남기던 폭포/마그마 쏟기 자리에 초당 피해를 더한다.
+            if (character.instinctZoneDamagePerTick) {
+                room.activeBuffs.push({
+                    type: 'magma_zone', casterId: socket.id, x: spot.x, y: spot.y,
+                    radius: character.ultimateRadius, damage: character.instinctZoneDamagePerTick,
+                    tickMs: character.instinctZoneTickMs || 1000,
+                    endAt: now + character.ultimateMarkDurationMs, lastTickAt: now
+                });
             }
             return;
         }
