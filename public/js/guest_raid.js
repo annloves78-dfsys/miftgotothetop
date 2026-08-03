@@ -873,7 +873,11 @@ function guestFrame() {
             guestLocal.y = Math.max(-SHARED.GUEST_ARENA_HALF_H, Math.min(SHARED.GUEST_ARENA_HALF_H, guestLocal.y + dy));
         }
         if (mobileControlsEnabled) {
-            if (joystickFacing !== null) guestLocal.facing = joystickFacing;
+            // See the matching guard in main.js's frame(): without it, a swing
+            // thrown while walking snapped back to face the movement direction
+            // on the very next frame instead of staying locked on the
+            // auto-aimed target for the attack's duration.
+            if (joystickFacing !== null && now >= guestLocal.attackEffectUntil) guestLocal.facing = joystickFacing;
         } else if (autoAimEnabled) {
             guestLocal.facing = Math.atan2(guestState.bossY - guestLocal.y, guestState.bossX - guestLocal.x);
         } else if (guestMouseX !== null) {

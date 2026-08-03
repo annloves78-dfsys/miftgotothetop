@@ -4162,7 +4162,11 @@ function storyFrame() {
             storyPlayer.x = pos.x; storyPlayer.y = pos.y;
         }
         if (mobileControlsEnabled) {
-            if (storyJoystickFacing !== null) storyPlayer.facing = storyJoystickFacing;
+            // See the matching guard in frame(): without it, a swing thrown
+            // while walking snapped back to face the movement direction on
+            // the very next frame instead of staying locked on the auto-aimed
+            // target for the attack's duration.
+            if (storyJoystickFacing !== null && now >= storyPlayer.attackEffectUntil) storyPlayer.facing = storyJoystickFacing;
         } else if (autoAimEnabled) {
             // See the matching branch in frame(): the aim has to be held every
             // frame, not just set on the click, or this loop overwrites it.
@@ -5458,8 +5462,12 @@ function frame() {
         me.updateLocal(keys);
         if (mobileControlsEnabled) {
             // No mouse on touch -- face the way the movement stick is pushed.
-            // The attack button auto-aims separately (see fireAutoAimedAttack).
-            if (joystickFacing !== null) me.facing = joystickFacing;
+            // The attack button auto-aims separately (see fireAutoAimedAttack),
+            // but this loop runs every frame too -- without the attackEffectUntil
+            // guard it would immediately snap facing back to the movement
+            // direction on the very next frame, so a swing thrown while walking
+            // visibly landed toward the joystick instead of the auto-aimed target.
+            if (joystickFacing !== null && now >= me.attackEffectUntil) me.facing = joystickFacing;
         } else if (autoAimEnabled) {
             // 자동조준: hold the aim on the target every frame. Doing it only at
             // the moment of the click wasn't enough -- this loop would re-aim at
