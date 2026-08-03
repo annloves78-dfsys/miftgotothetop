@@ -1231,26 +1231,21 @@ controlsAutoAimBtn.addEventListener('click', () => {
 });
 controlsBackBtn.addEventListener('click', () => showScreen('lobby'));
 
-// Drives movement through the same keys{} object WASD already feeds into
-// updateLocal()/storyFrame(), snapped to 8 directions -- so no change was
-// needed to the underlying movement math. Also remembers the last push
-// angle for aiming, since there's no mouse to derive facing from on touch.
+// Movement used to be routed through the same keys{} object WASD feeds,
+// snapped to 8 directions -- but that meant any push angle off the 8 exact
+// headings got redirected away from where the thumb was actually pointing,
+// so the character rarely walked exactly where the stick aimed and effective
+// progress toward a target felt slower than keyboard. Now the joystick drives
+// movement directly from the raw push angle (any of 360 degrees, not just 8),
+// while still remembering the angle for aiming since there's no mouse on touch.
 let joystickFacing = null;
 let storyJoystickFacing = null;
+let joystickMoveVec = null; // {x, y} unit vector, or null when centered
+let storyJoystickMoveVec = null;
 function applyJoystickAngle(angle, isStory) {
-    keys['w'] = keys['a'] = keys['s'] = keys['d'] = false;
-    if (angle !== null) {
-        const deg = angle * 180 / Math.PI;
-        if (deg > -22.5 && deg <= 22.5) keys['d'] = true;
-        else if (deg > 22.5 && deg <= 67.5) { keys['d'] = true; keys['s'] = true; }
-        else if (deg > 67.5 && deg <= 112.5) keys['s'] = true;
-        else if (deg > 112.5 && deg <= 157.5) { keys['s'] = true; keys['a'] = true; }
-        else if (deg > 157.5 || deg <= -157.5) keys['a'] = true;
-        else if (deg > -157.5 && deg <= -112.5) { keys['a'] = true; keys['w'] = true; }
-        else if (deg > -112.5 && deg <= -67.5) keys['w'] = true;
-        else { keys['w'] = true; keys['d'] = true; }
-    }
-    if (isStory) storyJoystickFacing = angle; else joystickFacing = angle;
+    const vec = angle === null ? null : { x: Math.cos(angle), y: Math.sin(angle) };
+    if (isStory) { storyJoystickFacing = angle; storyJoystickMoveVec = vec; }
+    else { joystickFacing = angle; joystickMoveVec = vec; }
 }
 
 function setupJoystick(zoneEl, isStory) {
@@ -4148,10 +4143,15 @@ function storyFrame() {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
         const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed);
         let dx = 0, dy = 0;
-        if (keys['w'] || keys['W']) dy -= speed;
-        if (keys['s'] || keys['S']) dy += speed;
-        if (keys['a'] || keys['A']) dx -= speed;
-        if (keys['d'] || keys['D']) dx += speed;
+        if (storyJoystickMoveVec) {
+            dx = storyJoystickMoveVec.x * speed;
+            dy = storyJoystickMoveVec.y * speed;
+        } else {
+            if (keys['w'] || keys['W']) dy -= speed;
+            if (keys['s'] || keys['S']) dy += speed;
+            if (keys['a'] || keys['A']) dx -= speed;
+            if (keys['d'] || keys['D']) dx += speed;
+        }
         // 20층 보스 "뒤바뀐 발걸음": 서버가 준 until은 Date.now() 기준이라
         // performance.now()가 아니라 여기서만 따로 비교한다.
         if (storyReverseUntil && Date.now() < storyReverseUntil) { dx = -dx; dy = -dy; }

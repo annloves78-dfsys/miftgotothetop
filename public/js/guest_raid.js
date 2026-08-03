@@ -863,10 +863,15 @@ function guestFrame() {
         const stats = guestStats();
         const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed);
         let dx = 0, dy = 0;
-        if (keys['w'] || keys['W']) dy -= speed;
-        if (keys['s'] || keys['S']) dy += speed;
-        if (keys['a'] || keys['A']) dx -= speed;
-        if (keys['d'] || keys['D']) dx += speed;
+        if (joystickMoveVec) {
+            dx = joystickMoveVec.x * speed;
+            dy = joystickMoveVec.y * speed;
+        } else {
+            if (keys['w'] || keys['W']) dy -= speed;
+            if (keys['s'] || keys['S']) dy += speed;
+            if (keys['a'] || keys['A']) dx -= speed;
+            if (keys['d'] || keys['D']) dx += speed;
+        }
         if (dx !== 0 || dy !== 0) {
             // Square field: a box clamp, not a radius.
             guestLocal.x = Math.max(-SHARED.GUEST_ARENA_HALF_W, Math.min(SHARED.GUEST_ARENA_HALF_W, guestLocal.x + dx));

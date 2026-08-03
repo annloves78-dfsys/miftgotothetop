@@ -269,10 +269,15 @@ class Player {
         if (!this.alive) return false;
         const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed);
         let dx = 0, dy = 0;
-        if (keys['w'] || keys['W']) dy -= speed;
-        if (keys['s'] || keys['S']) dy += speed;
-        if (keys['a'] || keys['A']) dx -= speed;
-        if (keys['d'] || keys['D']) dx += speed;
+        if (joystickMoveVec) {
+            dx = joystickMoveVec.x * speed;
+            dy = joystickMoveVec.y * speed;
+        } else {
+            if (keys['w'] || keys['W']) dy -= speed;
+            if (keys['s'] || keys['S']) dy += speed;
+            if (keys['a'] || keys['A']) dx -= speed;
+            if (keys['d'] || keys['D']) dx += speed;
+        }
         if (dx === 0 && dy === 0) return false;
 
         let nx = this.x + dx;
