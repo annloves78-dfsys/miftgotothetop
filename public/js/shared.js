@@ -4731,6 +4731,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackBurnTicks: 7 },
             desc: '기본 공격의 화상이 7번 들어가 총 피해가 14가 됩니다.'
         }
+    },
+    // 쿠키맛 쿠키: targeted_line_aoe 궁극기와 기본공격(빛의 구슬)을 강화한다.
+    plaincookie: {
+        3: {
+            effect: { ultimateDamage: 60 },
+            desc: '궁극기(빛의 심판) 피해가 60으로 강해집니다.'
+        },
+        4: {
+            effect: { ultimateHealPerEnemy: 60 },
+            desc: '궁극기로 회복하는 양이 맞힌 적 한 마리당 60으로 늘어납니다.'
+        },
+        5: {
+            effect: { attackProjectileCount: 5 },
+            desc: '기본 공격의 빛 구슬이 5개로 늘어납니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
