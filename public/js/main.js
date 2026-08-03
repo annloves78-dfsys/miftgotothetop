@@ -2037,7 +2037,8 @@ const SHOP_CATEGORIES = {
 };
 // 다이아로 사는 아이템 목록. 여기 하나 추가하면 '아이템' 탭에 카드가 뜬다.
 const SHOP_ITEMS = [
-    { key: 'ticketNormal', cost: 200, costCurrency: 'diamonds' }
+    { key: 'ticketNormal', cost: 200, costCurrency: 'diamonds' },
+    { key: 'ticketDemon', cost: 300, costCurrency: 'diamonds' }
 ];
 
 function buyShopItem(key) {
