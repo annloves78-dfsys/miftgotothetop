@@ -4684,6 +4684,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { passiveKillAttackBuff: 3 },
             desc: '패시브로 적을 쓰러뜨릴 때마다 공격력이 3씩(15초간) 쌓입니다.'
         }
+    },
+    // 번개지옥맛 쿠키: undying_soul 궁극기(회복+부하 소환)와 패시브 부활을 강화한다.
+    lightninghell: {
+        3: {
+            effect: { ultimateHealRatio: 0.7 },
+            desc: '궁극기 회복량이 최대 체력의 70%로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateSummonCount: 5 },
+            desc: '궁극기로 소환하는 번개 부하가 5마리로 늘어납니다.'
+        },
+        5: {
+            effect: { passiveReviveCount: 2 },
+            desc: '패시브로 부활할 수 있는 횟수가 한 번 더 늘어나 총 2번이 됩니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
