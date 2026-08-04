@@ -3777,7 +3777,11 @@ body.mc-compact .sbb-name { font-size: 14px; }
     font-size: 15px;
 }
 
-body.mc-compact .zombie-build-btn { display: none; }
+body.mc-compact .zombie-build-btn {
+    bottom: 14px;
+    padding: 6px 14px;
+    font-size: 12px;
+}
 
 .zombie-build-menu {
     position: absolute;
@@ -3818,6 +3822,20 @@ body.mc-compact .zombie-build-btn { display: none; }
 }
 .zombie-build-cost {
     color: #f1c40f;
+}
+
+body.mc-compact .zombie-build-menu {
+    bottom: 54px;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 6px;
+    gap: 4px;
+}
+
+body.mc-compact .zombie-build-item {
+    min-width: 130px;
+    padding: 5px 10px;
+    font-size: 11px;
 }
 
 .zombie-upgrade-title {

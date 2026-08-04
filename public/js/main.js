@@ -1343,6 +1343,12 @@ controlsCompactBtn.addEventListener('click', () => {
     localStorage.setItem(COMPACT_MODE_KEY, compactModeEnabled ? '1' : '0');
     updateControlsScreen();
     applyCompactModeVisibility();
+    // window.resize는 토글 자체로는 안 일어나므로, 켜고 끄는 순간 바로
+    // 반영되게 직접 다시 불러 준다. (초기 로드 시점엔 이 두 캔버스가 아직
+    // 선언 전이라 여기서만 부른다 -- resizeStoryCanvas 자체 정의부 끝에 있는
+    // 최초 호출이 로드시 값은 이미 챙긴다.)
+    resizeStoryCanvas();
+    if (typeof resizeZombieCanvas === 'function') resizeZombieCanvas();
 });
 controlsAutoAimBtn.addEventListener('click', () => {
     if (mobileControlsEnabled) return; // locked on; see updateControlsScreen
@@ -3746,9 +3752,15 @@ function renderStoryPartnerHp() {
     storyPartnerShieldBadge.classList.toggle('hidden', !(partner.shieldHp > 0));
 }
 
+// 화면 크기 조정(휴대폰용)이 켜지면 카메라를 살짝 zoom-out해서 다리 위/아래로
+// 더 넓게 보이게 한다 -- 스토리 캔버스는 항상 창 크기 그대로라, 작은 화면일수록
+// 보이는 세계가 좁아지는 걸 이걸로 벌충한다. 꺼져 있으면 1배(기존 그대로).
+const STORY_COMPACT_SCALE = 0.72;
+let storyScale = 1;
 function resizeStoryCanvas() {
     storyCanvas.width = window.innerWidth;
     storyCanvas.height = window.innerHeight;
+    storyScale = compactModeEnabled ? STORY_COMPACT_SCALE : 1;
 }
 window.addEventListener('resize', resizeStoryCanvas);
 resizeStoryCanvas();
@@ -4360,8 +4372,8 @@ function storyCamera() {
 function storyWorldFromMouse() {
     const cam = storyCamera();
     return {
-        x: storyMouseX - storyCanvas.width / 2 + cam.x,
-        y: storyMouseY - storyCanvas.height / 2 + cam.y
+        x: (storyMouseX - storyCanvas.width / 2) / storyScale + cam.x,
+        y: (storyMouseY - storyCanvas.height / 2) / storyScale + cam.y
     };
 }
 
@@ -4712,7 +4724,9 @@ function storyRender(now) {
     storyCtx.save();
     const cam = storyCamera();
     const q = quakeOffset(now, storyQuakeUntil);
-    storyCtx.translate(storyCanvas.width / 2 - cam.x + q.x, storyCanvas.height / 2 - cam.y + q.y);
+    storyCtx.translate(storyCanvas.width / 2 + q.x, storyCanvas.height / 2 + q.y);
+    storyCtx.scale(storyScale, storyScale);
+    storyCtx.translate(-cam.x, -cam.y);
 
     if (storyFloorDef) {
         const halfW = storyFloorDef.laneHalfWidth;

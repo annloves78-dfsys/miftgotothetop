@@ -34,6 +34,31 @@ const zombieFightSettings = document.getElementById('zombie-fight-settings');
 const zombieFightLeaveBtn = document.getElementById('zombie-fight-leave-btn');
 const zombieCanvas = document.getElementById('zombieCanvas');
 const zombieCtx = zombieCanvas.getContext('2d');
+
+// 아레나(격자 15x8)는 늘 고정 크기라 기본 캔버스가 그 크기 그대로 -- 화면 크기
+// 조정이 꺼져 있으면 원래처럼 고정 픽셀로 그린다. 켜져 있으면 창에 맞춰
+// 축소해서 아레나 전체가 한 화면에 들어오게 한다 (보스레이드 gameCanvas가
+// 늘 하는 것과 같은 방식이지만, 여긴 그 토글에만 반응하게 게이팅했다).
+const ZOMBIE_BASE_CANVAS_W = SHARED.ZOMBIE_ARENA_HALF_W * 2 + 40;
+const ZOMBIE_BASE_CANVAS_H = SHARED.ZOMBIE_ARENA_HALF_H * 2 + 40;
+let zombieScale = 1;
+function resizeZombieCanvas() {
+    if (!compactModeEnabled) {
+        zombieCanvas.width = ZOMBIE_BASE_CANVAS_W;
+        zombieCanvas.height = ZOMBIE_BASE_CANVAS_H;
+        zombieScale = 1;
+        return;
+    }
+    const scale = Math.min(
+        (window.innerWidth - 20) / ZOMBIE_BASE_CANVAS_W,
+        (window.innerHeight - 20) / ZOMBIE_BASE_CANVAS_H
+    );
+    zombieCanvas.width = ZOMBIE_BASE_CANVAS_W * scale;
+    zombieCanvas.height = ZOMBIE_BASE_CANVAS_H * scale;
+    zombieScale = scale;
+}
+window.addEventListener('resize', resizeZombieCanvas);
+resizeZombieCanvas();
 const zombieWaveLabel = document.getElementById('zombie-wave-label');
 const zombiePhaseLabel = document.getElementById('zombie-phase-label');
 const zombieWoodCountEl = document.getElementById('zombie-wood-count');
@@ -431,7 +456,10 @@ zombieCanvas.addEventListener('mousedown', (e) => {
 });
 
 function zombieWorldFromMouse() {
-    return { x: zombieMouseX - zombieCanvas.width / 2, y: zombieMouseY - zombieCanvas.height / 2 };
+    return {
+        x: (zombieMouseX - zombieCanvas.width / 2) / zombieScale,
+        y: (zombieMouseY - zombieCanvas.height / 2) / zombieScale
+    };
 }
 
 // 클릭이 내가 지은 강화대 위에 떨어졌으면 (근처에 있을 때만) 공격 대신
@@ -716,6 +744,7 @@ function zombieRender(now) {
     zombieCtx.clearRect(0, 0, zombieCanvas.width, zombieCanvas.height);
     zombieCtx.save();
     zombieCtx.translate(zombieCanvas.width / 2, zombieCanvas.height / 2);
+    zombieCtx.scale(zombieScale, zombieScale);
 
     const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H;
     zombieCtx.fillStyle = '#2a3320';
