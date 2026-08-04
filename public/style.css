@@ -1782,6 +1782,15 @@ body.mc-compact .menu-btn {
     font-size: 17px;
 }
 
+/* .settings-menu (전투 중 나가기 등) is normally anchored under the
+   full-size .menu-btn — mc-compact shrinks/raises that button but left
+   the dropdown at its non-compact offset, so on small screens it hung
+   further from the button than it should. */
+body.mc-compact .settings-menu {
+    top: 54px;
+    right: 14px;
+}
+
 body.mc-compact .side-menu {
     top: 58px;
     right: 14px;
