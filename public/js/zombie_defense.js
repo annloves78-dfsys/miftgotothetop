@@ -500,6 +500,16 @@ function fireZombieAutoAimedAttack() {
     tryZombieAttack();
 }
 
+// ---------------- mobile controls ----------------
+// Reuses the boss raid's `joystickMoveVec`/`joystickFacing` (fight screens are
+// never on screen at the same time, same trick guest_raid.js uses). 좀비막기는
+// 스킬/궁극기가 없으니 조이스틱과 공격 버튼만 있으면 된다 -- 건설은 여전히
+// F키/건설 버튼으로.
+const mcJoystickZombieEl = document.getElementById('mc-joystick-zombie');
+const mcAttackZombieEl = document.getElementById('mc-attack-zombie');
+setupJoystick(mcJoystickZombieEl, false);
+mcTap(mcAttackZombieEl, () => fireZombieAutoAimedAttack());
+
 // ---------------- 루프 + 렌더 ----------------
 function startZombieLoop() {
     stopZombieLoop();
@@ -515,18 +525,25 @@ function zombieFrame() {
     const me = zombieMe();
     if (zombieLocal && me && me.alive) {
         const stats = zombieMyStats();
-        const speed = moveSpeedFor(stats, now, 0, 0, false, zombieLocal.equipSpeed);
+        const speed = moveSpeedFor(stats, now, 0, 0, false, zombieLocal.equipSpeed, undefined, !!joystickMoveVec);
         let dx = 0, dy = 0;
-        if (keys['w'] || keys['W']) dy -= speed;
-        if (keys['s'] || keys['S']) dy += speed;
-        if (keys['a'] || keys['A']) dx -= speed;
-        if (keys['d'] || keys['D']) dx += speed;
+        if (joystickMoveVec) {
+            dx = joystickMoveVec.x * speed;
+            dy = joystickMoveVec.y * speed;
+        } else {
+            if (keys['w'] || keys['W']) dy -= speed;
+            if (keys['s'] || keys['S']) dy += speed;
+            if (keys['a'] || keys['A']) dx -= speed;
+            if (keys['d'] || keys['D']) dx += speed;
+        }
         if (dx !== 0 || dy !== 0) {
             const HW = SHARED.ZOMBIE_ARENA_HALF_W, HH = SHARED.ZOMBIE_ARENA_HALF_H;
             zombieLocal.x = Math.max(-HW, Math.min(HW, zombieLocal.x + dx));
             zombieLocal.y = Math.max(-HH, Math.min(HH, zombieLocal.y + dy));
         }
-        if (autoAimEnabled) {
+        if (mobileControlsEnabled) {
+            if (joystickFacing !== null) zombieLocal.facing = joystickFacing;
+        } else if (autoAimEnabled) {
             const target = zombieNearestZombieWorldPos();
             if (target) zombieLocal.facing = Math.atan2(target.y - zombieLocal.y, target.x - zombieLocal.x);
         } else if (zombieMouseX !== null) {

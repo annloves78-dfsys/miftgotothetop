@@ -1322,6 +1322,8 @@ function applyMobileControlsVisibility() {
     mobileControlsStory.classList.toggle('hidden', !mobileControlsEnabled);
     const guestControls = document.getElementById('mobile-controls-guest');
     if (guestControls) guestControls.classList.toggle('hidden', !mobileControlsEnabled);
+    const zombieControls = document.getElementById('mobile-controls-zombie');
+    if (zombieControls) zombieControls.classList.toggle('hidden', !mobileControlsEnabled);
     document.body.classList.toggle('mc-touch', mobileControlsEnabled);
 }
 function applyCompactModeVisibility() {
