@@ -4534,7 +4534,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec);
         let dx = 0, dy = 0;
         if (storyJoystickMoveVec) {
             dx = storyJoystickMoveVec.x * speed;

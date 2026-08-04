@@ -861,7 +861,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;

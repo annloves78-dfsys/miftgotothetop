@@ -177,25 +177,29 @@ function withEquipSpeed(base, equipSpeed) {
     return Math.max(0.5, base + (equipSpeed || 0));
 }
 
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil) {
+// isJoystick: 모바일 조이스틱은 입력 특성상 실제 체감 이동속도가 키보드보다
+// 느리게 느껴지므로, 계산된 이동속도에 보정값을 더해 체감을 맞춘다.
+const JOYSTICK_SPEED_BONUS = 0.5;
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick) {
+    const bonus = isJoystick ? JOYSTICK_SPEED_BONUS : 0;
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
-        return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
+        return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
     }
     if (now < (speedBoostUntil || 0)) {
-        if (stats.skillType === 'speed_boost') return withEquipSpeed(stats.skillSpeedValue, equipSpeed);
-        if (stats.skillType === 'charge_dash') return withEquipSpeed(stats.speed + stats.skillSpeedBonus, equipSpeed);
-        if (stats.ultimateType === 'undying_soul') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
-        if (stats.ultimateType === 'great_slash') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed);
+        if (stats.skillType === 'speed_boost') return withEquipSpeed(stats.skillSpeedValue, equipSpeed) + bonus;
+        if (stats.skillType === 'charge_dash') return withEquipSpeed(stats.speed + stats.skillSpeedBonus, equipSpeed) + bonus;
+        if (stats.ultimateType === 'undying_soul') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
+        if (stats.ultimateType === 'great_slash') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
-        return stats.speed * stats.ultimateSpeedMultiplier;
+        return stats.speed * stats.ultimateSpeedMultiplier + bonus;
     }
     // 본능해제 4강(오렌지레몬맛): awakening_rapid 궁극기가 켜져 있는 동안 이동속도를 더한다.
     if (stats.ultimateType === 'awakening_rapid' && stats.instinctRapidSpeedBonus && now < (rapidStrikeUntil || 0)) {
-        return withEquipSpeed(stats.speed + stats.instinctRapidSpeedBonus, equipSpeed);
+        return withEquipSpeed(stats.speed + stats.instinctRapidSpeedBonus, equipSpeed) + bonus;
     }
-    return stats.speed;
+    return stats.speed + bonus;
 }
 
 class Player {
@@ -271,7 +275,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
