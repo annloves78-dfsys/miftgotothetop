@@ -1206,7 +1206,9 @@ const SKILL_ICONS = {
     fire_line_zone: '🔥',
     homing_burst: '🔮',
     freeze_burst: '❄️',
-    targeted_line_aoe: '✨'
+    targeted_line_aoe: '✨',
+    sea_hide: '🌊',
+    team_hot_shield: '🛡️'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -4406,6 +4408,7 @@ function tryStoryUseSkill() {
     storyPlayer.skillEffectUntil = now
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') storyPlayer.speedBoostUntil = now + stats.skillSpeedDurationMs;
+    else if (stats.skillType === 'sea_hide') storyPlayer.untouchableUntil = now + stats.skillDurationMs;
     socket.emit('storyPlayerSkill');
 }
 
@@ -4482,6 +4485,7 @@ function confirmStoryUltimateTarget() {
 function tryStoryAttack() {
     if (!storyPlayer || !storyPlayer.alive) return;
     const now = performance.now();
+    if (now < (storyPlayer.untouchableUntil || 0)) return; // 바다 수호자맛 sea_hide
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     const rapid = stats.ultimateType === 'awakening_rapid' && now < storyPlayer.rapidStrikeUntil;
     let cooldown = stats.attackCooldown;
@@ -5043,8 +5047,19 @@ function storyRender(now) {
         const R = SHARED.PLAYER_RADIUS;
         storyCtx.save();
         storyCtx.translate(pl.x, pl.y);
-        storyCtx.globalAlpha = pl.alive ? 1 : 0.4;
+        // 바다 수호자맛 sea_hide: 파트너 쪽은 storyTick이 매번 새로 보내주는
+        // untouchableUntil(서버 Date.now() 기준)로 판단한다.
+        const plHidden = pl.alive && !!pl.untouchableUntil && Date.now() < pl.untouchableUntil;
+        storyCtx.globalAlpha = pl.alive ? (plHidden ? 0.35 : 1) : 0.4;
         if (refreshLowHpAura(pStats, pl)) drawLowHpAura(storyCtx, R, now);
+        if (plHidden) {
+            const ripple = 6 + Math.sin(now / 120) * 4;
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R + 14 + ripple, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(52, 152, 219, 0.85)';
+            storyCtx.lineWidth = 5;
+            storyCtx.stroke();
+        }
         drawCookieBody(storyCtx, R, pStats, pl.alive);
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
@@ -5103,6 +5118,13 @@ function storyRender(now) {
                 storyCtx.strokeStyle = 'rgba(39, 174, 96, 0.85)';
                 storyCtx.lineWidth = 3;
                 storyCtx.stroke();
+            } else if (stats.skillType === 'sea_hide') {
+                const ripple = 6 + Math.sin(now / 120) * 4;
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, R + 14 + ripple, 0, Math.PI * 2);
+                storyCtx.strokeStyle = 'rgba(52, 152, 219, 0.85)';
+                storyCtx.lineWidth = 5;
+                storyCtx.stroke();
             } else {
                 storyCtx.beginPath();
                 storyCtx.arc(0, 0, R + 26, 0, Math.PI * 2);
@@ -5137,7 +5159,9 @@ function storyRender(now) {
         // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
         if (refreshLowHpAura(stats, storyPlayer)) drawLowHpAura(storyCtx, R, now);
 
+        storyCtx.globalAlpha = now < (storyPlayer.untouchableUntil || 0) ? 0.35 : 1;
         drawCookieBody(storyCtx, R, stats, storyPlayer.alive);
+        storyCtx.globalAlpha = 1;
         storyCtx.beginPath();
         storyCtx.arc(0, 0, R, 0, Math.PI * 2);
         storyCtx.strokeStyle = '#f1c40f';
@@ -5577,6 +5601,15 @@ socket.on('playerShielded', ({ id, shieldHp }) => {
     if (!p) return;
     p.shieldHp = shieldHp;
     updateHpBars();
+});
+
+// 바다 수호자맛 sea_hide: 파트너 쪽은 서버 이벤트로만 알 수 있다 (본인은
+// triggerSkillEffect가 누르는 순간 바로 예측해서 세운다). until은 서버의
+// Date.now() 기준이라 performance.now() 기준으로 바꿔서 저장한다.
+socket.on('playerHidden', ({ id, until }) => {
+    const p = players[id];
+    if (!p) return;
+    p.untouchableUntil = performance.now() + Math.max(0, until - Date.now());
 });
 
 // ---- Settings / leave raid ----

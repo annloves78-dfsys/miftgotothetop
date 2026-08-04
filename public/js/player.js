@@ -35,7 +35,7 @@ function drawCookieBody(ctx, radius, stats, alive) {
 
 // Skills whose self-aura lasts the whole buff instead of a quick 350ms flash,
 // because the buff being up is information the player needs while fighting.
-const SKILL_FULL_DURATION_EFFECTS = ['spin_heal', 'guard_stance'];
+const SKILL_FULL_DURATION_EFFECTS = ['spin_heal', 'guard_stance', 'sea_hide'];
 
 // How far off the body centre this swing's corridor sits, in the frame already
 // rotated to `facing` (+y = the player's right). Only dual_spear uses it; keep in
@@ -236,6 +236,7 @@ class Player {
         this.equipSpeed = 0; // 장비의 이동 속도 보너스 (내 쿠키에만 의미가 있다)
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
+        this.untouchableUntil = 0; // performance.now() timestamp; 바다 수호자맛 sea_hide -- 이 동안 아무도 못 때리고 자기도 못 때린다
     }
 
     get stats() {
@@ -244,6 +245,7 @@ class Player {
 
     canAttack(now) {
         if (!this.alive) return false;
+        if (now < this.untouchableUntil) return false; // 바다 수호자맛 sea_hide: 숨어 있는 동안은 공격 불가
         const rapid = this.stats.ultimateType === 'awakening_rapid' && now < this.rapidStrikeUntil;
         let cooldown = this.stats.attackCooldown;
         if (rapid) cooldown = this.stats.ultimateRapidCooldown;
@@ -334,6 +336,8 @@ class Player {
         this.skillEffectUntil = performance.now() + duration;
         if (this.stats.skillType === 'speed_boost' || this.stats.skillType === 'charge_dash') {
             this.speedBoostUntil = performance.now() + this.stats.skillSpeedDurationMs;
+        } else if (this.stats.skillType === 'sea_hide') {
+            this.untouchableUntil = performance.now() + this.stats.skillDurationMs;
         }
     }
 
@@ -401,6 +405,15 @@ class Player {
                 ctx.strokeStyle = 'rgba(39, 174, 96, 0.85)';
                 ctx.lineWidth = 3;
                 ctx.stroke();
+            } else if (this.stats.skillType === 'sea_hide') {
+                // 몸은 아래에서 옅게(투명도) 처리해서 그리고, 물결 고리로
+                // "숨어서 안 맞는다"는 걸 알려 준다.
+                const ripple = 6 + Math.sin(now / 120) * 4;
+                ctx.beginPath();
+                ctx.arc(0, 0, R + 14 + ripple, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(52, 152, 219, 0.85)';
+                ctx.lineWidth = 5;
+                ctx.stroke();
             } else {
                 ctx.beginPath();
                 ctx.arc(0, 0, R + 26, 0, Math.PI * 2);
@@ -435,7 +448,8 @@ class Player {
         // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
         if (refreshLowHpAura(this.stats, this)) drawLowHpAura(ctx, R, now);
 
-        ctx.globalAlpha = this.alive ? 1 : 0.5;
+        const hidden = this.alive && now < this.untouchableUntil;
+        ctx.globalAlpha = this.alive ? (hidden ? 0.35 : 1) : 0.5;
         drawCookieBody(ctx, R, this.stats, this.alive);
         // Outline needs its own path now that the body is two filled halves.
         ctx.beginPath();

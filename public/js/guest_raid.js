@@ -78,12 +78,13 @@ let guestQuakeUntil = 0;
 // ultimate doesn't spend anybody else's.
 const GUEST_SLOT_FIELDS = ['lastSkillClientTime', 'lastUltimateClientTime',
     'skillEffectUntil', 'ultimateEffectUntil', 'speedBoostUntil', 'awakenUntil', 'rapidStrikeUntil',
+    'untouchableUntil', // 바다 수호자맛 sea_hide -- 숨은 쿠키만 무적이어야 하니 슬롯마다 따로
     // 바다펄맛 밀물의 단계도 쿠키마다 따로 센다.
     'tideStage'];
 const GUEST_SLOT_DEFAULTS = {
     lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
     skillEffectUntil: 0, ultimateEffectUntil: 0,
-    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, tideStage: 1
+    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, untouchableUntil: 0, tideStage: 1
 };
 
 function guestSlotBag(i) {
@@ -713,6 +714,7 @@ function tryGuestAttack() {
     if (!guestLocal || !guestState) return;
     const stats = guestStats();
     const now = performance.now();
+    if (now < (guestLocal.untouchableUntil || 0)) return; // 바다 수호자맛 sea_hide
     const rapid = stats.ultimateType === 'awakening_rapid' && now < guestLocal.rapidStrikeUntil;
     let cd = stats.attackCooldown;
     if (rapid) cd = stats.ultimateRapidCooldown;
@@ -751,6 +753,7 @@ function tryGuestUseSkill() {
         + (SKILL_FULL_DURATION_EFFECTS.includes(stats.skillType) ? stats.skillDurationMs : 350);
     if (stats.skillType === 'speed_boost' || stats.skillType === 'charge_dash') guestLocal.speedBoostUntil = now + stats.skillSpeedDurationMs;
     if (stats.skillType === 'earthquake') guestQuakeUntil = now + QUAKE_DURATION_MS;
+    if (stats.skillType === 'sea_hide') guestLocal.untouchableUntil = now + stats.skillDurationMs;
     socket.emit('guestPlayerSkill');
 }
 
@@ -1226,7 +1229,20 @@ function guestRender(now) {
             guestCtx.fillRect(R, -width / 2, range, width);
             guestCtx.restore();
         }
-        if (mine && guestLocal && now < guestLocal.skillEffectUntil) {
+        // 바다 수호자맛 sea_hide: 내 쿠키면 로컬 예측(guestLocal, performance.now()
+        // 기준)을 쓰고, 파트너 쪽은 서버가 매 틱 보내주는 값(Date.now() 기준)을
+        // 그대로 쓴다 -- 두 시계가 달라서 따로 비교해야 한다.
+        const hidden = mine
+            ? !!(guestLocal && now < guestLocal.untouchableUntil)
+            : !!(p.untouchableUntil && Date.now() < p.untouchableUntil);
+        if (hidden) {
+            const ripple = 6 + Math.sin(now / 120) * 4;
+            guestCtx.beginPath();
+            guestCtx.arc(0, 0, R + 14 + ripple, 0, Math.PI * 2);
+            guestCtx.strokeStyle = 'rgba(52, 152, 219, 0.85)';
+            guestCtx.lineWidth = 5;
+            guestCtx.stroke();
+        } else if (mine && guestLocal && now < guestLocal.skillEffectUntil) {
             guestCtx.beginPath();
             guestCtx.arc(0, 0, R + 26, 0, Math.PI * 2);
             guestCtx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
@@ -1234,7 +1250,7 @@ function guestRender(now) {
             guestCtx.stroke();
         }
 
-        guestCtx.globalAlpha = p.alive ? 1 : 0.45;
+        guestCtx.globalAlpha = p.alive ? (hidden ? 0.35 : 1) : 0.45;
         drawCookieBody(guestCtx, R, stats, p.alive);
         guestCtx.beginPath();
         guestCtx.arc(0, 0, R, 0, Math.PI * 2);

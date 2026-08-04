@@ -125,7 +125,7 @@ function shieldTeam(room, roomId, amount) {
 function publicPlayers(room) {
     const out = {};
     for (const [id, p] of Object.entries(room.players)) {
-        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive, ready: !!p.ready, shieldHp: p.shieldHp || 0 };
+        out[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, facing: p.facing, alive: p.alive, ready: !!p.ready, shieldHp: p.shieldHp || 0, untouchableUntil: p.untouchableUntil || 0 };
     }
     return out;
 }
@@ -223,6 +223,12 @@ function ultimateCooldownFor(character, p) {
 // (the boss, or the specific monster attacking) is currently carrying --
 // board's passive reduces damage taken from a source marked with its element.
 function damageReductionMultiplier(character, p, now, sourceElementMark) {
+    // 바다 수호자맛 특수스킬(바다로 들어가기): 숨어 있는 동안은 무슨 공격이든
+    // 아예 안 맞는다. 보스레이드는 패턴마다 손으로 짠 타격 판정이 흩어져
+    // 있어(각 패턴 루프가 room.players를 직접 훑는다) 하나하나 다 고치는 대신,
+    // 세 모드가 전부 거쳐 가는 이 최종 피해 배수 계산 한 곳에서 0으로 눌러
+    // 막는다.
+    if (p.untouchableUntil && now < p.untouchableUntil) return 0;
     // guard_stance and shield_block share the timer field; they differ only in
     // that guard_stance ends early when its owner attacks.
     if ((character.skillType === 'guard_stance' || character.skillType === 'shield_block')
@@ -1882,7 +1888,8 @@ function publicStoryPlayers(room) {
         out[id] = {
             x: p.x, y: p.y, facing: p.facing, charType: p.charType,
             hp: p.hp, maxHp: p.maxHp, alive: p.alive,
-            shieldHp: p.shieldHp || 0, ready: !!p.ready
+            shieldHp: p.shieldHp || 0, ready: !!p.ready,
+            untouchableUntil: p.untouchableUntil || 0
         };
     }
     return out;
@@ -3130,7 +3137,8 @@ function publicGuestPlayers(room) {
             x: p.x, y: p.y, facing: p.facing, alive: p.alive, ready: !!p.ready,
             charType: p.charType, hp: p.hp, maxHp: p.maxHp, shieldHp: p.shieldHp || 0,
             party: p.party, partyHp: p.partyHp, partyMaxHp: p.partyMaxHp,
-            partyAlive: p.partyAlive, partyDiscarded: p.partyDiscarded, active: p.active
+            partyAlive: p.partyAlive, partyDiscarded: p.partyDiscarded, active: p.active,
+            untouchableUntil: p.untouchableUntil || 0
         };
     }
     return out;
@@ -4985,6 +4993,8 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         const character = charOf(p);
         const now = Date.now();
+        // 바다 수호자맛 특수스킬로 숨어 있는 동안은 자기도 공격을 못 한다.
+        if (p.untouchableUntil && now < p.untouchableUntil) return;
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
@@ -5139,6 +5149,17 @@ io.on('connection', (socket) => {
             p.shieldHp = character.skillShieldAmount;
             io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             io.to(roomId).emit('storyPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
+        }
+        // 바다 수호자맛 특수스킬: 바다로 들어가기. 순간 몸을 숨겨 skillDurationMs
+        // 동안 아무 공격도 안 통하고(damageReductionMultiplier가 0으로 눌러
+        // 준다) 자기도 공격을 못 하는 상태가 되면서, 그 사이 체력을 고정값만큼
+        // 채운다.
+        else if (character.skillType === 'sea_hide') {
+            // 파트너 쪽 무적 상태는 storyTick의 publicStoryPlayers가 매번
+            // untouchableUntil을 실어 보내므로 따로 이벤트를 안 쏴도 된다.
+            p.untouchableUntil = now + character.skillDurationMs;
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
         } else if (character.skillType === 'earthquake') {
             // No aiming: the whole floor shakes. A small group all takes
             // skillDamage; past skillThresholdCount the ground swallows the
@@ -5594,6 +5615,19 @@ io.on('connection', (socket) => {
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healStoryPlayer(room, roomId, character.ultimateHealAmount);
+        }
+        // 바다 수호자맛 궁극기: 막기. 팀 전체에게 즉시 보호막을 씌우고, 초당
+        // 회복 버프도 얹는다 -- 버프 자체는 team_heal_over_time과 완전히
+        // 같은 걸 재사용한다(틱 처리가 이미 모드별로 다 있다).
+        else if (character.ultimateType === 'team_hot_shield') {
+            shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
         } else if (character.ultimateType === 'undying_soul') {
             // Heals a share of max hp, then the timer is read by
             // effectiveAttackDamage (the speed part is client-side movement).
@@ -5643,6 +5677,8 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         const character = charOf(p);
         const now = Date.now();
+        // 바다 수호자맛 특수스킬로 숨어 있는 동안은 자기도 공격을 못 한다.
+        if (p.untouchableUntil && now < p.untouchableUntil) return;
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
@@ -5864,6 +5900,14 @@ io.on('connection', (socket) => {
             p.shieldHp = character.skillShieldAmount;
             io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
             io.to(roomId).emit('playerShielded', { id: socket.id, shieldHp: p.shieldHp });
+        }
+        // 바다 수호자맛 특수스킬: 바다로 들어가기. 실제 무적 판정은
+        // damageReductionMultiplier가 담당한다(위 스토리 모드 분기 주석 참고).
+        else if (character.skillType === 'sea_hide') {
+            p.untouchableUntil = now + character.skillDurationMs;
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            io.to(roomId).emit('playerHidden', { id: socket.id, until: p.untouchableUntil });
         } else if (character.skillType === 'earthquake') {
             // A raid only ever has one enemy (the boss), so this always takes
             // the small-group branch -- the boss is never one-shot.
@@ -6126,6 +6170,17 @@ io.on('connection', (socket) => {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healTeam(room, roomId, character.ultimateHealAmount);
+        }
+        // 바다 수호자맛 궁극기: 막기. 위 스토리 모드 분기 주석 참고.
+        else if (character.ultimateType === 'team_hot_shield') {
+            shieldTeam(room, roomId, character.ultimateShieldAmount);
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
         } else if (character.ultimateType === 'undying_soul') {
             p.undyingSoulUntil = now + character.ultimateDurationMs;
             const healed = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
@@ -6328,6 +6383,8 @@ io.on('connection', (socket) => {
         if (!p || !p.alive) return;
         const character = charOf(p);
         const now = Date.now();
+        // 바다 수호자맛 특수스킬로 숨어 있는 동안은 자기도 공격을 못 한다.
+        if (p.untouchableUntil && now < p.untouchableUntil) return;
         const rapid = rapidStrikeActive(character, p, now);
         if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid, now)) return;
         p.lastAttackTime = now;
@@ -6468,6 +6525,16 @@ io.on('connection', (socket) => {
             p.partyHp[p.active] = p.hp;
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
             io.to(roomId).emit('guestPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
+        }
+        // 바다 수호자맛 특수스킬: 바다로 들어가기. 실제 무적 판정은
+        // damageReductionMultiplier가 담당한다(위 스토리 모드 분기 주석 참고).
+        else if (character.skillType === 'sea_hide') {
+            // 파트너/다른 슬롯 쪽 무적 상태는 guestTick의 publicGuestPlayers가
+            // 매번 untouchableUntil을 실어 보내므로 따로 이벤트를 안 쏴도 된다.
+            p.untouchableUntil = now + character.skillDurationMs;
+            p.hp = Math.min(p.maxHp, p.hp + character.skillHealAmount);
+            p.partyHp[p.active] = p.hp;
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
         } else if (character.skillType === 'spin_heal') {
             const hit = guestCircleTargets(room, p.x, p.y, character.skillRadius);
             if (hit.length) {
@@ -6809,6 +6876,17 @@ io.on('connection', (socket) => {
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healGuestTeam(room, roomId, character.ultimateHealAmount);
+        }
+        // 바다 수호자맛 궁극기: 막기. 위 스토리 모드 분기 주석 참고.
+        else if (character.ultimateType === 'team_hot_shield') {
+            shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
         } else if (character.ultimateType === 'undying_soul') {
             p.undyingSoulUntil = now + character.ultimateDurationMs;
             p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));

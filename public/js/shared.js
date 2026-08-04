@@ -889,6 +889,41 @@ const CHARACTERS = {
         ultimateHealPerEnemy: 50,
         ultimateRadius: 200, // 조준 UI/모바일 낙하 거리 계산용 (판정은 사각형)
         ultimateCooldownMs: 30000
+    },
+    seaguardian: {
+        name: '바다 수호자맛 쿠키',
+        shortName: '수호자', // shown on the lobby's character-select button
+        color: '#5b6ea3',
+        colorLeft: '#3498db', // 파랑
+        colorRight: '#7d3c98', // 보라
+        grade: '에픽',
+        element: '물',
+        role: '탱커',
+        health: 150,
+        speed: 2,
+        attackType: 'melee_kick',
+        attackRange: 85,
+        attackWidth: 38,
+        attackDamage: 4,
+        attackCooldown: 500,
+        // 특수스킬 "바다로 들어가기": 조준 없이 즉시 몸을 숨긴다.
+        // skillDurationMs 동안은 damageReductionMultiplier가 받는 피해를 통째로
+        // 0으로 막아 아무 공격도 안 통하고, 서버가 자기 자신의 기본공격 입력도
+        // 같은 시간 동안 무시한다(untouchableUntil 체크, playerAttack 계열
+        // 핸들러). 숨는 순간 체력을 고정값만큼 채운다.
+        skillType: 'sea_hide',
+        skillDurationMs: 2000,
+        skillHealAmount: 60,
+        skillCooldown: 14000,
+        // 궁극기 "막기": 팀 전체에게 즉시 보호막을 씌우고, 초당 회복 버프를
+        // 5초간 얹는다. 회복 버프는 team_heal_over_time과 같은 걸 그대로
+        // 재사용한다(틱 처리가 세 모드 다 이미 있다).
+        ultimateType: 'team_hot_shield',
+        ultimateShieldAmount: 60,
+        ultimateHealPerTick: 15,
+        ultimateTickMs: 1000,
+        ultimateDurationMs: 5000,
+        ultimateCooldownMs: 30000
     }
 };
 
