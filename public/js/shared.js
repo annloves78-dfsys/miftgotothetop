@@ -2187,8 +2187,8 @@ const MONSTERS = {
         laserWidth: 44,
         laserTrackSpeed: 150
     },
-    // 29층: 30층 보스 직전 마지막 방을 지키는 서커스 단장. 체력이 40% 아래로
-    // 떨어지면 격노하고, 저글러를 계속 불러들인다.
+    // 29층: 서커스 챕터(21~29층)의 마지막 방을 지키는 서커스 단장. 체력이
+    // 40% 아래로 떨어지면 격노하고, 저글러를 계속 불러들인다.
     ringmaster: {
         name: '서커스 단장',
         color: '#6c3483',
@@ -2204,6 +2204,193 @@ const MONSTERS = {
         telegraphMs: 500,
         enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
         summonOnTimer: { type: 'fire_juggler', count: 1, everyMs: 7000, max: 3 }
+    },
+    // ==================== 30~49층: 얼음/서리 챕터 ====================
+    // 보스전 없이 웨이브만 있는 구간이라(30층/40층도 다른 층과 동일하게
+    // 취급 -- isTowerBossFloor는 bossFloor 플래그로 판정하므로 이 챕터엔
+    // 전혀 안 걸린다) 여기 10종을 30~39층에 하나씩 새로 풀고, 40~49층은
+    // 그 10종을 섞어서 수만 늘려 나간다.
+    // 30층: 얼음 정령. 초콜릿맛 궁수 자리를 잇는 뒷줄 캐스터.
+    ice_spirit: {
+        name: '얼음 정령',
+        color: '#aed6f1',
+        colorLeft: '#eaf6fd',
+        colorRight: '#5dade2',
+        health: 170,
+        speed: 4,
+        aggroRange: 780,
+        preferredDistance: 220,
+        projectileSpeed: 480,
+        attackRange: 340,
+        attackDamage: 14,
+        attackCooldown: 2200,
+        telegraphMs: 420
+    },
+    // 31층: 고드름 궁수. 체력은 종잇장이지만 화살 하나가 매섭다.
+    icicle_archer: {
+        name: '고드름 궁수',
+        color: '#d6eaf8',
+        colorLeft: '#ffffff',
+        colorRight: '#7fb3d5',
+        health: 90,
+        speed: 3,
+        aggroRange: 760,
+        preferredDistance: 260,
+        projectileSpeed: 560,
+        attackRange: 380,
+        attackDamage: 20,
+        attackCooldown: 1800,
+        telegraphMs: 350
+    },
+    // 32층: 눈보라 늑대. 지금까지 나온 근접 중 가장 빠르게 파고든다.
+    snow_wolf: {
+        name: '눈보라 늑대',
+        color: '#eaeded',
+        colorLeft: '#ffffff',
+        colorRight: '#95a5a6',
+        health: 210,
+        speed: 6,
+        aggroRange: 820,
+        preferredDistance: 55,
+        attackRange: 140,
+        attackDamage: 20,
+        attackCooldown: 1700,
+        telegraphMs: 320
+    },
+    // 33층: 서리 골렘. 설탕 골렘처럼 쓰러지면 조각으로 갈라진다.
+    frost_golem: {
+        name: '서리 골렘',
+        color: '#aab7c4',
+        colorLeft: '#dfe9f3',
+        colorRight: '#5f6b76',
+        health: 480,
+        speed: 2,
+        aggroRange: 760,
+        preferredDistance: 65,
+        attackRange: 180,
+        attackDamage: 26,
+        attackCooldown: 2800,
+        telegraphMs: 550,
+        splitOnDeath: { type: 'frost_shard', count: 2, spread: 45 }
+    },
+    // 서리 골렘이 갈라져 나오는 조각. splitOnDeath가 없으므로 여기서 끝난다.
+    frost_shard: {
+        name: '서리 조각',
+        color: '#dfe9f3',
+        health: 100,
+        speed: 5,
+        aggroRange: 760,
+        preferredDistance: 40,
+        attackRange: 120,
+        attackDamage: 12,
+        attackCooldown: 1700,
+        telegraphMs: 320
+    },
+    // 34층: 눈꽃 치유사. 마카롱 치유사보다 오라가 더 넓고 세다.
+    snowflake_healer: {
+        name: '눈꽃 치유사',
+        color: '#d6eaf8',
+        colorLeft: '#ffffff',
+        colorRight: '#85c1e9',
+        health: 230,
+        speed: 2,
+        aggroRange: 780,
+        preferredDistance: 260,
+        projectileSpeed: 440,
+        attackRange: 340,
+        attackDamage: 9,
+        attackCooldown: 2400,
+        telegraphMs: 460,
+        healAura: { radius: 300, amount: 10, tickMs: 1300 }
+    },
+    // 35층: 얼음 기사. 왕실 근위대처럼 한 번은 반드시 버틴다.
+    ice_knight: {
+        name: '얼음 기사',
+        color: '#a9cce3',
+        colorLeft: '#eaf2f8',
+        colorRight: '#21618c',
+        health: 400,
+        speed: 3,
+        aggroRange: 800,
+        preferredDistance: 75,
+        attackRange: 190,
+        attackDamage: 28,
+        attackCooldown: 2600,
+        telegraphMs: 520,
+        lowHpGuard: { atHp: 90, heal: 70, shield: 90 }
+    },
+    // 36층: 서리 대포. 지금까지 나온 포탑 중 빔이 가장 세고 잘 따라온다.
+    frost_cannon: {
+        name: '서리 대포',
+        color: '#5dade2',
+        colorLeft: '#d6eaf8',
+        colorRight: '#1b4f72',
+        health: 220,
+        speed: 0,
+        aggroRange: 680,
+        preferredDistance: 0,
+        attackRange: 680,
+        attackCooldown: 2200,
+        telegraphMs: 360,
+        laser: true,
+        laserDurationMs: 1300,
+        laserDamage: 5,
+        laserTickMs: 100,
+        laserRange: 680,
+        laserWidth: 46,
+        laserTrackSpeed: 160
+    },
+    // 37층: 눈사람 폭탄병. 사탕 폭탄병보다 빨리 달려들고 더 세게 터진다.
+    snowman_bomber: {
+        name: '눈사람 폭탄병',
+        color: '#f4f6f7',
+        colorLeft: '#ffffff',
+        colorRight: '#aeb6bf',
+        health: 60,
+        speed: 5.5,
+        aggroRange: 700,
+        preferredDistance: 40,
+        attackRange: 100,
+        attackDamage: 30,
+        attackCooldown: 2000,
+        telegraphMs: 700,
+        explode: true,
+        explodeRadius: 150
+    },
+    // 38층: 눈보라 주술사. 초콜릿 여왕처럼 부하(눈보라 늑대)를 계속 부른다.
+    blizzard_shaman: {
+        name: '눈보라 주술사',
+        color: '#d2b4de',
+        colorLeft: '#f4ecf7',
+        colorRight: '#7d3c98',
+        health: 380,
+        speed: 2,
+        aggroRange: 800,
+        preferredDistance: 280,
+        projectileSpeed: 500,
+        attackRange: 380,
+        attackDamage: 18,
+        attackCooldown: 2200,
+        telegraphMs: 460,
+        summonOnTimer: { type: 'snow_wolf', count: 2, everyMs: 6500, max: 8 }
+    },
+    // 39층: 서리 여왕. 40~49층 내내 섞여 나오는 이 챕터의 정예. 체력이 40%
+    // 아래로 떨어지면 격노하고, 고드름 궁수를 계속 불러들인다.
+    frost_queen: {
+        name: '서리 여왕',
+        color: '#aed6f1',
+        colorLeft: '#ffffff',
+        colorRight: '#21618c',
+        health: 650,
+        speed: 3,
+        aggroRange: 840,
+        preferredDistance: 85,
+        attackRange: 220,
+        attackDamage: 36,
+        attackCooldown: 2400,
+        telegraphMs: 520,
+        enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
+        summonOnTimer: { type: 'icicle_archer', count: 1, everyMs: 7000, max: 3 }
     }
 };
 
@@ -2334,7 +2521,7 @@ function clampToLane(floorDef, x, y) {
 // alive, an energy shield seals that room's `entrance`/`exit` -- both given as
 // along-axis positions (see server's storyPlayerMove handler) -- so the player
 // can't retreat or advance past it. The star sits just past the last gate --
-// attacking it clears the floor.
+// walking onto it (not attacking it) clears the floor.
 const STORY_FLOOR_DEFS = {
     1: {
         levelType: 'bridge',
@@ -3299,7 +3486,795 @@ const STORY_FLOOR_DEFS = {
         monsters: [{ type: STORY_TOWER_BOSS_MONSTER, x: -800, y: 0, room: 0 }],
         winOnClear: true,
         bossFloor: true
-    }
+    },
+    // ==================== 30~49층: 얼음/서리 챕터 ====================
+    // 이 구간은 보스전이 없다 -- 30층/40층도 다른 층과 똑같이 별까지 걸어가면
+    // 클리어되는 웨이브 층이다(bossFloor를 안 붙였으므로 isTowerBossFloor도
+    // 걸리지 않는다). 30~39층에 새 몬스터를 하나씩 풀고, 40~49층은 그 10종을
+    // 섞어서 규모만 키운다.
+    // 30층: 챕터 시작. 얼음 정령만 나온다.
+    30: makePathFloor({
+        path: [[0, 0], [0, -1000], [1000, -1000], [1000, -2000], [0, -2000], [0, -3000], [1000, -3000]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -700, exit: -1700, room: 0 },
+            { entrance: -1700, exit: -2900, room: 1 },
+            { entrance: -2900, exit: -4200, room: 2 },
+            { entrance: -4200, exit: -5600, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_spirit', at: -1000, off: -55, room: 0 },
+            { type: 'ice_spirit', at: -1300, off: 55, room: 0 },
+            { type: 'ice_spirit', at: -1550, off: -30, room: 0 },
+            { type: 'ice_spirit', at: -2060, off: -55, room: 1 },
+            { type: 'ice_spirit', at: -2420, off: 55, room: 1 },
+            { type: 'ice_spirit', at: -2720, off: -30, room: 1 },
+            { type: 'ice_spirit', at: -2060, off: 30, room: 1 },
+            { type: 'ice_spirit', at: -2420, off: -15, room: 1 },
+            { type: 'ice_spirit', at: -3290, off: -55, room: 2 },
+            { type: 'ice_spirit', at: -3680, off: 55, room: 2 },
+            { type: 'ice_spirit', at: -4005, off: -30, room: 2 },
+            { type: 'ice_spirit', at: -3290, off: 30, room: 2 },
+            { type: 'ice_spirit', at: -3680, off: -15, room: 2 },
+            { type: 'ice_spirit', at: -4005, off: 15, room: 2 },
+            { type: 'ice_spirit', at: -4620, off: -55, room: 3 },
+            { type: 'ice_spirit', at: -5040, off: 55, room: 3 },
+            { type: 'ice_spirit', at: -5390, off: -30, room: 3 },
+            { type: 'ice_spirit', at: -4620, off: 30, room: 3 },
+            { type: 'ice_spirit', at: -5040, off: -15, room: 3 },
+            { type: 'ice_spirit', at: -5390, off: 15, room: 3 }
+        ],
+        star: { at: -5860 }
+    }),
+    // 31층: 고드름 궁수 등장.
+    31: makePathFloor({
+        path: [[0, 0], [0, -1020], [-1020, -1020], [-1020, -2040], [0, -2040], [0, -3060], [-1020, -3060]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -714, exit: -1734, room: 0 },
+            { entrance: -1734, exit: -2958, room: 1 },
+            { entrance: -2958, exit: -4284, room: 2 },
+            { entrance: -4284, exit: -5712, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_spirit', at: -1020, off: -55, room: 0 },
+            { type: 'ice_spirit', at: -1326, off: 55, room: 0 },
+            { type: 'icicle_archer', at: -1581, off: -30, room: 0 },
+            { type: 'icicle_archer', at: -1020, off: 30, room: 0 },
+            { type: 'ice_spirit', at: -2101, off: -55, room: 1 },
+            { type: 'ice_spirit', at: -2468, off: 55, room: 1 },
+            { type: 'ice_spirit', at: -2774, off: -30, room: 1 },
+            { type: 'icicle_archer', at: -2101, off: 30, room: 1 },
+            { type: 'icicle_archer', at: -2468, off: -15, room: 1 },
+            { type: 'icicle_archer', at: -2774, off: 15, room: 1 },
+            { type: 'ice_spirit', at: -3356, off: -55, room: 2 },
+            { type: 'ice_spirit', at: -3754, off: 55, room: 2 },
+            { type: 'ice_spirit', at: -4085, off: -30, room: 2 },
+            { type: 'icicle_archer', at: -3356, off: 30, room: 2 },
+            { type: 'icicle_archer', at: -3754, off: -15, room: 2 },
+            { type: 'icicle_archer', at: -4085, off: 15, room: 2 },
+            { type: 'ice_spirit', at: -4712, off: -55, room: 3 },
+            { type: 'ice_spirit', at: -5141, off: 55, room: 3 },
+            { type: 'ice_spirit', at: -5498, off: -30, room: 3 },
+            { type: 'icicle_archer', at: -4712, off: 30, room: 3 },
+            { type: 'icicle_archer', at: -5141, off: -15, room: 3 },
+            { type: 'icicle_archer', at: -5498, off: 15, room: 3 },
+            { type: 'icicle_archer', at: -4712, off: 0, room: 3 }
+        ],
+        star: { at: -5977 }
+    }),
+    // 32층: 눈보라 늑대 등장. 지금까지 나온 근접 중 가장 빠르다.
+    32: makePathFloor({
+        path: [[0, 0], [0, -1040], [1040, -1040], [1040, -2080], [0, -2080], [0, -3120], [1040, -3120]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -728, exit: -1768, room: 0 },
+            { entrance: -1768, exit: -3016, room: 1 },
+            { entrance: -3016, exit: -4368, room: 2 },
+            { entrance: -4368, exit: -5824, room: 3 }
+        ],
+        monsters: [
+            { type: 'snow_wolf', at: -1040, off: -55, room: 0 },
+            { type: 'snow_wolf', at: -1352, off: 55, room: 0 },
+            { type: 'ice_spirit', at: -1612, off: -30, room: 0 },
+            { type: 'ice_spirit', at: -1040, off: 30, room: 0 },
+            { type: 'snow_wolf', at: -2142, off: -55, room: 1 },
+            { type: 'snow_wolf', at: -2517, off: 55, room: 1 },
+            { type: 'icicle_archer', at: -2829, off: -30, room: 1 },
+            { type: 'icicle_archer', at: -2142, off: 30, room: 1 },
+            { type: 'ice_spirit', at: -2517, off: -15, room: 1 },
+            { type: 'ice_spirit', at: -2829, off: 15, room: 1 },
+            { type: 'snow_wolf', at: -3422, off: -55, room: 2 },
+            { type: 'snow_wolf', at: -3827, off: 55, room: 2 },
+            { type: 'snow_wolf', at: -4165, off: -30, room: 2 },
+            { type: 'icicle_archer', at: -3422, off: 30, room: 2 },
+            { type: 'icicle_archer', at: -3827, off: -15, room: 2 },
+            { type: 'ice_spirit', at: -4165, off: 15, room: 2 },
+            { type: 'ice_spirit', at: -3422, off: 0, room: 2 },
+            { type: 'snow_wolf', at: -4805, off: -55, room: 3 },
+            { type: 'snow_wolf', at: -5242, off: 55, room: 3 },
+            { type: 'snow_wolf', at: -5606, off: -30, room: 3 },
+            { type: 'icicle_archer', at: -4805, off: 30, room: 3 },
+            { type: 'icicle_archer', at: -5242, off: -15, room: 3 },
+            { type: 'ice_spirit', at: -5606, off: 15, room: 3 },
+            { type: 'ice_spirit', at: -4805, off: 0, room: 3 }
+        ],
+        star: { at: -6094 }
+    }),
+    // 33층: 서리 골렘 등장. 설탕 골렘처럼 쓰러지면 조각으로 갈라진다.
+    33: makePathFloor({
+        path: [[0, 0], [0, -1060], [-1060, -1060], [-1060, -2120], [0, -2120], [0, -3180], [-1060, -3180]],
+        laneHalfWidth: 100,
+        gates: [
+            { entrance: -742, exit: -1802, room: 0 },
+            { entrance: -1802, exit: -3074, room: 1 },
+            { entrance: -3074, exit: -4452, room: 2 },
+            { entrance: -4452, exit: -5936, room: 3 }
+        ],
+        monsters: [
+            { type: 'frost_golem', at: -1060, off: -55, room: 0 },
+            { type: 'frost_golem', at: -1378, off: 55, room: 0 },
+            { type: 'snow_wolf', at: -1643, off: -30, room: 0 },
+            { type: 'snow_wolf', at: -1060, off: 30, room: 0 },
+            { type: 'frost_golem', at: -2184, off: -55, room: 1 },
+            { type: 'frost_golem', at: -2565, off: 55, room: 1 },
+            { type: 'snow_wolf', at: -2883, off: -30, room: 1 },
+            { type: 'snow_wolf', at: -2184, off: 30, room: 1 },
+            { type: 'icicle_archer', at: -2565, off: -15, room: 1 },
+            { type: 'icicle_archer', at: -2883, off: 15, room: 1 },
+            { type: 'frost_golem', at: -3487, off: -55, room: 2 },
+            { type: 'frost_golem', at: -3901, off: 55, room: 2 },
+            { type: 'snow_wolf', at: -4245, off: -30, room: 2 },
+            { type: 'snow_wolf', at: -3487, off: 30, room: 2 },
+            { type: 'ice_spirit', at: -3901, off: -15, room: 2 },
+            { type: 'ice_spirit', at: -4245, off: 15, room: 2 },
+            { type: 'icicle_archer', at: -3487, off: 0, room: 2 },
+            { type: 'frost_golem', at: -4897, off: -55, room: 3 },
+            { type: 'frost_golem', at: -5342, off: 55, room: 3 },
+            { type: 'frost_golem', at: -5713, off: -30, room: 3 },
+            { type: 'snow_wolf', at: -4897, off: 30, room: 3 },
+            { type: 'snow_wolf', at: -5342, off: -15, room: 3 },
+            { type: 'icicle_archer', at: -5713, off: 15, room: 3 },
+            { type: 'icicle_archer', at: -4897, off: 0, room: 3 },
+            { type: 'ice_spirit', at: -5342, off: -45, room: 3 }
+        ],
+        star: { at: -6212 }
+    }),
+    // 34층: 눈꽃 치유사 등장. 마카롱 치유사보다 오라가 넓고 세다.
+    34: makePathFloor({
+        path: [[0, 0], [0, -1080], [1080, -1080], [1080, -2160], [0, -2160], [0, -3240], [1080, -3240]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -756, exit: -1836, room: 0 },
+            { entrance: -1836, exit: -3132, room: 1 },
+            { entrance: -3132, exit: -4536, room: 2 },
+            { entrance: -4536, exit: -6048, room: 3 }
+        ],
+        monsters: [
+            { type: 'snowflake_healer', at: -1080, off: -60, room: 0 },
+            { type: 'frost_golem', at: -1404, off: 60, room: 0 },
+            { type: 'frost_golem', at: -1674, off: -30, room: 0 },
+            { type: 'snowflake_healer', at: -2225, off: -60, room: 1 },
+            { type: 'snowflake_healer', at: -2614, off: 60, room: 1 },
+            { type: 'snow_wolf', at: -2938, off: -30, room: 1 },
+            { type: 'snow_wolf', at: -2225, off: 30, room: 1 },
+            { type: 'frost_golem', at: -2614, off: -15, room: 1 },
+            { type: 'frost_golem', at: -2938, off: 15, room: 1 },
+            { type: 'snowflake_healer', at: -3553, off: -60, room: 2 },
+            { type: 'frost_golem', at: -3974, off: 60, room: 2 },
+            { type: 'frost_golem', at: -4325, off: -30, room: 2 },
+            { type: 'snow_wolf', at: -3553, off: 30, room: 2 },
+            { type: 'snow_wolf', at: -3974, off: -15, room: 2 },
+            { type: 'icicle_archer', at: -4325, off: 15, room: 2 },
+            { type: 'snowflake_healer', at: -4990, off: -60, room: 3 },
+            { type: 'snowflake_healer', at: -5443, off: 60, room: 3 },
+            { type: 'frost_golem', at: -5821, off: -30, room: 3 },
+            { type: 'frost_golem', at: -4990, off: 30, room: 3 },
+            { type: 'snow_wolf', at: -5443, off: -15, room: 3 },
+            { type: 'snow_wolf', at: -5821, off: 15, room: 3 },
+            { type: 'icicle_archer', at: -4990, off: 0, room: 3 },
+            { type: 'icicle_archer', at: -5443, off: -45, room: 3 }
+        ],
+        star: { at: -6329 }
+    }),
+    // 35층: 얼음 기사 등장. 왕실 근위대처럼 한 번은 반드시 버틴다.
+    35: makePathFloor({
+        path: [[0, 0], [0, -1100], [-1100, -1100], [-1100, -2200], [0, -2200], [0, -3300], [-1100, -3300]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -770, exit: -1870, room: 0 },
+            { entrance: -1870, exit: -3190, room: 1 },
+            { entrance: -3190, exit: -4620, room: 2 },
+            { entrance: -4620, exit: -6160, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_knight', at: -1100, off: -60, room: 0 },
+            { type: 'ice_knight', at: -1430, off: 60, room: 0 },
+            { type: 'snow_wolf', at: -1705, off: -30, room: 0 },
+            { type: 'snow_wolf', at: -1100, off: 30, room: 0 },
+            { type: 'ice_knight', at: -2266, off: -60, room: 1 },
+            { type: 'ice_knight', at: -2662, off: 60, room: 1 },
+            { type: 'snowflake_healer', at: -2992, off: -30, room: 1 },
+            { type: 'snowflake_healer', at: -2266, off: 30, room: 1 },
+            { type: 'frost_golem', at: -2662, off: -15, room: 1 },
+            { type: 'frost_golem', at: -2992, off: 15, room: 1 },
+            { type: 'ice_knight', at: -3619, off: -60, room: 2 },
+            { type: 'ice_knight', at: -4048, off: 60, room: 2 },
+            { type: 'snow_wolf', at: -4406, off: -30, room: 2 },
+            { type: 'snow_wolf', at: -3619, off: 30, room: 2 },
+            { type: 'icicle_archer', at: -4048, off: -15, room: 2 },
+            { type: 'icicle_archer', at: -4406, off: 15, room: 2 },
+            { type: 'frost_golem', at: -3619, off: 0, room: 2 },
+            { type: 'ice_knight', at: -5082, off: -60, room: 3 },
+            { type: 'ice_knight', at: -5544, off: 60, room: 3 },
+            { type: 'ice_knight', at: -5929, off: -30, room: 3 },
+            { type: 'snowflake_healer', at: -5082, off: 30, room: 3 },
+            { type: 'snowflake_healer', at: -5544, off: -15, room: 3 },
+            { type: 'snow_wolf', at: -5929, off: 15, room: 3 },
+            { type: 'snow_wolf', at: -5082, off: 0, room: 3 },
+            { type: 'frost_golem', at: -5544, off: -45, room: 3 }
+        ],
+        star: { at: -6446 }
+    }),
+    // 36층: 서리 대포 등장. 지금까지 나온 포탑 중 빔이 가장 세다.
+    36: makePathFloor({
+        path: [[0, 0], [0, -1120], [1120, -1120], [1120, -2240], [0, -2240], [0, -3360], [1120, -3360]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -784, exit: -1904, room: 0 },
+            { entrance: -1904, exit: -3248, room: 1 },
+            { entrance: -3248, exit: -4704, room: 2 },
+            { entrance: -4704, exit: -6272, room: 3 }
+        ],
+        monsters: [
+            { type: 'frost_cannon', at: -1120, off: -60, room: 0 },
+            { type: 'ice_knight', at: -1456, off: 60, room: 0 },
+            { type: 'ice_knight', at: -1736, off: -30, room: 0 },
+            { type: 'frost_cannon', at: -2307, off: -60, room: 1 },
+            { type: 'frost_cannon', at: -2710, off: 60, room: 1 },
+            { type: 'snow_wolf', at: -3046, off: -30, room: 1 },
+            { type: 'snow_wolf', at: -2307, off: 30, room: 1 },
+            { type: 'ice_knight', at: -2710, off: -15, room: 1 },
+            { type: 'ice_knight', at: -3046, off: 15, room: 1 },
+            { type: 'frost_cannon', at: -3685, off: -60, room: 2 },
+            { type: 'ice_knight', at: -4122, off: 60, room: 2 },
+            { type: 'ice_knight', at: -4486, off: -30, room: 2 },
+            { type: 'snowflake_healer', at: -3685, off: 30, room: 2 },
+            { type: 'snowflake_healer', at: -4122, off: -15, room: 2 },
+            { type: 'frost_golem', at: -4486, off: 15, room: 2 },
+            { type: 'frost_cannon', at: -5174, off: -60, room: 3 },
+            { type: 'frost_cannon', at: -5645, off: 60, room: 3 },
+            { type: 'ice_knight', at: -6037, off: -30, room: 3 },
+            { type: 'ice_knight', at: -5174, off: 30, room: 3 },
+            { type: 'snow_wolf', at: -5645, off: -15, room: 3 },
+            { type: 'snow_wolf', at: -6037, off: 15, room: 3 },
+            { type: 'frost_golem', at: -5174, off: 0, room: 3 },
+            { type: 'frost_golem', at: -5645, off: -45, room: 3 }
+        ],
+        star: { at: -6563 }
+    }),
+    // 37층: 눈사람 폭탄병 등장. 사탕 폭탄병보다 빨리 달려들고 더 세게 터진다.
+    37: makePathFloor({
+        path: [[0, 0], [0, -1140], [-1140, -1140], [-1140, -2280], [0, -2280], [0, -3420], [-1140, -3420]],
+        laneHalfWidth: 105,
+        gates: [
+            { entrance: -798, exit: -1938, room: 0 },
+            { entrance: -1938, exit: -3306, room: 1 },
+            { entrance: -3306, exit: -4788, room: 2 },
+            { entrance: -4788, exit: -6384, room: 3 }
+        ],
+        monsters: [
+            { type: 'snowman_bomber', at: -1140, off: -60, room: 0 },
+            { type: 'snowman_bomber', at: -1482, off: 60, room: 0 },
+            { type: 'snow_wolf', at: -1767, off: -30, room: 0 },
+            { type: 'snow_wolf', at: -1140, off: 30, room: 0 },
+            { type: 'snowman_bomber', at: -2348, off: -60, room: 1 },
+            { type: 'snowman_bomber', at: -2759, off: 60, room: 1 },
+            { type: 'frost_cannon', at: -3101, off: -30, room: 1 },
+            { type: 'frost_cannon', at: -2348, off: 30, room: 1 },
+            { type: 'ice_knight', at: -2759, off: -15, room: 1 },
+            { type: 'ice_knight', at: -3101, off: 15, room: 1 },
+            { type: 'snowman_bomber', at: -3751, off: -60, room: 2 },
+            { type: 'snowman_bomber', at: -4195, off: 60, room: 2 },
+            { type: 'icicle_archer', at: -4566, off: -30, room: 2 },
+            { type: 'icicle_archer', at: -3751, off: 30, room: 2 },
+            { type: 'frost_golem', at: -4195, off: -15, room: 2 },
+            { type: 'frost_golem', at: -4566, off: 15, room: 2 },
+            { type: 'ice_knight', at: -3751, off: 0, room: 2 },
+            { type: 'snowman_bomber', at: -5267, off: -60, room: 3 },
+            { type: 'snowman_bomber', at: -5746, off: 60, room: 3 },
+            { type: 'snowman_bomber', at: -6145, off: -30, room: 3 },
+            { type: 'ice_knight', at: -5267, off: 30, room: 3 },
+            { type: 'ice_knight', at: -5746, off: -15, room: 3 },
+            { type: 'frost_cannon', at: -6145, off: 15, room: 3 },
+            { type: 'frost_cannon', at: -5267, off: 0, room: 3 },
+            { type: 'snowflake_healer', at: -5746, off: -45, room: 3 }
+        ],
+        star: { at: -6680 }
+    }),
+    // 38층: 눈보라 주술사 등장. 초콜릿 여왕처럼 부하(눈보라 늑대)를 계속 부른다.
+    38: makePathFloor({
+        path: [[0, 0], [0, -1160], [1160, -1160], [1160, -2320], [0, -2320], [0, -3480], [1160, -3480]],
+        laneHalfWidth: 110,
+        gates: [
+            { entrance: -812, exit: -1972, room: 0 },
+            { entrance: -1972, exit: -3364, room: 1 },
+            { entrance: -3364, exit: -4872, room: 2 },
+            { entrance: -4872, exit: -6496, room: 3 }
+        ],
+        monsters: [
+            { type: 'blizzard_shaman', at: -1160, off: -60, room: 0 },
+            { type: 'snowman_bomber', at: -1508, off: 60, room: 0 },
+            { type: 'snowman_bomber', at: -1798, off: -35, room: 0 },
+            { type: 'blizzard_shaman', at: -2390, off: -60, room: 1 },
+            { type: 'snow_wolf', at: -2807, off: 60, room: 1 },
+            { type: 'snow_wolf', at: -3155, off: -35, room: 1 },
+            { type: 'snow_wolf', at: -2390, off: 35, room: 1 },
+            { type: 'ice_knight', at: -2807, off: -15, room: 1 },
+            { type: 'ice_knight', at: -3155, off: 15, room: 1 },
+            { type: 'blizzard_shaman', at: -3816, off: -60, room: 2 },
+            { type: 'blizzard_shaman', at: -4269, off: 60, room: 2 },
+            { type: 'frost_cannon', at: -4646, off: -35, room: 2 },
+            { type: 'frost_cannon', at: -3816, off: 35, room: 2 },
+            { type: 'icicle_archer', at: -4269, off: -15, room: 2 },
+            { type: 'icicle_archer', at: -4646, off: 15, room: 2 },
+            { type: 'frost_golem', at: -3816, off: 0, room: 2 },
+            { type: 'blizzard_shaman', at: -5359, off: -60, room: 3 },
+            { type: 'blizzard_shaman', at: -5846, off: 60, room: 3 },
+            { type: 'snowman_bomber', at: -6252, off: -35, room: 3 },
+            { type: 'snowman_bomber', at: -5359, off: 35, room: 3 },
+            { type: 'ice_knight', at: -5846, off: -15, room: 3 },
+            { type: 'ice_knight', at: -6252, off: 15, room: 3 },
+            { type: 'snowflake_healer', at: -5359, off: 0, room: 3 },
+            { type: 'snowflake_healer', at: -5846, off: -50, room: 3 }
+        ],
+        star: { at: -6798 }
+    }),
+    // 39층: 서리 여왕 등장. 40~49층 내내 섞여 나오는 이 챕터의 정예로, 체력이
+    // 40% 아래로 떨어지면 격노하고 고드름 궁수를 계속 불러들인다.
+    39: makePathFloor({
+        path: [[0, 0], [0, -1220], [-1220, -1220], [-1220, -2440], [0, -2440], [0, -3660], [-1220, -3660]],
+        laneHalfWidth: 110,
+        gates: [
+            { entrance: -854, exit: -2074, room: 0 },
+            { entrance: -2074, exit: -3538, room: 1 },
+            { entrance: -3538, exit: -5124, room: 2 },
+            { entrance: -5124, exit: -6832, room: 3 }
+        ],
+        monsters: [
+            { type: 'frost_queen', at: -1220, off: -60, room: 0 },
+            { type: 'blizzard_shaman', at: -1586, off: 60, room: 0 },
+            { type: 'snow_wolf', at: -1891, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1220, off: 35, room: 0 },
+            { type: 'frost_queen', at: -2513, off: -60, room: 1 },
+            { type: 'ice_knight', at: -2952, off: 60, room: 1 },
+            { type: 'ice_knight', at: -3318, off: -35, room: 1 },
+            { type: 'ice_knight', at: -2513, off: 35, room: 1 },
+            { type: 'snowman_bomber', at: -2952, off: -15, room: 1 },
+            { type: 'snowman_bomber', at: -3318, off: 15, room: 1 },
+            { type: 'icicle_archer', at: -2513, off: 0, room: 1 },
+            { type: 'frost_queen', at: -4014, off: -60, room: 2 },
+            { type: 'frost_cannon', at: -4490, off: 60, room: 2 },
+            { type: 'frost_cannon', at: -4886, off: -35, room: 2 },
+            { type: 'frost_golem', at: -4014, off: 35, room: 2 },
+            { type: 'frost_golem', at: -4490, off: -15, room: 2 },
+            { type: 'snowflake_healer', at: -4886, off: 15, room: 2 },
+            { type: 'snowflake_healer', at: -4014, off: 0, room: 2 },
+            { type: 'snow_wolf', at: -4490, off: -50, room: 2 },
+            { type: 'frost_queen', at: -5636, off: -60, room: 3 },
+            { type: 'frost_queen', at: -6149, off: 60, room: 3 },
+            { type: 'blizzard_shaman', at: -6576, off: -35, room: 3 },
+            { type: 'blizzard_shaman', at: -5636, off: 35, room: 3 },
+            { type: 'ice_knight', at: -6149, off: -15, room: 3 },
+            { type: 'ice_knight', at: -6576, off: 15, room: 3 },
+            { type: 'snowman_bomber', at: -5636, off: 0, room: 3 },
+            { type: 'snowman_bomber', at: -6149, off: -50, room: 3 }
+        ],
+        star: { at: -7149 }
+    }),
+    // ---- 40층부터. 정예 관문(39층)을 넘은 뒤, 10종을 섞어 규모를 키운다. ----
+    40: makePathFloor({
+        path: [[0, 0], [0, -1050], [1050, -1050], [1050, -2100], [0, -2100], [0, -3150], [1050, -3150]],
+        laneHalfWidth: 110,
+        gates: [
+            { entrance: -735, exit: -1785, room: 0 },
+            { entrance: -1785, exit: -3045, room: 1 },
+            { entrance: -3045, exit: -4410, room: 2 },
+            { entrance: -4410, exit: -5880, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_spirit', at: -1050, off: -60, room: 0 },
+            { type: 'ice_spirit', at: -1365, off: 60, room: 0 },
+            { type: 'snow_wolf', at: -1628, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1050, off: 35, room: 0 },
+            { type: 'icicle_archer', at: -2163, off: -60, room: 1 },
+            { type: 'icicle_archer', at: -2541, off: 60, room: 1 },
+            { type: 'frost_golem', at: -2856, off: -35, room: 1 },
+            { type: 'frost_golem', at: -2163, off: 35, room: 1 },
+            { type: 'ice_knight', at: -2541, off: -15, room: 1 },
+            { type: 'ice_knight', at: -2856, off: 15, room: 1 },
+            { type: 'snowflake_healer', at: -3455, off: -60, room: 2 },
+            { type: 'snowflake_healer', at: -3864, off: 60, room: 2 },
+            { type: 'frost_cannon', at: -4205, off: -35, room: 2 },
+            { type: 'frost_cannon', at: -3455, off: 35, room: 2 },
+            { type: 'snow_wolf', at: -3864, off: -15, room: 2 },
+            { type: 'snow_wolf', at: -4205, off: 15, room: 2 },
+            { type: 'frost_queen', at: -4851, off: -60, room: 3 },
+            { type: 'blizzard_shaman', at: -5292, off: 60, room: 3 },
+            { type: 'snowman_bomber', at: -5660, off: -35, room: 3 },
+            { type: 'snowman_bomber', at: -4851, off: 35, room: 3 },
+            { type: 'ice_knight', at: -5292, off: -15, room: 3 },
+            { type: 'ice_knight', at: -5660, off: 15, room: 3 }
+        ],
+        star: { at: -6153 }
+    }),
+    41: makePathFloor({
+        path: [[0, 0], [0, -1090], [-1090, -1090], [-1090, -2180], [0, -2180], [0, -3270], [-1090, -3270]],
+        laneHalfWidth: 110,
+        gates: [
+            { entrance: -763, exit: -1853, room: 0 },
+            { entrance: -1853, exit: -3161, room: 1 },
+            { entrance: -3161, exit: -4578, room: 2 },
+            { entrance: -4578, exit: -6104, room: 3 }
+        ],
+        monsters: [
+            { type: 'frost_golem', at: -1090, off: -60, room: 0 },
+            { type: 'frost_golem', at: -1417, off: 60, room: 0 },
+            { type: 'icicle_archer', at: -1690, off: -35, room: 0 },
+            { type: 'icicle_archer', at: -1090, off: 35, room: 0 },
+            { type: 'snow_wolf', at: -2245, off: -60, room: 1 },
+            { type: 'snow_wolf', at: -2638, off: 60, room: 1 },
+            { type: 'snowflake_healer', at: -2965, off: -35, room: 1 },
+            { type: 'snowflake_healer', at: -2245, off: 35, room: 1 },
+            { type: 'ice_knight', at: -2638, off: -15, room: 1 },
+            { type: 'ice_knight', at: -2965, off: 15, room: 1 },
+            { type: 'frost_cannon', at: -3586, off: -60, room: 2 },
+            { type: 'frost_cannon', at: -4011, off: 60, room: 2 },
+            { type: 'snowman_bomber', at: -4365, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -3586, off: 35, room: 2 },
+            { type: 'frost_golem', at: -4011, off: -15, room: 2 },
+            { type: 'frost_golem', at: -4365, off: 15, room: 2 },
+            { type: 'frost_queen', at: -5036, off: -60, room: 3 },
+            { type: 'blizzard_shaman', at: -5494, off: 60, room: 3 },
+            { type: 'blizzard_shaman', at: -5875, off: -35, room: 3 },
+            { type: 'ice_knight', at: -5036, off: 35, room: 3 },
+            { type: 'ice_knight', at: -5494, off: -15, room: 3 },
+            { type: 'icicle_archer', at: -5875, off: 15, room: 3 },
+            { type: 'icicle_archer', at: -5036, off: 0, room: 3 }
+        ],
+        star: { at: -6387 }
+    }),
+    42: makePathFloor({
+        path: [[0, 0], [0, -1130], [1130, -1130], [1130, -2260], [0, -2260], [0, -3390], [1130, -3390]],
+        laneHalfWidth: 115,
+        gates: [
+            { entrance: -791, exit: -1921, room: 0 },
+            { entrance: -1921, exit: -3277, room: 1 },
+            { entrance: -3277, exit: -4746, room: 2 },
+            { entrance: -4746, exit: -6328, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_knight', at: -1130, off: -65, room: 0 },
+            { type: 'ice_knight', at: -1469, off: 65, room: 0 },
+            { type: 'snow_wolf', at: -1752, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1130, off: 35, room: 0 },
+            { type: 'frost_cannon', at: -2328, off: -65, room: 1 },
+            { type: 'frost_cannon', at: -2735, off: 65, room: 1 },
+            { type: 'snowman_bomber', at: -3074, off: -35, room: 1 },
+            { type: 'snowman_bomber', at: -2328, off: 35, room: 1 },
+            { type: 'snowflake_healer', at: -2735, off: -15, room: 1 },
+            { type: 'frost_golem', at: -3074, off: 15, room: 1 },
+            { type: 'frost_golem', at: -2328, off: 0, room: 1 },
+            { type: 'blizzard_shaman', at: -3718, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4158, off: 65, room: 2 },
+            { type: 'icicle_archer', at: -4526, off: -35, room: 2 },
+            { type: 'icicle_archer', at: -3718, off: 35, room: 2 },
+            { type: 'snow_wolf', at: -4158, off: -15, room: 2 },
+            { type: 'snow_wolf', at: -4526, off: 15, room: 2 },
+            { type: 'snow_wolf', at: -3718, off: 0, room: 2 },
+            { type: 'frost_queen', at: -5221, off: -65, room: 3 },
+            { type: 'frost_queen', at: -5695, off: 65, room: 3 },
+            { type: 'ice_knight', at: -6091, off: -35, room: 3 },
+            { type: 'ice_knight', at: -5221, off: 35, room: 3 },
+            { type: 'frost_golem', at: -5695, off: -15, room: 3 },
+            { type: 'frost_golem', at: -6091, off: 15, room: 3 },
+            { type: 'snowman_bomber', at: -5221, off: 0, room: 3 }
+        ],
+        star: { at: -6622 }
+    }),
+    43: makePathFloor({
+        path: [[0, 0], [0, -1170], [-1170, -1170], [-1170, -2340], [0, -2340], [0, -3510], [-1170, -3510]],
+        laneHalfWidth: 115,
+        gates: [
+            { entrance: -819, exit: -1989, room: 0 },
+            { entrance: -1989, exit: -3393, room: 1 },
+            { entrance: -3393, exit: -4914, room: 2 },
+            { entrance: -4914, exit: -6552, room: 3 }
+        ],
+        monsters: [
+            { type: 'snowflake_healer', at: -1170, off: -65, room: 0 },
+            { type: 'frost_golem', at: -1521, off: 65, room: 0 },
+            { type: 'frost_golem', at: -1814, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1170, off: 35, room: 0 },
+            { type: 'frost_cannon', at: -2410, off: -65, room: 1 },
+            { type: 'frost_cannon', at: -2831, off: 65, room: 1 },
+            { type: 'ice_knight', at: -3182, off: -35, room: 1 },
+            { type: 'ice_knight', at: -2410, off: 35, room: 1 },
+            { type: 'icicle_archer', at: -2831, off: -15, room: 1 },
+            { type: 'icicle_archer', at: -3182, off: 15, room: 1 },
+            { type: 'blizzard_shaman', at: -3849, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4306, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -4686, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -3849, off: 35, room: 2 },
+            { type: 'snow_wolf', at: -4306, off: -15, room: 2 },
+            { type: 'snow_wolf', at: -4686, off: 15, room: 2 },
+            { type: 'snowflake_healer', at: -3849, off: 0, room: 2 },
+            { type: 'snowflake_healer', at: -4306, off: -50, room: 2 },
+            { type: 'frost_queen', at: -5405, off: -65, room: 3 },
+            { type: 'frost_queen', at: -5897, off: 65, room: 3 },
+            { type: 'ice_knight', at: -6306, off: -35, room: 3 },
+            { type: 'ice_knight', at: -5405, off: 35, room: 3 },
+            { type: 'frost_golem', at: -5897, off: -15, room: 3 },
+            { type: 'frost_golem', at: -6306, off: 15, room: 3 },
+            { type: 'icicle_archer', at: -5405, off: 0, room: 3 },
+            { type: 'icicle_archer', at: -5897, off: -50, room: 3 }
+        ],
+        star: { at: -6856 }
+    }),
+    44: makePathFloor({
+        path: [[0, 0], [0, -1200], [1200, -1200], [1200, -2400], [0, -2400], [0, -3600], [1200, -3600]],
+        laneHalfWidth: 115,
+        gates: [
+            { entrance: -840, exit: -2040, room: 0 },
+            { entrance: -2040, exit: -3480, room: 1 },
+            { entrance: -3480, exit: -5040, room: 2 },
+            { entrance: -5040, exit: -6720, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_spirit', at: -1200, off: -65, room: 0 },
+            { type: 'ice_spirit', at: -1560, off: 65, room: 0 },
+            { type: 'icicle_archer', at: -1860, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1200, off: 35, room: 0 },
+            { type: 'snow_wolf', at: -1560, off: -15, room: 0 },
+            { type: 'frost_golem', at: -2472, off: -65, room: 1 },
+            { type: 'frost_golem', at: -2904, off: 65, room: 1 },
+            { type: 'snowflake_healer', at: -3264, off: -35, room: 1 },
+            { type: 'snowflake_healer', at: -2472, off: 35, room: 1 },
+            { type: 'frost_cannon', at: -2904, off: -15, room: 1 },
+            { type: 'frost_cannon', at: -3264, off: 15, room: 1 },
+            { type: 'blizzard_shaman', at: -3948, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4416, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -4806, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -3948, off: 35, room: 2 },
+            { type: 'ice_knight', at: -4416, off: -15, room: 2 },
+            { type: 'ice_knight', at: -4806, off: 15, room: 2 },
+            { type: 'snow_wolf', at: -3948, off: 0, room: 2 },
+            { type: 'snow_wolf', at: -4416, off: -50, room: 2 },
+            { type: 'frost_queen', at: -5544, off: -65, room: 3 },
+            { type: 'frost_queen', at: -6048, off: 65, room: 3 },
+            { type: 'blizzard_shaman', at: -6468, off: -35, room: 3 },
+            { type: 'ice_knight', at: -5544, off: 35, room: 3 },
+            { type: 'ice_knight', at: -6048, off: -15, room: 3 },
+            { type: 'frost_cannon', at: -6468, off: 15, room: 3 },
+            { type: 'frost_cannon', at: -5544, off: 0, room: 3 },
+            { type: 'snowman_bomber', at: -6048, off: -50, room: 3 }
+        ],
+        star: { at: -7032 }
+    }),
+    45: makePathFloor({
+        path: [[0, 0], [0, -1240], [-1240, -1240], [-1240, -2480], [0, -2480], [0, -3720], [-1240, -3720]],
+        laneHalfWidth: 115,
+        gates: [
+            { entrance: -868, exit: -2108, room: 0 },
+            { entrance: -2108, exit: -3596, room: 1 },
+            { entrance: -3596, exit: -5208, room: 2 },
+            { entrance: -5208, exit: -6944, room: 3 }
+        ],
+        monsters: [
+            { type: 'snow_wolf', at: -1240, off: -65, room: 0 },
+            { type: 'snow_wolf', at: -1612, off: 65, room: 0 },
+            { type: 'icicle_archer', at: -1922, off: -35, room: 0 },
+            { type: 'icicle_archer', at: -1240, off: 35, room: 0 },
+            { type: 'frost_golem', at: -2554, off: -65, room: 1 },
+            { type: 'frost_golem', at: -3001, off: 65, room: 1 },
+            { type: 'snowflake_healer', at: -3373, off: -35, room: 1 },
+            { type: 'snowflake_healer', at: -2554, off: 35, room: 1 },
+            { type: 'ice_knight', at: -3001, off: -15, room: 1 },
+            { type: 'ice_knight', at: -3373, off: 15, room: 1 },
+            { type: 'frost_cannon', at: -2554, off: 0, room: 1 },
+            { type: 'blizzard_shaman', at: -4080, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4563, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -4966, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -4080, off: 35, room: 2 },
+            { type: 'icicle_archer', at: -4563, off: -15, room: 2 },
+            { type: 'icicle_archer', at: -4966, off: 15, room: 2 },
+            { type: 'snow_wolf', at: -4080, off: 0, room: 2 },
+            { type: 'snow_wolf', at: -4563, off: -50, room: 2 },
+            { type: 'frost_queen', at: -5729, off: -65, room: 3 },
+            { type: 'frost_queen', at: -6250, off: 65, room: 3 },
+            { type: 'ice_knight', at: -6684, off: -35, room: 3 },
+            { type: 'ice_knight', at: -5729, off: 35, room: 3 },
+            { type: 'frost_golem', at: -6250, off: -15, room: 3 },
+            { type: 'frost_golem', at: -6684, off: 15, room: 3 },
+            { type: 'blizzard_shaman', at: -5729, off: 0, room: 3 },
+            { type: 'snowman_bomber', at: -6250, off: -50, room: 3 }
+        ],
+        star: { at: -7266 }
+    }),
+    46: makePathFloor({
+        path: [[0, 0], [0, -1280], [1280, -1280], [1280, -2560], [0, -2560], [0, -3840], [1280, -3840]],
+        laneHalfWidth: 120,
+        gates: [
+            { entrance: -896, exit: -2176, room: 0 },
+            { entrance: -2176, exit: -3712, room: 1 },
+            { entrance: -3712, exit: -5376, room: 2 },
+            { entrance: -5376, exit: -7168, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_knight', at: -1280, off: -65, room: 0 },
+            { type: 'ice_knight', at: -1664, off: 65, room: 0 },
+            { type: 'snow_wolf', at: -1984, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1280, off: 35, room: 0 },
+            { type: 'icicle_archer', at: -1664, off: -20, room: 0 },
+            { type: 'frost_cannon', at: -2637, off: -65, room: 1 },
+            { type: 'frost_cannon', at: -3098, off: 65, room: 1 },
+            { type: 'frost_golem', at: -3482, off: -35, room: 1 },
+            { type: 'frost_golem', at: -2637, off: 35, room: 1 },
+            { type: 'snowflake_healer', at: -3098, off: -20, room: 1 },
+            { type: 'snowflake_healer', at: -3482, off: 20, room: 1 },
+            { type: 'blizzard_shaman', at: -4211, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4710, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -5126, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -4211, off: 35, room: 2 },
+            { type: 'ice_knight', at: -4710, off: -20, room: 2 },
+            { type: 'ice_knight', at: -5126, off: 20, room: 2 },
+            { type: 'snow_wolf', at: -4211, off: 0, room: 2 },
+            { type: 'snow_wolf', at: -4710, off: -55, room: 2 },
+            { type: 'snow_wolf', at: -5126, off: 55, room: 2 },
+            { type: 'frost_queen', at: -5914, off: -65, room: 3 },
+            { type: 'frost_queen', at: -6451, off: 65, room: 3 },
+            { type: 'blizzard_shaman', at: -6899, off: -35, room: 3 },
+            { type: 'blizzard_shaman', at: -5914, off: 35, room: 3 },
+            { type: 'frost_golem', at: -6451, off: -20, room: 3 },
+            { type: 'frost_golem', at: -6899, off: 20, room: 3 },
+            { type: 'icicle_archer', at: -5914, off: 0, room: 3 },
+            { type: 'icicle_archer', at: -6451, off: -55, room: 3 }
+        ],
+        star: { at: -7501 }
+    }),
+    47: makePathFloor({
+        path: [[0, 0], [0, -1320], [-1320, -1320], [-1320, -2640], [0, -2640], [0, -3960], [-1320, -3960]],
+        laneHalfWidth: 120,
+        gates: [
+            { entrance: -924, exit: -2244, room: 0 },
+            { entrance: -2244, exit: -3828, room: 1 },
+            { entrance: -3828, exit: -5544, room: 2 },
+            { entrance: -5544, exit: -7392, room: 3 }
+        ],
+        monsters: [
+            { type: 'snowflake_healer', at: -1320, off: -65, room: 0 },
+            { type: 'snowflake_healer', at: -1716, off: 65, room: 0 },
+            { type: 'frost_golem', at: -2046, off: -35, room: 0 },
+            { type: 'frost_golem', at: -1320, off: 35, room: 0 },
+            { type: 'snow_wolf', at: -1716, off: -20, room: 0 },
+            { type: 'frost_cannon', at: -2719, off: -65, room: 1 },
+            { type: 'frost_cannon', at: -3194, off: 65, room: 1 },
+            { type: 'ice_knight', at: -3590, off: -35, room: 1 },
+            { type: 'ice_knight', at: -2719, off: 35, room: 1 },
+            { type: 'ice_knight', at: -3194, off: -20, room: 1 },
+            { type: 'icicle_archer', at: -3590, off: 20, room: 1 },
+            { type: 'icicle_archer', at: -2719, off: 0, room: 1 },
+            { type: 'blizzard_shaman', at: -4343, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -4858, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -5287, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -4343, off: 35, room: 2 },
+            { type: 'snow_wolf', at: -4858, off: -20, room: 2 },
+            { type: 'snow_wolf', at: -5287, off: 20, room: 2 },
+            { type: 'frost_golem', at: -4343, off: 0, room: 2 },
+            { type: 'frost_golem', at: -4858, off: -55, room: 2 },
+            { type: 'frost_queen', at: -6098, off: -65, room: 3 },
+            { type: 'frost_queen', at: -6653, off: 65, room: 3 },
+            { type: 'ice_knight', at: -7115, off: -35, room: 3 },
+            { type: 'ice_knight', at: -6098, off: 35, room: 3 },
+            { type: 'ice_knight', at: -6653, off: -20, room: 3 },
+            { type: 'blizzard_shaman', at: -7115, off: 20, room: 3 },
+            { type: 'blizzard_shaman', at: -6098, off: 0, room: 3 },
+            { type: 'icicle_archer', at: -6653, off: -55, room: 3 },
+            { type: 'icicle_archer', at: -7115, off: 55, room: 3 }
+        ],
+        star: { at: -7735 }
+    }),
+    48: makePathFloor({
+        path: [[0, 0], [0, -1360], [1360, -1360], [1360, -2720], [0, -2720], [0, -4080], [1360, -4080]],
+        laneHalfWidth: 120,
+        gates: [
+            { entrance: -952, exit: -2312, room: 0 },
+            { entrance: -2312, exit: -3944, room: 1 },
+            { entrance: -3944, exit: -5712, room: 2 },
+            { entrance: -5712, exit: -7616, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_knight', at: -1360, off: -65, room: 0 },
+            { type: 'ice_knight', at: -1768, off: 65, room: 0 },
+            { type: 'icicle_archer', at: -2108, off: -35, room: 0 },
+            { type: 'icicle_archer', at: -1360, off: 35, room: 0 },
+            { type: 'snow_wolf', at: -1768, off: -20, room: 0 },
+            { type: 'frost_golem', at: -2802, off: -65, room: 1 },
+            { type: 'frost_golem', at: -3291, off: 65, room: 1 },
+            { type: 'frost_golem', at: -3699, off: -35, room: 1 },
+            { type: 'frost_cannon', at: -2802, off: 35, room: 1 },
+            { type: 'frost_cannon', at: -3291, off: -20, room: 1 },
+            { type: 'snowflake_healer', at: -3699, off: 20, room: 1 },
+            { type: 'snowflake_healer', at: -2802, off: 0, room: 1 },
+            { type: 'blizzard_shaman', at: -4474, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -5005, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -5447, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -4474, off: 35, room: 2 },
+            { type: 'ice_knight', at: -5005, off: -20, room: 2 },
+            { type: 'ice_knight', at: -5447, off: 20, room: 2 },
+            { type: 'icicle_archer', at: -4474, off: 0, room: 2 },
+            { type: 'icicle_archer', at: -5005, off: -55, room: 2 },
+            { type: 'snow_wolf', at: -5447, off: 55, room: 2 },
+            { type: 'snow_wolf', at: -4474, off: -70, room: 2 },
+            { type: 'frost_queen', at: -6283, off: -65, room: 3 },
+            { type: 'frost_queen', at: -6854, off: 65, room: 3 },
+            { type: 'blizzard_shaman', at: -7330, off: -35, room: 3 },
+            { type: 'blizzard_shaman', at: -6283, off: 35, room: 3 },
+            { type: 'frost_golem', at: -6854, off: -20, room: 3 },
+            { type: 'frost_golem', at: -7330, off: 20, room: 3 },
+            { type: 'snowman_bomber', at: -6283, off: 0, room: 3 },
+            { type: 'snowman_bomber', at: -6854, off: -55, room: 3 }
+        ],
+        star: { at: -7970 }
+    }),
+    // 49층: 얼음/서리 챕터의 마지막. 서리 여왕 셋을 포함해 10종이 전부 나온다.
+    49: makePathFloor({
+        path: [[0, 0], [0, -1420], [-1420, -1420], [-1420, -2840], [0, -2840], [0, -4260], [-1420, -4260]],
+        laneHalfWidth: 120,
+        gates: [
+            { entrance: -994, exit: -2414, room: 0 },
+            { entrance: -2414, exit: -4118, room: 1 },
+            { entrance: -4118, exit: -5964, room: 2 },
+            { entrance: -5964, exit: -7952, room: 3 }
+        ],
+        monsters: [
+            { type: 'ice_knight', at: -1420, off: -65, room: 0 },
+            { type: 'ice_knight', at: -1846, off: 65, room: 0 },
+            { type: 'snow_wolf', at: -2201, off: -35, room: 0 },
+            { type: 'snow_wolf', at: -1420, off: 35, room: 0 },
+            { type: 'icicle_archer', at: -1846, off: -20, room: 0 },
+            { type: 'icicle_archer', at: -2201, off: 20, room: 0 },
+            { type: 'frost_golem', at: -2925, off: -65, room: 1 },
+            { type: 'frost_golem', at: -3436, off: 65, room: 1 },
+            { type: 'frost_cannon', at: -3862, off: -35, room: 1 },
+            { type: 'frost_cannon', at: -2925, off: 35, room: 1 },
+            { type: 'snowflake_healer', at: -3436, off: -20, room: 1 },
+            { type: 'snowflake_healer', at: -3862, off: 20, room: 1 },
+            { type: 'snow_wolf', at: -2925, off: 0, room: 1 },
+            { type: 'snow_wolf', at: -3436, off: -55, room: 1 },
+            { type: 'blizzard_shaman', at: -4672, off: -65, room: 2 },
+            { type: 'blizzard_shaman', at: -5226, off: 65, room: 2 },
+            { type: 'snowman_bomber', at: -5687, off: -35, room: 2 },
+            { type: 'snowman_bomber', at: -4672, off: 35, room: 2 },
+            { type: 'ice_knight', at: -5226, off: -20, room: 2 },
+            { type: 'ice_knight', at: -5687, off: 20, room: 2 },
+            { type: 'icicle_archer', at: -4672, off: 0, room: 2 },
+            { type: 'icicle_archer', at: -5226, off: -55, room: 2 },
+            { type: 'frost_golem', at: -5687, off: 55, room: 2 },
+            { type: 'frost_golem', at: -4672, off: -70, room: 2 },
+            { type: 'frost_queen', at: -6560, off: -65, room: 3 },
+            { type: 'frost_queen', at: -7157, off: 65, room: 3 },
+            { type: 'frost_queen', at: -7654, off: -35, room: 3 },
+            { type: 'blizzard_shaman', at: -6560, off: 35, room: 3 },
+            { type: 'ice_knight', at: -7157, off: -20, room: 3 },
+            { type: 'ice_knight', at: -7654, off: 20, room: 3 },
+            { type: 'frost_cannon', at: -6560, off: 0, room: 3 },
+            { type: 'frost_cannon', at: -7157, off: -55, room: 3 },
+            { type: 'snowman_bomber', at: -7654, off: 55, room: 3 },
+            { type: 'snowman_bomber', at: -6560, off: -70, room: 3 }
+        ],
+        star: { at: -8321 }
+    })
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
@@ -3376,6 +4351,31 @@ const CLEAR_REWARDS = {
     story27: { material: 72, materialRare: 34, potion: 72, potionRare: 24, coins: 8000, diamonds: 60, ticketNormal: 3 },
     story28: { material: 75, materialRare: 36, potion: 75, potionRare: 25, coins: 8300, diamonds: 62, ticketNormal: 3 },
     story29: { material: 80, materialRare: 40, potion: 80, potionRare: 28, coins: 8800, diamonds: 66, ticketNormal: 3 },
+    // 30~49층(얼음/서리 챕터)은 보스전이 없어서 뽑기 티켓이 안 늘어난다 --
+    // 20층 보스를 넘긴 뒤 21층부터 3장으로 오른 게 마지막이고, 이 챕터 내내
+    // 그대로 3장이다. 재료/코인만 층마다 조금씩 굵어진다.
+    story30: { material: 83, materialRare: 42, potion: 83, potionRare: 29, coins: 9100, diamonds: 68, ticketNormal: 3 },
+    story31: { material: 86, materialRare: 44, potion: 86, potionRare: 30, coins: 9400, diamonds: 70, ticketNormal: 3 },
+    story32: { material: 89, materialRare: 46, potion: 89, potionRare: 31, coins: 9700, diamonds: 72, ticketNormal: 3 },
+    story33: { material: 92, materialRare: 48, potion: 92, potionRare: 32, coins: 10000, diamonds: 74, ticketNormal: 3 },
+    story34: { material: 95, materialRare: 50, potion: 95, potionRare: 33, coins: 10300, diamonds: 76, ticketNormal: 3 },
+    story35: { material: 98, materialRare: 52, potion: 98, potionRare: 34, coins: 10600, diamonds: 78, ticketNormal: 3 },
+    story36: { material: 101, materialRare: 54, potion: 101, potionRare: 35, coins: 10900, diamonds: 80, ticketNormal: 3 },
+    story37: { material: 104, materialRare: 56, potion: 104, potionRare: 36, coins: 11200, diamonds: 82, ticketNormal: 3 },
+    story38: { material: 107, materialRare: 58, potion: 107, potionRare: 37, coins: 11500, diamonds: 84, ticketNormal: 3 },
+    // 39층은 이 챕터 전반부의 정예 관문(서리 여왕 등장)이라 29층처럼 조금 더 굵다.
+    story39: { material: 112, materialRare: 62, potion: 112, potionRare: 40, coins: 12000, diamonds: 88, ticketNormal: 3 },
+    story40: { material: 115, materialRare: 64, potion: 115, potionRare: 41, coins: 12300, diamonds: 90, ticketNormal: 3 },
+    story41: { material: 118, materialRare: 66, potion: 118, potionRare: 42, coins: 12600, diamonds: 92, ticketNormal: 3 },
+    story42: { material: 121, materialRare: 68, potion: 121, potionRare: 43, coins: 12900, diamonds: 94, ticketNormal: 3 },
+    story43: { material: 124, materialRare: 70, potion: 124, potionRare: 44, coins: 13200, diamonds: 96, ticketNormal: 3 },
+    story44: { material: 127, materialRare: 72, potion: 127, potionRare: 45, coins: 13500, diamonds: 98, ticketNormal: 3 },
+    story45: { material: 130, materialRare: 74, potion: 130, potionRare: 46, coins: 13800, diamonds: 100, ticketNormal: 3 },
+    story46: { material: 133, materialRare: 76, potion: 133, potionRare: 47, coins: 14100, diamonds: 102, ticketNormal: 3 },
+    story47: { material: 136, materialRare: 78, potion: 136, potionRare: 48, coins: 14400, diamonds: 104, ticketNormal: 3 },
+    story48: { material: 139, materialRare: 80, potion: 139, potionRare: 49, coins: 14700, diamonds: 106, ticketNormal: 3 },
+    // 49층은 챕터 마지막(서리 여왕 셋)이라 다른 층보다 조금 더 굵다.
+    story49: { material: 145, materialRare: 85, potion: 145, potionRare: 52, coins: 15300, diamonds: 110, ticketNormal: 3 },
     // 게스트 레이드. 악마 뽑기 티켓은 오직 여기서만 나온다.
     guest1: { materialRare: 15, potionRare: 12, coins: 4000, diamonds: 60, ticketDemon: 3 },
     guest1_phase1: { materialRare: 5, potionRare: 4, coins: 1500, diamonds: 20, ticketDemon: 1 },
@@ -3416,18 +4416,45 @@ const CLEAR_DROPS = {
     story27: ['cream_plate', 'cream_greaves', 'gale_boots'],
     story28: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
     story29: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
+    // 30~49층(얼음/서리 챕터)도 같은 방침: 지금 있는 장비들 중 좋은 쪽이
+    // 계속 나온다. 새 장비는 유누가 만들어 주면 여기 이름만 바꿔 넣으면 된다.
+    story30: ['cream_plate', 'frost_boots', 'ice_spear'],
+    story31: ['cream_greaves', 'frost_boots', 'spirit_armor'],
+    story32: ['cream_plate', 'storm_greaves', 'ice_spear'],
+    story33: ['frost_boots', 'cream_greaves', 'gale_boots'],
+    story34: ['cream_plate', 'spirit_armor', 'storm_greaves'],
+    story35: ['cream_greaves', 'frost_boots', 'mint_blade'],
+    story36: ['cream_plate', 'cream_greaves', 'gale_boots'],
+    story37: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
+    story38: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
+    story39: ['cream_plate', 'frost_boots', 'storm_greaves', 'gale_boots'],
+    story40: ['cream_plate', 'frost_boots', 'ice_spear'],
+    story41: ['cream_greaves', 'frost_boots', 'spirit_armor'],
+    story42: ['cream_plate', 'storm_greaves', 'ice_spear'],
+    story43: ['frost_boots', 'cream_greaves', 'gale_boots'],
+    story44: ['cream_plate', 'spirit_armor', 'storm_greaves'],
+    story45: ['cream_greaves', 'frost_boots', 'mint_blade'],
+    story46: ['cream_plate', 'cream_greaves', 'gale_boots'],
+    story47: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
+    story48: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
+    story49: ['cream_plate', 'frost_boots', 'storm_greaves', 'gale_boots'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
     // story20(가면광대)은 CLEAR_DROPS에 따로 안 적는다 -- clearDropsFor()의
     // isTowerBossFloor 처리로 레전더리 전체(신규 "빛의" 세트 포함)가 자동으로
     // 드랍 후보에 낀다.
 };
-// ---- 10층마다 오는 타워 보스전 ----
+// ---- 타워 보스전 ----
 // 레전더리 장비는 오직 여기서만 나온다. 스토리 층을 아무리 돌아도 안 나오고,
-// 보스를 잡으면 레전더리 중 하나가 무작위로 떨어진다.
+// 보스를 잡으면 레전더리 중 하나가 무작위로 떨어진다. 원래는 10층마다
+// (10/20/...) 자동으로 보스층이었지만, 30~49층(얼음/서리 챕터)은 보스전 없이
+// 웨이브만 있기로 했으므로 층수 나머지 계산이 아니라 그 층의 floorDef에
+// bossFloor: true가 실제로 적혀 있는지로 판정한다 -- 그래야 30층/40층이
+// UI에도(레전더리 확정 칩 등) 보통 층과 똑같이 뜬다.
 const TOWER_BOSS_EVERY = 10;
 function isTowerBossFloor(floor) {
-    return typeof floor === 'number' && floor > 0 && floor % TOWER_BOSS_EVERY === 0;
+    const def = floorDefFor(floor);
+    return !!(def && def.bossFloor);
 }
 function legendaryEquipmentIds() {
     return Object.keys(EQUIPMENT).filter(id => EQUIPMENT[id].grade === '레전더리');
