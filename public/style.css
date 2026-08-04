@@ -790,8 +790,35 @@ html, body {
 /* Mode select */
 .mode-list {
     display: flex;
+    align-items: flex-start;
     gap: 30px;
     margin: 30px 0;
+}
+
+/* 왼쪽: 성장 던전 / 각성모드를 세로로 쌓아둔 별도 칸. */
+.mode-list-left {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.mode-list-right {
+    display: flex;
+    gap: 30px;
+}
+
+.mode-card.mode-card-small {
+    width: 220px;
+    height: 122px;
+}
+
+.mode-card.mode-card-small .icon {
+    font-size: 34px;
+    margin-bottom: 8px;
+}
+
+.mode-card.mode-card-small .name {
+    font-size: 17px;
 }
 
 .mode-card {
@@ -1817,6 +1844,30 @@ body.mc-compact .mode-card .name {
 
 body.mc-compact .mode-card .sub {
     font-size: 12px;
+}
+
+body.mc-compact .mode-list-left,
+body.mc-compact .mode-list-right {
+    flex-shrink: 0;
+    gap: 10px;
+}
+
+body.mc-compact .mode-list-left {
+    flex-direction: column;
+}
+
+body.mc-compact .mode-card.mode-card-small {
+    width: 150px;
+    height: 95px;
+}
+
+body.mc-compact .mode-card.mode-card-small .icon {
+    font-size: 26px;
+    margin-bottom: 4px;
+}
+
+body.mc-compact .mode-card.mode-card-small .name {
+    font-size: 14px;
 }
 
 /* Character detail */
