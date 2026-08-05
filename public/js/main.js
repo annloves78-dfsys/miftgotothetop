@@ -35,9 +35,45 @@ function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.add('hidden'));
     screens[name].classList.remove('hidden');
     applyMobileControlsVisibility();
+    playBgm(bgmTrackForScreen(name));
     // The lobby is where the currency bar lives; redraw it on the way in so a
     // reward taken on the result screen is already reflected.
     if (name === 'lobby') { renderCurrencyBar(); renderItemsBadge(); }
+}
+
+// ---- Background music ----
+// 화면마다 로비용/전투용 두 트랙만 돌려쓴다 -- 로비 계열 화면은 전부 'lobby',
+// 실제 전투가 벌어지는 네 화면(보스레이드/스토리/게스트/좀비막기)만 'battle'.
+// 온/오프는 MOBILE_CONTROLS_KEY 등과 같은 방식으로 device-local 설정으로 둔다
+// (아래 조작 화면 쪽 토글 정의부 참고).
+const MUSIC_ENABLED_KEY = 'boss_raid_music_enabled';
+let musicEnabled = localStorage.getItem(MUSIC_ENABLED_KEY) !== '0'; // 기본 켜짐
+const BGM_TRACKS = {
+    lobby: 'audio/bgm-lobby.mp3',
+    battle: 'audio/bgm-battle.mp3'
+};
+const BGM_BATTLE_SCREENS = new Set(['fight', 'storyFight', 'guestFight', 'zombieFight']);
+const bgmPlayer = new Audio();
+bgmPlayer.loop = true;
+bgmPlayer.volume = 0.4;
+let bgmCurrentTrack = null;
+// 브라우저는 사용자가 한 번도 상호작용하기 전엔 소리 있는 자동재생을 막는다.
+// 페이지 아무 데나 처음 클릭하는 순간 그때 트랙을 재생한다.
+let bgmUnlocked = false;
+document.addEventListener('click', () => {
+    if (bgmUnlocked) return;
+    bgmUnlocked = true;
+    if (musicEnabled && bgmCurrentTrack) bgmPlayer.play().catch(() => {});
+}, { once: true });
+
+function bgmTrackForScreen(name) {
+    return BGM_BATTLE_SCREENS.has(name) ? 'battle' : 'lobby';
+}
+function playBgm(track) {
+    if (bgmCurrentTrack === track) return;
+    bgmCurrentTrack = track;
+    bgmPlayer.src = BGM_TRACKS[track];
+    if (musicEnabled && bgmUnlocked) bgmPlayer.play().catch(() => {});
 }
 
 const lobbyCurrencyBar = document.getElementById('lobby-currency-bar');
@@ -1284,6 +1320,8 @@ const controlsCompactStatus = document.getElementById('controls-compact-status')
 const controlsAutoAimBtn = document.getElementById('controls-autoaim-btn');
 const controlsAutoAimStatus = document.getElementById('controls-autoaim-status');
 const controlsAutoAimHint = document.getElementById('controls-autoaim-hint');
+const controlsMusicBtn = document.getElementById('controls-music-btn');
+const controlsMusicStatus = document.getElementById('controls-music-status');
 const controlsBackBtn = document.getElementById('controls-back-btn');
 const mobileControlsFight = document.getElementById('mobile-controls-fight');
 const mobileControlsStory = document.getElementById('mobile-controls-story');
@@ -1321,6 +1359,9 @@ function updateControlsScreen() {
     controlsAutoAimHint.textContent = mobileControlsEnabled
         ? '조이스틱을 켜면 자동조준은 항상 켜져 있어요. 끄려면 먼저 조이스틱을 꺼주세요.'
         : '켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.';
+
+    controlsMusicStatus.textContent = musicEnabled ? '켜짐' : '꺼짐';
+    controlsMusicStatus.classList.toggle('on', musicEnabled);
 }
 function applyMobileControlsVisibility() {
     if (!mobileControlsFight) return;
@@ -1361,6 +1402,16 @@ controlsAutoAimBtn.addEventListener('click', () => {
     autoAimEnabled = !autoAimEnabled;
     localStorage.setItem(AUTO_AIM_KEY, autoAimEnabled ? '1' : '0');
     updateControlsScreen();
+});
+controlsMusicBtn.addEventListener('click', () => {
+    musicEnabled = !musicEnabled;
+    localStorage.setItem(MUSIC_ENABLED_KEY, musicEnabled ? '1' : '0');
+    updateControlsScreen();
+    if (musicEnabled) {
+        if (bgmUnlocked && bgmCurrentTrack) bgmPlayer.play().catch(() => {});
+    } else {
+        bgmPlayer.pause();
+    }
 });
 controlsBackBtn.addEventListener('click', () => showScreen('lobby'));
 
