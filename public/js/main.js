@@ -972,6 +972,8 @@ function describeAbility(stats, kind) {
                 return `방패로 막습니다. 자신의 체력을 ${stats.skillHealAmount}만큼 채우고, 자신에게만 ${stats.skillShieldAmount}짜리 보호막을 씌웁니다.${cd}`;
             case 'freeze_burst':
                 return `조준 없이 즉시 발동합니다. 반경 ${stats.skillRange}px 내의 적을 얼려 ${sec(stats.skillFreezeMs)}초 동안 아무 행동도 못 하게 하고, 적중 여부와 상관없이 자신의 체력을 ${stats.skillSelfHeal}만큼 채웁니다.${cd}`;
+            case 'sea_hide':
+                return `조준 없이 즉시 바다로 숨어듭니다. ${sec(stats.skillDurationMs)}초 동안 아무 공격도 받지 않고 자신도 공격할 수 없으며, 그동안 체력을 ${stats.skillHealAmount}만큼 채웁니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -1009,6 +1011,8 @@ function describeAbility(stats, kind) {
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
+            case 'team_hot_shield':
+                return `팀원 모두에게 ${stats.ultimateShieldAmount}짜리 보호막을 즉시 씌우고, ${sec(stats.ultimateDurationMs)}초 동안 ${sec(stats.ultimateTickMs)}초마다 ${stats.ultimateHealPerTick}만큼 팀 전체를 회복시킵니다.${cd}`;
             case 'undying_soul': {
                 const summon = stats.ultimateSummon;
                 const minions = summon
