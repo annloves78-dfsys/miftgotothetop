@@ -42,17 +42,23 @@ function showScreen(name) {
 }
 
 // ---- Background music ----
-// 화면마다 로비용/전투용 두 트랙만 돌려쓴다 -- 로비 계열 화면은 전부 'lobby',
-// 실제 전투가 벌어지는 네 화면(보스레이드/스토리/게스트/좀비막기)만 'battle'.
+// 로비/전투/각성모드 세 트랙을 돌려쓴다. 로비 계열 화면은 전부 'lobby', 보통
+// 전투(보스레이드/일반 스토리 층/게스트레이드)는 'battle', 각성모드·좀비막기
+// (그리고 나중에 생길 성장 던전도)는 좀 더 신나는 'awaken' 트랙.
 // 온/오프는 MOBILE_CONTROLS_KEY 등과 같은 방식으로 device-local 설정으로 둔다
 // (아래 조작 화면 쪽 토글 정의부 참고).
 const MUSIC_ENABLED_KEY = 'boss_raid_music_enabled';
 let musicEnabled = localStorage.getItem(MUSIC_ENABLED_KEY) !== '0'; // 기본 켜짐
 const BGM_TRACKS = {
     lobby: 'audio/bgm-lobby.mp3',
-    battle: 'audio/bgm-battle.mp3'
+    battle: 'audio/bgm-battle.mp3',
+    awaken: 'audio/bgm-awaken.mp3'
 };
-const BGM_BATTLE_SCREENS = new Set(['fight', 'storyFight', 'guestFight', 'zombieFight']);
+const BGM_BATTLE_SCREENS = new Set(['fight', 'storyFight', 'guestFight']);
+// 좀비막기는 항상 awaken 트랙. storyFight는 스토리 층과 각성모드가 화면을
+// 같이 쓰므로, 지금 층 키가 'awaken:쿠키:레벨' 꼴인지로 구분한다
+// (activeStoryFloor, storyFloorStarted 핸들러가 showScreen보다 먼저 채워 둔다).
+const BGM_AWAKEN_SCREENS = new Set(['zombieFight']);
 const bgmPlayer = new Audio();
 bgmPlayer.loop = true;
 bgmPlayer.volume = 0.4;
@@ -67,6 +73,8 @@ document.addEventListener('click', () => {
 }, { once: true });
 
 function bgmTrackForScreen(name) {
+    if (BGM_AWAKEN_SCREENS.has(name)) return 'awaken';
+    if (name === 'storyFight' && SHARED.parseAwakenFloorKey(activeStoryFloor)) return 'awaken';
     return BGM_BATTLE_SCREENS.has(name) ? 'battle' : 'lobby';
 }
 function playBgm(track) {
