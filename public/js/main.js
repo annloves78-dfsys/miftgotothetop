@@ -63,6 +63,9 @@ const BGM_AWAKEN_SCREENS = new Set(['zombieFight']);
 const bgmPlayer = new Audio();
 bgmPlayer.loop = true;
 bgmPlayer.volume = 0.4;
+// 미리 받아 놔야 클릭했을 때 바로 나온다 -- 안 그러면(브라우저 기본값이
+// 'metadata'일 수 있다) 클릭한 다음에야 내려받기 시작해서 몇 초씩 늦게 나온다.
+bgmPlayer.preload = 'auto';
 let bgmCurrentTrack = null;
 // 브라우저는 사용자가 한 번도 상호작용하기 전엔 소리 있는 자동재생을 막는다.
 // 페이지 아무 데나 처음 클릭하는 순간 그때 트랙을 재생한다.
