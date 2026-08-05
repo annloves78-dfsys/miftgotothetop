@@ -158,14 +158,17 @@ const charDetailInstinctNavLabel = document.getElementById('char-detail-instinct
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const menuBtn = document.getElementById('menu-btn');
 const sideMenu = document.getElementById('side-menu');
-// The ☰ menu is now just two entries (계정 / 조작); everything else moved onto
-// those two screens.
+// The ☰ menu has 계정 / 조작 (each opens its own screen) plus 음악, which is a
+// plain on/off toggle right here in the menu -- no separate screen needed for
+// one boolean.
 const accountResetBtn = document.getElementById('account-reset-btn');
 const accountResetModal = document.getElementById('account-reset-modal');
 const accountResetYes = document.getElementById('account-reset-yes');
 const accountResetNo = document.getElementById('account-reset-no');
 const menuAccountBtn = document.getElementById('menu-account-btn');
 const menuControlsBtn = document.getElementById('menu-controls-btn');
+const menuMusicBtn = document.getElementById('menu-music-btn');
+const menuMusicStatus = document.getElementById('menu-music-status');
 const accountBackBtn = document.getElementById('account-back-btn');
 const accountGuestBlock = document.getElementById('account-guest-block');
 const accountUserBlock = document.getElementById('account-user-block');
@@ -241,6 +244,23 @@ menuControlsBtn.addEventListener('click', () => {
     sideMenu.classList.add('hidden');
     updateControlsScreen();
     showScreen('controls');
+});
+function updateMenuMusicUI() {
+    menuMusicStatus.textContent = musicEnabled ? '켜짐' : '꺼짐';
+    menuMusicStatus.classList.toggle('on', musicEnabled);
+}
+updateMenuMusicUI();
+menuMusicBtn.addEventListener('click', () => {
+    // 화면을 옮겨가는 계정/조작과 달리 그 자리에서 바로 켜고 끄는 거라
+    // 메뉴를 안 닫는다.
+    musicEnabled = !musicEnabled;
+    localStorage.setItem(MUSIC_ENABLED_KEY, musicEnabled ? '1' : '0');
+    updateMenuMusicUI();
+    if (musicEnabled) {
+        if (bgmUnlocked && bgmCurrentTrack) bgmPlayer.play().catch(() => {});
+    } else {
+        bgmPlayer.pause();
+    }
 });
 
 accountBackBtn.addEventListener('click', () => showScreen('lobby'));
@@ -1320,8 +1340,6 @@ const controlsCompactStatus = document.getElementById('controls-compact-status')
 const controlsAutoAimBtn = document.getElementById('controls-autoaim-btn');
 const controlsAutoAimStatus = document.getElementById('controls-autoaim-status');
 const controlsAutoAimHint = document.getElementById('controls-autoaim-hint');
-const controlsMusicBtn = document.getElementById('controls-music-btn');
-const controlsMusicStatus = document.getElementById('controls-music-status');
 const controlsBackBtn = document.getElementById('controls-back-btn');
 const mobileControlsFight = document.getElementById('mobile-controls-fight');
 const mobileControlsStory = document.getElementById('mobile-controls-story');
@@ -1359,9 +1377,6 @@ function updateControlsScreen() {
     controlsAutoAimHint.textContent = mobileControlsEnabled
         ? '조이스틱을 켜면 자동조준은 항상 켜져 있어요. 끄려면 먼저 조이스틱을 꺼주세요.'
         : '켜면 조준할 필요 없이 클릭만 해도 가장 가까운 적을 자동으로 조준해서 공격해요.';
-
-    controlsMusicStatus.textContent = musicEnabled ? '켜짐' : '꺼짐';
-    controlsMusicStatus.classList.toggle('on', musicEnabled);
 }
 function applyMobileControlsVisibility() {
     if (!mobileControlsFight) return;
@@ -1402,16 +1417,6 @@ controlsAutoAimBtn.addEventListener('click', () => {
     autoAimEnabled = !autoAimEnabled;
     localStorage.setItem(AUTO_AIM_KEY, autoAimEnabled ? '1' : '0');
     updateControlsScreen();
-});
-controlsMusicBtn.addEventListener('click', () => {
-    musicEnabled = !musicEnabled;
-    localStorage.setItem(MUSIC_ENABLED_KEY, musicEnabled ? '1' : '0');
-    updateControlsScreen();
-    if (musicEnabled) {
-        if (bgmUnlocked && bgmCurrentTrack) bgmPlayer.play().catch(() => {});
-    } else {
-        bgmPlayer.pause();
-    }
 });
 controlsBackBtn.addEventListener('click', () => showScreen('lobby'));
 
