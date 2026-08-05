@@ -2888,6 +2888,9 @@ function updateEventBadge() {
 
 // 로비 새로고침: 로그인 상태면 클라우드 세이브를 다시 받아와 다른 기기/관리자
 // 지급 등으로 바뀐 데이터를 반영한다. 게스트는 localStorage를 다시 읽기만 한다.
+// 그 다음 페이지 자체를 새로고침해서 배포된 최신 코드(index.html/js/css)까지
+// 같이 반영한다 -- 데이터만 다시 받아오는 걸로는 새 캐릭터·기능처럼 코드 자체가
+// 바뀐 부분은 반영이 안 됐었다.
 const lobbyRefreshBtn = document.getElementById('lobby-refresh-btn');
 async function refreshLobbyData() {
     if (currentUser && currentUser.session_token) {
@@ -2914,8 +2917,7 @@ if (lobbyRefreshBtn) {
         lobbyRefreshBtn.disabled = true;
         lobbyRefreshBtn.classList.add('spinning');
         await Promise.all([refreshLobbyData(), new Promise(r => setTimeout(r, 400))]);
-        lobbyRefreshBtn.classList.remove('spinning');
-        lobbyRefreshBtn.disabled = false;
+        window.location.reload();
     });
 }
 
