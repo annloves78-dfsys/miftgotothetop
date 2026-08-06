@@ -296,6 +296,10 @@ function effectiveAttackDamage(character, p, now) {
         // 바다펄맛: 체력이 바닥나 있는 동안에는 주먹이 약해진다 (대신 때릴 때마다
         // 스스로 회복한다 -- lowHpSelfHeal 참고).
         base = character.lowHpAttackDamage + bonusOf(p).attack;
+    } else if (character.ultimateType === 'awakening_rapid' && character.instinctUltimateRapidAttackBonus
+        && p.rapidStrikeUntil && now < p.rapidStrikeUntil) {
+        // 본능해제 3강(버블티맛): 무한(연사) 상태인 동안 기본 공격 피해가 오른다.
+        base = stat(character, p, 'attackDamage') + character.instinctUltimateRapidAttackBonus + bonusOf(p).attack;
     } else {
         base = stat(character, p, 'attackDamage') + bonusOf(p).attack;
     }
@@ -1761,8 +1765,10 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
     // boss. Goes through the shared helper so a timed mark (폭포 / 마그마 쏟기)
     // behaves the same here.
     const before = room.bossElementMark;
-    // swing이 있는 호출만 기본공격이다 (날아간 물방울은 표식 규칙이 그대로).
-    const markUse = swing ? markUseOf(character, p) : null;
+    // markUseOf는 keepsOwnMarks/markEatBonus가 없는 캐릭터에겐 중립값을 주므로
+    // swing 여부와 상관없이 항상 계산해도 기존 캐릭터는 그대로다 (버블티맛처럼
+    // 날아간 투사체도 자기 표식을 건드리지 않아야 하는 경우를 위해 필요하다).
+    const markUse = markUseOf(character, p);
     dmg = Math.round(damageWithMark(bossMarkTarget(room), character, dmg, now, markUse));
     let markChanged = before !== room.bossElementMark
         || (before && room.bossElementMark && before.charges !== room.bossElementMark.charges);
@@ -1816,9 +1822,10 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
         markChanged = true;
     }
 
-    // 치즈만두맛 패시브: 궁극기와 상관없이 주먹 자체가 표식을 남긴다. swing이
-    // 없는 호출(날아간 물방울)은 기본공격이 아니므로 제외된다.
-    const attackMarks = swing && !killedBoss ? attackMarkChargesOf(character, p) : 0;
+    // 치즈만두맛/버블티맛 패시브: 궁극기와 상관없이 주먹(또는 던진 투사체) 자체가
+    // 표식을 남긴다. attackMarkUses가 없는 캐릭터는 attackMarkChargesOf가 0을
+    // 돌려주므로 swing 여부와 상관없이 항상 계산해도 기존 캐릭터는 그대로다.
+    const attackMarks = !killedBoss ? attackMarkChargesOf(character, p) : 0;
     if (attackMarks && applyElementMark(bossMarkTarget(room), character.element,
         attackMarkOpts(character, attackMarks), now)) {
         markChanged = true;
@@ -2976,8 +2983,13 @@ function tickStoryRoom(roomId) {
             if (Math.hypot(pr.x - m.x, pr.y - m.y) > pr.radius + mR(m)) continue;
             const owner = room.players[pr.ownerId];
             const oc = owner ? charOf(owner) : CHARACTERS[pr.charType];
-            landStoryHitOnMonster(roomId, room, mid, m, pr.ownerId, oc, pr.damage, Date.now(),
-                { knockback: false, marks: pr.marks });
+            // 버블티맛 패시브: 던진 펄이 맞아도 표식이 쌓인다 (attackMarkUses가
+            // 없는 캐릭터는 항상 0이라 다른 캐릭터는 그대로다).
+            landStoryHitOnMonster(roomId, room, mid, m, pr.ownerId, oc, pr.damage, Date.now(), {
+                knockback: false, marks: pr.marks,
+                attackMarks: owner ? attackMarkChargesOf(oc, owner) : 0,
+                markUse: owner ? markUseOf(oc, owner) : null
+            });
             if (owner && owner.alive) {
                 const selfHeal = passiveHitHeal(oc, owner);
                 if (selfHeal) {
@@ -3997,6 +4009,14 @@ function tickGuestRoom(roomId) {
         damageGuestTargets(roomId, room, targets, pr.damage, pr.ownerId);
         if (!rooms[roomId]) return true;
         const owner = room.players[pr.ownerId];
+        // 버블티맛 패시브: 던진 펄이 맞아도 표식이 쌓인다 (attackMarkUses가
+        // 없는 캐릭터는 항상 0이라 다른 캐릭터는 그대로다).
+        if (owner) {
+            const oc = charOf(owner);
+            const attackMarks = attackMarkChargesOf(oc, owner);
+            if (attackMarks) markGuestTargets(roomId, room, targets, oc.element, attackMarkOpts(oc, attackMarks));
+            if (!rooms[roomId]) return true;
+        }
         if (owner && owner.alive) {
             const oc = charOf(owner);
             const selfHeal = passiveHitHeal(oc, owner);

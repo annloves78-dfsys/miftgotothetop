@@ -890,6 +890,49 @@ const CHARACTERS = {
         ultimateRadius: 200, // 조준 UI/모바일 낙하 거리 계산용 (판정은 사각형)
         ultimateCooldownMs: 30000
     },
+    // 빛 속성 원거리 마커. 치즈만두맛처럼 표식을 쌓기만 하고 자기 것은 먹지
+    // 않는(keepsOwnMarks) 컨셉을 원거리로 옮긴 버전 -- 던지는 펄이 스스로
+    // 피해를 크게 뽑기보다는, 팀 딜러들이 먹을 표식을 계속 깔아 주는 역할이다.
+    bubbletea: {
+        name: '버블티맛 쿠키',
+        shortName: '버블티', // shown on the lobby's character-select button
+        color: '#a9744f',
+        colorLeft: '#6f4423', // 갈색 밀크티
+        colorRight: '#f3e0c4', // 크림/타피오카
+        grade: '에픽',
+        element: '빛',
+        role: '스트라이커',
+        health: 100,
+        speed: 2,
+        // 버블티 펄 던지기: 실제로 날아가는 투사체라 빗나갈 수 있다. 맞을
+        // 때마다 빛 표식을 attackMarkUses번 쌓지만, keepsOwnMarks라 자기
+        // 스스로는 그 표식을 먹지(소모하지) 않는다.
+        attackType: 'throw_projectile',
+        attackProjectileRadius: 9,
+        attackProjectileSpeed: 480,
+        attackRange: 480,
+        attackDamage: 5,
+        attackCooldown: 500,
+        attackMarkUses: 1,
+        attackMarkMultiplier: 1.5,
+        keepsOwnMarks: true,
+        // 큰 거 던지기: 치즈만두맛의 만두 주먹(mark_punch)과 같은 방식으로
+        // 전방의 적 전부(관통)에게 표식을 15개나 박는다. burst 계열 필드가
+        // 없어서 표식을 터뜨리진 않고, 그 한 방의 피해는 5로 고정이다.
+        skillType: 'mark_punch',
+        skillRange: 320,
+        skillWidth: 70,
+        skillDamage: 5,
+        skillMarkUses: 15,
+        skillMarkMultiplier: 1.5,
+        skillCooldown: 10000,
+        // 무한: 오렌지 레몬맛과 같은 awakening_rapid를 발차기 없이 그대로
+        // 쓴다 -- 10초 동안 기본 공격의 재사용 대기시간이 사실상 사라진다.
+        ultimateType: 'awakening_rapid',
+        ultimateDurationMs: 10000,
+        ultimateRapidCooldown: 100,
+        ultimateCooldownMs: 30000
+    },
     seaguardian: {
         name: '바다 수호자맛 쿠키',
         shortName: '수호자', // shown on the lobby's character-select button
@@ -5816,6 +5859,21 @@ const INSTINCT_CHAR_LEVELS = {
         5: {
             effect: { attackProjectileCount: 5 },
             desc: '기본 공격의 빛 구슬이 5개로 늘어납니다.'
+        }
+    },
+    // 버블티맛 쿠키: 궁극기(무한) 공격력과 기본공격의 표식/자힐을 강화한다.
+    bubbletea: {
+        3: {
+            effect: { instinctUltimateRapidAttackBonus: 2 },
+            desc: '궁극기(무한)가 켜져 있는 동안 기본 공격 피해가 2 늘어나 7이 됩니다.'
+        },
+        4: {
+            effect: { attackMarkUses: 2 },
+            desc: '기본 공격이 맞을 때마다 붙는 빛 속성 표식이 2개로 늘어납니다.'
+        },
+        5: {
+            effect: { attackHealEveryHits: 1, attackHealSelf: 1 },
+            desc: '기본 공격이 맞을 때마다 자신의 체력을 1만큼 회복합니다.'
         }
     }
 };

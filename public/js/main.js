@@ -968,7 +968,7 @@ function describeAbility(stats, kind) {
                 + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
-            const noun = stats.element === '불' ? '불꽃' : '물방울';
+            const noun = stats.element === '불' ? '불꽃' : stats.element === '빛' ? '버블티 펄' : '물방울';
             return `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
@@ -1022,6 +1022,12 @@ function describeAbility(stats, kind) {
             case 'charge_dash':
                 return `전방으로 빠르게 돌진해 최대 ${stats.skillRange}px까지 달려가 부딪칩니다. 맞은 적에게 ${stats.skillDamage}의 피해를 주고, 그 뒤 ${sec(stats.skillSpeedDurationMs)}초 동안 이동 속도가 ${stats.skillSpeedBonus} 빨라집니다.${cd}`;
             case 'mark_punch':
+                // 버블티맛처럼 표식을 터뜨리는 게 아니라 쌓기만 하는 쪽은
+                // skillMarkBurstDamage가 아예 없다 -- 그 경우엔 burst 문단을 뺀다.
+                if (!stats.skillMarkBurstDamage) {
+                    return `앞으로 아주 큰 것을 던져 전방 ${stats.skillRange}px(가로 ${stats.skillWidth}px) 범위의 적을 관통하며 ${stats.skillDamage}의 피해를 줍니다.`
+                        + ` 맞은 적 전부에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}개씩 박습니다.${cd}`;
+                }
                 return [
                     `앞으로 주먹을 질러 전방 ${stats.skillRange}px(가로 ${stats.skillWidth}px) 범위의 적을 ${stats.skillDamage}만큼 때립니다.`,
                     `맞은 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}개 박고, 그 적에게 쌓여 있던 표식을 전부 터뜨립니다.`,
@@ -1076,8 +1082,17 @@ function describeAbility(stats, kind) {
                 return `상체와 하체를 하나로 합칩니다. ${sec(stats.ultimateDurationMs)}초 동안 체력이 두 몸을 합친 것이 되고`
                     + ` (지금 나온 몸의 체력 + 쉬고 있던 몸의 체력), 공격력이 ${stats.ultimateAttackDamage}가 됩니다.`
                     + ` 시간이 다 되면 저절로 풀리며, 풀리는 순간 상체·풀피로 돌아옵니다.${cd}`;
-            case 'awakening_rapid':
-                return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어들고, ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.${cd}`;
+            case 'awakening_rapid': {
+                // 오렌지 레몬맛은 자동 발차기가 붙지만, 버블티맛처럼 재사용
+                // 대기시간만 줄이는 쪽은 ultimateAutoKickEvery 자체가 없다.
+                const kickText = stats.ultimateAutoKickEvery
+                    ? ` ${stats.ultimateAutoKickEvery}번째 공격마다 자동으로 발차기(피해 ${stats.skillDamage})가 나갑니다.`
+                    : '';
+                const bonusText = stats.instinctUltimateRapidAttackBonus
+                    ? ` 그동안 기본 공격 피해가 ${stats.instinctUltimateRapidAttackBonus}만큼 늘어납니다.`
+                    : '';
+                return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어듭니다.${kickText}${bonusText}${cd}`;
+            }
             case 'team_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
             case 'team_hot_shield':
@@ -1674,10 +1689,11 @@ function isFireProjectile(charType) {
     const stats = charType && SHARED.CHARACTERS[charType];
     return !!(stats && stats.element === '불');
 }
-// 쿠키맛쿠키의 빛의 구슬처럼 물/불 어느 쪽도 아닌 투사체는 금빛으로 그린다.
+// 쿠키맛쿠키의 빛의 구슬, 버블티맛의 펄처럼 물/불 어느 쪽도 아닌 빛 속성
+// 투사체는 금빛으로 그린다.
 function isLightProjectile(charType) {
     const stats = charType && SHARED.CHARACTERS[charType];
-    return !!(stats && stats.element === '빛' && stats.attackType === 'homing_burst');
+    return !!(stats && stats.element === '빛');
 }
 function drawThrownDrops(c, drops, now) {
     Object.values(drops).forEach(d => {
