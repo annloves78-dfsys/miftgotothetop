@@ -1192,6 +1192,32 @@ function charIconBackground(stats) {
     return stats.color;
 }
 
+// Same body/weapon drawing the game canvas uses (drawCookieBody/
+// drawCharacterWeapon from player.js), rendered onto a portrait <canvas> so
+// the big "look at your cookie" spots (lobby centrepiece, character detail)
+// show the held weapon too -- CSS-only .char-icon-circle spots elsewhere
+// still use charIconBackground and don't show it.
+// The body is drawn well under half the canvas (not edge-to-edge like the
+// old CSS circle) because weapons draw OUTSIDE the body radius -- a hook or
+// spear needs real room to the side or it just gets clipped by the canvas
+// edge again, which was the original bug report.
+function drawCharIconCanvas(canvas, stats) {
+    const size = canvas.width;
+    const R = size * 0.2;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    drawCookieBody(ctx, R, stats, true);
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, R * 0.08);
+    ctx.strokeStyle = '#f1c40f';
+    ctx.stroke();
+    drawCharacterWeapon(ctx, R, stats, true);
+    ctx.restore();
+}
+
 // 본능해제 탭에서 좌우 화살표로 훑어보는 중인 강화 단계. 실제 보유 레벨과는
 // 별개다 -- 탭에 처음 들어올 때만 보유 레벨(없으면 1강)로 되돌아간다.
 let instinctViewLevel = 1;
@@ -1849,7 +1875,7 @@ function syncMobileCooldowns(skillRemain, ultRemain, isStory, noUltimate) {
 function updateSelectedCharLabel() {
     const stats = SHARED.CHARACTERS[gameData.selectedCharacter] || SHARED.CHARACTERS.kicker;
     selectedCharNameEl.textContent = stats.shortName || stats.name;
-    lobbyCharBody.style.background = charIconBackground(stats);
+    drawCharIconCanvas(lobbyCharBody, stats);
     lobbyCharName.textContent = stats.name;
 }
 updateSelectedCharLabel();
@@ -2058,7 +2084,7 @@ function renderCharDetailEquipment(charType) {
 function openCharacterDetail(id) {
     viewingCharacterId = id;
     const stats = statsWithGear(id);
-    charDetailIcon.style.background = charIconBackground(stats);
+    drawCharIconCanvas(charDetailIcon, stats);
     charDetailName.textContent = stats.name;
     charDetailGrade.textContent = stats.grade || '-';
     charDetailGrade.className = gradeClass(stats.grade);

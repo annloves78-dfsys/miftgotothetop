@@ -45,7 +45,7 @@
         </div>
         <!-- The lobby centrepiece is whichever cookie is currently selected. -->
         <div id="lobby-char" class="lobby-char">
-            <div id="lobby-char-body" class="lobby-char-body"></div>
+            <canvas id="lobby-char-body" class="lobby-char-body" width="240" height="240"></canvas>
             <div id="lobby-char-name" class="lobby-char-name"></div>
         </div>
         <!-- 이벤트 sits on its own line above the 캐릭터/상점/뽑기 row. -->
@@ -488,7 +488,7 @@
             </div>
             <div class="cd-body">
                 <div class="cd-portrait">
-                    <div id="char-detail-icon" class="char-icon-circle huge"></div>
+                    <canvas id="char-detail-icon" class="char-icon-circle huge" width="300" height="300"></canvas>
                 </div>
                 <div class="char-equip-section cd-equip-col">
                     <div id="char-detail-awaken-slot" class="equip-slot clickable hidden" data-slot="awaken"><span class="equip-icon">✨</span><span class="equip-label">각성</span><span class="equip-value">-</span></div>

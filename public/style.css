@@ -54,11 +54,9 @@ html, body {
 }
 
 .lobby-char-body {
-    width: 180px;
-    height: 180px;
-    border-radius: 50%;
-    border: 5px solid #f1c40f;
-    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(241, 196, 15, 0.2);
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, rgba(241, 196, 15, 0.22), transparent 65%);
 }
 
 .lobby-char-name {
@@ -935,6 +933,24 @@ html, body {
     background: #3498db;
 }
 
+/* These two are <canvas> now (draw the cookie's body AND held weapon --
+   see drawCharIconCanvas in main.js), not a CSS circle swatch, so they must
+   NOT get the shared .char-icon-circle border-radius clip or border: a
+   weapon can stick out past the "body" circle on purpose and a hard round
+   clip would cut it off (this is literally the bug it used to have). */
+#lobby-char-body,
+#char-detail-icon {
+    border-radius: 0;
+    border: none;
+}
+
+/* .cd-portrait (the parent) already has its own radial glow behind this, so
+   this one just needs to get out of the way instead of showing the shared
+   .char-icon-circle flat blue swatch fallback. */
+#char-detail-icon {
+    background: transparent;
+}
+
 .char-name {
     font-size: 18px;
     font-weight: bold;
@@ -1251,8 +1267,8 @@ html, body {
 }
 
 .char-icon-circle.huge {
-    width: 220px;
-    height: 220px;
+    width: 300px;
+    height: 300px;
 }
 
 .cd-equip-col {
@@ -1754,9 +1770,8 @@ body.mc-compact .lobby-char {
 }
 
 body.mc-compact .lobby-char-body {
-    width: 110px;
-    height: 110px;
-    border-width: 4px;
+    width: 150px;
+    height: 150px;
 }
 
 body.mc-compact .lobby-char-name {
@@ -1907,8 +1922,8 @@ body.mc-compact .cd-power {
 }
 
 body.mc-compact .char-icon-circle.huge {
-    width: 120px;
-    height: 120px;
+    width: 170px;
+    height: 170px;
 }
 
 body.mc-compact .equip-slot {
