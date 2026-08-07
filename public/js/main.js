@@ -5157,6 +5157,10 @@ function storyRender(now) {
         storyCtx.lineWidth = 2;
         storyCtx.strokeStyle = '#3498db'; // 파란 테두리 = 파트너
         storyCtx.stroke();
+        storyCtx.save();
+        storyCtx.rotate(pl.facing || 0);
+        drawCharacterWeapon(storyCtx, R, pStats, pl.alive);
+        storyCtx.restore();
         if (pl.shieldHp > 0) {
             storyCtx.beginPath();
             storyCtx.arc(0, 0, R + 6, 0, Math.PI * 2);
@@ -5258,6 +5262,10 @@ function storyRender(now) {
         storyCtx.strokeStyle = '#f1c40f';
         storyCtx.lineWidth = 3;
         storyCtx.stroke();
+        storyCtx.save();
+        storyCtx.rotate(storyPlayer.facing || 0);
+        drawCharacterWeapon(storyCtx, R, stats, storyPlayer.alive);
+        storyCtx.restore();
         storyCtx.restore();
 
         const barW = 40, barH = 5;

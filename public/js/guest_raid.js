@@ -1267,6 +1267,7 @@ function guestRender(now) {
         guestCtx.closePath();
         guestCtx.fillStyle = p.alive ? '#f1c40f' : '#7f8c8d';
         guestCtx.fill();
+        drawCharacterWeapon(guestCtx, R, stats, p.alive);
         guestCtx.restore();
 
         const barW = 40, barH = 5;

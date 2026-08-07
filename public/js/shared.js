@@ -13,9 +13,7 @@ const CHARACTERS = {
     kicker: {
         name: '자두맛 쿠키',
         shortName: '쿠키', // shown on the lobby's character-select button
-        color: '#3498db',
-        colorLeft: '#ff6b9d', // pink
-        colorRight: '#e74c3c', // red
+        color: '#ff6b9d', // pink, solid (no weapon)
         grade: '일반',
         element: '바람',
         role: '힐러',
@@ -39,9 +37,9 @@ const CHARACTERS = {
     sweetpotato: {
         name: '자색 고구마맛 쿠키',
         shortName: '고구마', // shown on the lobby's character-select button
-        color: '#8e44ad',
-        colorLeft: '#f1c40f', // yellow
-        colorRight: '#8e44ad', // purple
+        color: '#8e44ad', // purple, solid
+        weaponShape: 'hook',
+        weaponColor: '#ad1457', // 자주색 (magenta-purple hook)
         grade: '희귀',
         element: '어둠',
         role: '대미지 딜러',
@@ -64,9 +62,9 @@ const CHARACTERS = {
     spinach: {
         name: '시금치맛 쿠키',
         shortName: '시금치', // shown on the lobby's character-select button
-        color: '#27ae60',
-        colorLeft: '#e74c3c', // red
-        colorRight: '#27ae60', // green
+        color: '#27ae60', // green, solid
+        weaponShape: 'whip',
+        weaponColor: '#e74c3c', // red whip
         grade: '일반',
         element: '바람',
         role: '힐러',
@@ -93,9 +91,11 @@ const CHARACTERS = {
     reddragon: {
         name: '레드 드레곤맛 쿠키',
         shortName: '드레곤', // shown on the lobby's character-select button
-        color: '#c0392b',
-        colorLeft: '#3498db', // blue
-        colorRight: '#e74c3c', // red
+        color: '#e74c3c',
+        colorLeft: '#e74c3c', // red
+        colorRight: '#ffffff', // white
+        weaponShape: 'shield',
+        weaponColor: '#3498db', // blue shield
         grade: '에픽',
         element: '불',
         role: '탱커',
@@ -121,11 +121,9 @@ const CHARACTERS = {
     volcano: {
         name: '화산맛 쿠키',
         shortName: '화산', // shown on the lobby's character-select button
-        // Blue/red. Deliberately deeper shades than 레드 드레곤맛's blue/red so
-        // the two don't read as the same cookie at a glance.
-        color: '#c0392b',
-        colorLeft: '#2980b9', // blue
-        colorRight: '#c0392b', // red
+        color: '#2980b9', // blue, solid
+        weaponShape: 'fist',
+        weaponColor: '#e74c3c', // red volcano fist
         grade: '에픽',
         element: '불',
         role: '대미지 딜러',
@@ -222,9 +220,9 @@ const CHARACTERS = {
     board: {
         name: '보드맛 쿠키',
         shortName: '보드', // shown on the lobby's character-select button
-        color: '#3498db',
-        colorLeft: '#f1c40f', // yellow
-        colorRight: '#3498db', // blue
+        color: '#3498db', // blue, solid
+        weaponShape: 'board',
+        weaponColor: '#f1c40f', // yellow board
         grade: '희귀',
         element: '물',
         role: '탱커',
@@ -287,9 +285,9 @@ const CHARACTERS = {
     lightning: {
         name: '번개전사맛 쿠키',
         shortName: '번개전사', // shown on the lobby's character-select button
-        color: '#e74c3c',
-        colorLeft: '#e67e22', // orange
-        colorRight: '#e74c3c', // red
+        color: '#e67e22', // orange, solid
+        weaponShape: 'sword',
+        weaponColor: '#e74c3c', // red lightning-sword
         grade: '레전더리',
         element: '빛',
         role: '대미지 딜러',
@@ -331,9 +329,9 @@ const CHARACTERS = {
     waterdrop: {
         name: '물방울맛 쿠키',
         shortName: '물방울', // shown on the lobby's character-select button
-        color: '#3498db',
-        colorLeft: '#1f6fb2', // blue
-        colorRight: '#7fd4f5', // sky
+        color: '#1f6fb2', // blue, solid
+        weaponShape: 'drop',
+        weaponColor: '#5dade2', // giant blue water-drop
         grade: '레전더리',
         element: '물',
         role: '스트라이커',
@@ -370,11 +368,9 @@ const CHARACTERS = {
     magma: {
         name: '마그마맛 쿠키',
         shortName: '마그마', // shown on the lobby's character-select button
-        // 빨강 + 핑크. Deliberately a darker red and a hotter pink than
-        // 자두맛's soft pink/red, which is the same pair of colours.
-        color: '#c0392b',
-        colorLeft: '#a93226', // deep red
-        colorRight: '#ff2d78', // hot pink
+        color: '#a93226', // deep red, solid
+        weaponShape: 'spear',
+        weaponColor: '#e74c3c', // red spear
         grade: '레전더리',
         element: '불',
         role: '스트라이커',
@@ -417,6 +413,8 @@ const CHARACTERS = {
         color: '#141218',
         colorLeft: '#ff4f9a', // pink
         colorRight: '#141218', // black
+        weaponShape: 'club',
+        weaponColor: '#27ae60', // 초록 막대 (green club)
         grade: '비스트',
         element: '어둠',
         role: '탱커',
@@ -444,9 +442,9 @@ const CHARACTERS = {
     dragonfruit: {
         name: '용과맛 쿠키',
         shortName: '용과',
-        color: '#e0498a',
-        colorLeft: '#ff7ab6', // pink
-        colorRight: '#2ecc71', // green
+        color: '#ff7ab6', // pink, solid
+        weaponShape: 'sword',
+        weaponColor: '#2ecc71', // 초록색 타오르는 검 (green flame sword)
         grade: '에이션트',
         element: '불',
         role: '힐러',
@@ -479,6 +477,8 @@ const CHARACTERS = {
         color: '#ff69b4',
         colorLeft: '#ffa6cf', // pink
         colorRight: '#3498db', // blue
+        weaponShape: 'rollingpin',
+        weaponColor: '#3498db', // 파랑 밀대
         grade: '에픽',
         element: '바람',
         role: '대미지 딜러',
@@ -514,9 +514,9 @@ const CHARACTERS = {
     lightningdevil: {
         name: '번개악마맛 쿠키',
         shortName: '번개악마',
-        color: '#e67e22',
-        colorLeft: '#e67e22', // 주황
-        colorRight: '#4a1d7a', // 진한 보라
+        color: '#e67e22', // 주황, solid
+        weaponShape: 'greatsword',
+        weaponColor: '#6c3483', // 보라빛 대검
         grade: '비스트',
         element: '빛',
         role: '대미지 딜러',
@@ -573,7 +573,7 @@ const CHARACTERS = {
         shortName: '바다펄',
         color: '#1b4f8a',
         colorLeft: '#2e86de', // 파랑
-        colorRight: '#12161c', // 검정
+        colorRight: '#7f8c8d', // 회색
         grade: '비스트',
         element: '물',
         role: '힐러',
@@ -614,11 +614,12 @@ const CHARACTERS = {
     lightninghell: {
         name: '번개지옥맛 쿠키',
         shortName: '번개지옥', // shown on the lobby's character-select button
-        // Black/yellow, not purple/yellow: purple+yellow is 자색 고구마맛's
-        // exact pair and the two cookies were hard to tell apart.
-        color: '#1c1c22',
-        colorLeft: '#1c1c22', // black
-        colorRight: '#f1c40f', // yellow
+        // 자색 고구마맛은 이제 보라 단색이라 더 이상 노랑+보라 조합이 겹치지 않는다.
+        color: '#f1c40f',
+        colorLeft: '#f1c40f', // 노랑
+        colorRight: '#e67e22', // 주황
+        weaponShape: 'dualswords',
+        weaponColor: '#6c3483', // 보라빛 쌍검
         grade: '게스트',
         element: '어둠',
         role: '대미지 딜러',
@@ -752,9 +753,11 @@ const CHARACTERS = {
     hellflavor: {
         name: '지옥맛 쿠키',
         shortName: '지옥',
-        color: '#12081f',
-        colorLeft: '#3d0a66', // 보라
-        colorRight: '#0a0a0a', // 검정
+        color: '#f1c40f',
+        colorLeft: '#f1c40f', // 노랑
+        colorRight: '#3d0a66', // 보라
+        weaponShape: 'axe',
+        weaponColor: '#6c3483', // 보라색 도끼
         grade: '비스트',
         element: '어둠',
         role: '대미지 딜러',
@@ -799,9 +802,9 @@ const CHARACTERS = {
     flamefairy: {
         name: '불꽃요정맛 쿠키',
         shortName: '불꽃요정',
-        color: '#8b1a1a',
-        colorLeft: '#8b1a1a', // 찐한 빨강
-        colorRight: '#e74c3c', // 그냥 빨강
+        color: '#e74c3c', // 빨강, solid
+        weaponShape: 'shield',
+        weaponColor: '#c0392b', // 빨간 방패
         grade: '게스트',
         element: '불',
         role: '대미지 딜러',
@@ -848,9 +851,9 @@ const CHARACTERS = {
     plaincookie: {
         name: '쿠키맛 쿠키',
         shortName: '쿠키맛', // shown on the lobby's character-select button
-        color: '#e8a33d',
-        colorLeft: '#fff3b0', // 연한 빛
-        colorRight: '#c8791b', // 진한 금갈색
+        color: '#c8791b', // 갈색, solid
+        weaponShape: 'orb',
+        weaponColor: '#8b5a2b', // 갈색 쿠키구슬
         grade: '게스트',
         element: '빛',
         role: '힐러',
@@ -936,9 +939,9 @@ const CHARACTERS = {
     seaguardian: {
         name: '바다 수호자맛 쿠키',
         shortName: '수호자', // shown on the lobby's character-select button
-        color: '#5b6ea3',
-        colorLeft: '#3498db', // 파랑
-        colorRight: '#7d3c98', // 보라
+        color: '#3498db', // 파랑, solid
+        weaponShape: 'shield',
+        weaponColor: '#2471a3', // 파랑 방패
         grade: '에픽',
         element: '물',
         role: '탱커',

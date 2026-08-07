@@ -731,6 +731,7 @@ function zombieDrawPlayer(ctx, p, isLocal, now) {
     ctx.closePath();
     ctx.fillStyle = p.alive ? '#f1c40f' : '#7f8c8d';
     ctx.fill();
+    drawCharacterWeapon(ctx, R, stats, p.alive);
     ctx.restore();
 
     const barW = 40, barH = 5;

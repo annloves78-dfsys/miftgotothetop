@@ -33,6 +33,233 @@ function drawCookieBody(ctx, radius, stats, alive) {
     ctx.fill();
 }
 
+// Draws a character's held weapon, if it has one (stats.weaponShape/weaponColor
+// in shared.js -- most cookies have neither and this is a no-op). Call this
+// AFTER the context has been rotated to facingAngle, same as the facing
+// triangle, so the weapon points the way the cookie is looking. `R` is the
+// body radius; the weapon is drawn just outside it on the facing side.
+function drawCharacterWeapon(ctx, R, stats, alive) {
+    if (!alive || !stats.weaponShape) return;
+    const color = stats.weaponColor || '#7f8c8d';
+    const hx = R + 4; // where the "hand" is, just past the body edge
+
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+
+    switch (stats.weaponShape) {
+        case 'hook': {
+            const len = R * 1.5;
+            ctx.beginPath();
+            ctx.moveTo(hx, R * 0.1);
+            ctx.lineTo(hx + len * 0.55, -R * 0.35);
+            ctx.quadraticCurveTo(hx + len, -R * 0.85, hx + len * 0.65, -R * 1.4);
+            ctx.lineWidth = Math.max(3, R * 0.32);
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            break;
+        }
+        case 'whip': {
+            const len = R * 2.1;
+            ctx.beginPath();
+            ctx.moveTo(hx, 0);
+            for (let i = 1; i <= 5; i++) {
+                const t = i / 5;
+                ctx.lineTo(hx + len * t, Math.sin(t * Math.PI * 2.2) * R * 0.5);
+            }
+            ctx.lineWidth = Math.max(2, R * 0.11);
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            break;
+        }
+        case 'shield': {
+            const w = R * 0.85, h = R * 1.25;
+            ctx.beginPath();
+            ctx.ellipse(hx + w * 0.35, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.stroke();
+            break;
+        }
+        case 'fist': {
+            const fr = R * 0.55;
+            ctx.beginPath();
+            ctx.arc(hx + fr, R * 0.15, fr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.stroke();
+            break;
+        }
+        case 'board': {
+            const w = R * 1.7, h = R * 0.6;
+            ctx.save();
+            ctx.translate(hx + w * 0.45, 0);
+            ctx.rotate(-0.5);
+            ctx.beginPath();
+            ctx.rect(0, -h / 2, w, h);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.stroke();
+            ctx.restore();
+            break;
+        }
+        case 'sword': {
+            const len = R * 1.9, w = R * 0.32;
+            ctx.beginPath();
+            ctx.moveTo(hx, -w / 2);
+            ctx.lineTo(hx + len * 0.8, -w / 2);
+            ctx.lineTo(hx + len, 0);
+            ctx.lineTo(hx + len * 0.8, w / 2);
+            ctx.lineTo(hx, w / 2);
+            ctx.closePath();
+            ctx.fill();
+            // crossguard
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(hx - R * 0.08, -w * 1.1, R * 0.16, w * 2.2);
+            break;
+        }
+        case 'spear': {
+            const len = R * 2.3, w = R * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(hx, -R * 0.14);
+            ctx.lineTo(hx + len * 0.85, -R * 0.14);
+            ctx.lineTo(hx + len, 0);
+            ctx.lineTo(hx + len * 0.85, R * 0.14);
+            ctx.lineTo(hx, R * 0.14);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(hx + len * 0.85, -w / 2);
+            ctx.lineTo(hx + len * 1.15, 0);
+            ctx.lineTo(hx + len * 0.85, w / 2);
+            ctx.closePath();
+            ctx.fill();
+            break;
+        }
+        case 'drop': {
+            const dr = R * 0.55;
+            const dx = hx + dr * 0.9;
+            ctx.beginPath();
+            ctx.moveTo(dx, -dr * 1.6);
+            ctx.quadraticCurveTo(dx + dr * 1.1, -dr * 0.2, dx, dr * 0.9);
+            ctx.quadraticCurveTo(dx - dr * 1.1, -dr * 0.2, dx, -dr * 1.6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+            ctx.stroke();
+            break;
+        }
+        case 'club': {
+            // Handle + a fat rounded head, like a bat/mace.
+            const len = R * 1.6, headR = R * 0.5;
+            ctx.lineWidth = R * 0.22;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(hx, 0);
+            ctx.lineTo(hx + len * 0.65, -R * 0.1);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(hx + len * 0.8, -R * 0.15, headR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.stroke();
+            break;
+        }
+        case 'rollingpin': {
+            // Long capsule barrel with two small handle knobs at each end.
+            const len = R * 1.9, barrelR = R * 0.28;
+            ctx.beginPath();
+            ctx.arc(hx + barrelR, 0, barrelR, Math.PI / 2, -Math.PI / 2);
+            ctx.arc(hx + len - barrelR, 0, barrelR, -Math.PI / 2, Math.PI / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(hx - barrelR * 0.4, 0, barrelR * 0.55, 0, Math.PI * 2);
+            ctx.arc(hx + len + barrelR * 0.4, 0, barrelR * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+        }
+        case 'greatsword': {
+            // Same silhouette as 'sword', scaled up, with a soft glow ring.
+            const len = R * 2.4, w = R * 0.5;
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = R * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(hx, -w / 2);
+            ctx.lineTo(hx + len * 0.8, -w / 2);
+            ctx.lineTo(hx + len, 0);
+            ctx.lineTo(hx + len * 0.8, w / 2);
+            ctx.lineTo(hx, w / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(hx - R * 0.1, -w * 1.15, R * 0.2, w * 2.3);
+            break;
+        }
+        case 'dualswords': {
+            // Two shorter blades, one angled up and one down, same colour.
+            const len = R * 1.5, w = R * 0.24;
+            [-1, 1].forEach(side => {
+                ctx.save();
+                ctx.rotate(side * 0.35);
+                ctx.beginPath();
+                ctx.moveTo(hx, -w / 2);
+                ctx.lineTo(hx + len * 0.8, -w / 2);
+                ctx.lineTo(hx + len, 0);
+                ctx.lineTo(hx + len * 0.8, w / 2);
+                ctx.lineTo(hx, w / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            });
+            break;
+        }
+        case 'axe': {
+            const len = R * 1.4, headR = R * 0.6;
+            ctx.lineWidth = R * 0.16;
+            ctx.strokeStyle = 'rgba(90,60,20,0.9)'; // wooden handle
+            ctx.beginPath();
+            ctx.moveTo(hx, R * 0.1);
+            ctx.lineTo(hx + len, -R * 0.5);
+            ctx.stroke();
+            // Crescent axe-head at the far end of the handle.
+            ctx.beginPath();
+            ctx.arc(hx + len, -R * 0.5, headR, Math.PI * 0.15, Math.PI * 1.35);
+            ctx.lineTo(hx + len - headR * 0.35, -R * 0.5);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.stroke();
+            break;
+        }
+        case 'orb': {
+            const orbR = R * 0.42;
+            const ox = hx + orbR * 1.2;
+            ctx.beginPath();
+            ctx.arc(ox, -R * 0.2, orbR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.stroke();
+            break;
+        }
+    }
+    ctx.restore();
+}
+
 // Skills whose self-aura lasts the whole buff instead of a quick 350ms flash,
 // because the buff being up is information the player needs while fighting.
 const SKILL_FULL_DURATION_EFFECTS = ['spin_heal', 'guard_stance', 'sea_hide'];
@@ -468,6 +695,7 @@ class Player {
         ctx.closePath();
         ctx.fillStyle = this.alive ? '#f1c40f' : '#7f8c8d';
         ctx.fill();
+        drawCharacterWeapon(ctx, R, this.stats, this.alive);
 
         ctx.restore();
 
