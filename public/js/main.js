@@ -4179,6 +4179,16 @@ socket.on('storyPlayerSwapped', ({ id, charType, hp, maxHp, active, partyAlive, 
     syncMobileButtonIcons(charType, true);
 });
 
+// 바람궁수맛 궁극기 3단계가 벤치의 쓰러진 파티 쿠키만 되살릴 때. 지금 나와
+// 있는 쿠키는 안 바뀌므로 storyPlayerSwapped처럼 쿨다운을 초기화하면 안 되고,
+// 교체 줄(파티 바)의 죽음 표시만 지워주면 된다.
+socket.on('storyPartyRevived', ({ partyAlive, partyHp }) => {
+    if (!awakenFightParty) return;
+    awakenFightParty.partyAlive = partyAlive;
+    awakenFightParty.partyHp = partyHp;
+    renderAwakenSwapBar();
+});
+
 // ---- 각성모드 보스가 스킬/궁극기를 쓸 때 ----
 socket.on('bossAbility', ({ x, y, radius, kind }) => {
     storyImpactEffects.push({ x, y, radius, until: performance.now() + (kind === 'ultimate' ? 700 : 450) });

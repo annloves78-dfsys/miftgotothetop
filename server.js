@@ -1980,12 +1980,16 @@ function reviveDownedStoryTeammate(roomId, room) {
         io.to(id).emit('storyPlayerRevived', { hp: pl.hp });
         return true;
     }
-    for (const pl of Object.values(room.players)) {
+    for (const [id, pl] of Object.entries(room.players)) {
         if (!pl.partyAlive) continue;
         const idx = pl.partyAlive.findIndex(a => !a);
         if (idx === -1) continue;
         pl.partyAlive[idx] = true;
         pl.partyHp[idx] = pl.partyMaxHp[idx];
+        // 지금 나와 있는 쿠키는 그대로라 storyPlayerSwapped를 재활용하면
+        // (거긴 "활성 쿠키가 바뀌었다"는 전제로 쿨다운까지 초기화한다) 안 되고,
+        // 벤치 쪽 상태만 알려주는 전용 이벤트가 필요하다.
+        io.to(id).emit('storyPartyRevived', { partyAlive: pl.partyAlive, partyHp: pl.partyHp });
         return true;
     }
     return false;
