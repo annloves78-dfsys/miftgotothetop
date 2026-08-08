@@ -4146,6 +4146,11 @@ socket.on('storyTideCast', ({ windupMs, x, y, radius }) => {
 socket.on('storyTideStage', ({ id, stage }) => {
     if (storyPlayer && id === socket.id) storyPlayer.tideStage = stage;
 });
+// 바람궁수맛 각성. level은 방금 쓴 단계(1 또는 2)이므로, 다음에 쓸 단계는
+// 그다음(2 또는 3) -- 0-indexed로 저장하는 natureAwakenLevel은 level % 3.
+socket.on('natureAwaken', ({ id, level }) => {
+    if (storyPlayer && id === socket.id) storyPlayer.natureAwakenLevel = level % 3;
+});
 
 // 일어나면서 터지는 충격파 (번개지옥맛).
 socket.on('bossReviveBlast', ({ x, y }) => {
@@ -4697,6 +4702,9 @@ function updateStoryCooldownDisplay(now) {
     // 밀물은 다음에 몇 단계가 나가는지가 쿨타임만큼 중요하다.
     if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
         storyMySkillCdEl.textContent = `${tideStageNoOf(storyPlayer)}단계`;
+    }
+    if (stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
+        storyMyUltimateCdEl.textContent = `${natureAwakenStageNoOf(storyPlayer)}단계`;
     }
     syncMobileCooldowns(skillRemain, ultRemain, true, !stats.ultimateType);
 }
@@ -5892,6 +5900,9 @@ function updateCooldownDisplay(now) {
     }
     if (me.stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
         mySkillCdEl.textContent = `${tideStageNoOf(me)}단계`;
+    }
+    if (me.stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
+        myUltimateCdEl.textContent = `${natureAwakenStageNoOf(me)}단계`;
     }
     syncMobileCooldowns(skillRemain, ultRemain, false, !me.stats.ultimateType);
 }

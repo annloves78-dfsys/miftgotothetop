@@ -321,6 +321,12 @@ function tideStageDefOf(stats, o) {
     const stages = stats.skillStages || [];
     return stages[Math.min(tideStageNoOf(o), stages.length) - 1] || null;
 }
+
+// ---- 바람궁수맛 각성 ----
+// 지금 쓸 단계(1~3). natureAwakenLevel은 0-indexed(0/1/2)로 저장되어 있다.
+function natureAwakenStageNoOf(o) {
+    return ((o && o.natureAwakenLevel) || 0) % 3 + 1;
+}
 // 예열 시간은 쿨타임에 들어가지 않는다 -- 물결이 터지는 순간부터 15초를
 // 센다. 서버도 같은 계산을 한다.
 function skillCastStamp(stats, o, now) {

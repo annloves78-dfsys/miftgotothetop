@@ -866,6 +866,9 @@ function updateGuestCooldownDisplay(now) {
     if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
         guestMySkillCdEl.textContent = `${tideStageNoOf(guestLocal)}단계`;
     }
+    if (stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
+        guestMyUltimateCdEl.textContent = `${natureAwakenStageNoOf(guestLocal)}단계`;
+    }
     syncGuestMobileCooldowns(skillRemain, ultRemain);
 }
 
