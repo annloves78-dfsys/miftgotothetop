@@ -550,7 +550,7 @@ BEGIN
     'kicker', 'sweetpotato', 'spinach', 'reddragon', 'volcano', 'greenapple', 'orangelemon',
     'board', 'electriccord', 'lightning', 'waterdrop', 'magma', 'blacksugar', 'dragonfruit',
     'sugarfly', 'lightningdevil', 'seapearl', 'lightninghell', 'cheesedumpling', 'hellflavor',
-    'flamefairy', 'plaincookie'
+    'flamefairy', 'plaincookie', 'seaguardian', 'bubbletea', 'windarcher'
   ) THEN
     RAISE EXCEPTION 'INVALID_CHARACTER';
   END IF;
@@ -588,7 +588,7 @@ BEGIN
     'kicker', 'sweetpotato', 'spinach', 'reddragon', 'volcano', 'greenapple', 'orangelemon',
     'board', 'electriccord', 'lightning', 'waterdrop', 'magma', 'blacksugar', 'dragonfruit',
     'sugarfly', 'lightningdevil', 'seapearl', 'lightninghell', 'cheesedumpling', 'hellflavor',
-    'flamefairy', 'plaincookie'
+    'flamefairy', 'plaincookie', 'seaguardian', 'bubbletea', 'windarcher'
   ) THEN
     RAISE EXCEPTION 'INVALID_CHARACTER';
   END IF;
