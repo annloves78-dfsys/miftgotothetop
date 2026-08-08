@@ -3006,10 +3006,14 @@ function showAwakenResult(awaken, result) {
     showScreen('result');
 }
 
-// ---- 레전드 스토리: 지하 1층 (탑 아래로 내려가는 별도 스토리, story-fork
-// 화면에서 들어온다). 각성모드와 같은 혼자(3명 파티, 교체 있음)/같이(1명씩,
-// 교체 없음) 구조를 재사용하되, 각성모드처럼 레벨 목록이 없다 -- 지금은
-// 지하 1층 하나뿐이라 바로 파티/시작 화면이다.
+// ---- 레전드 스토리: 지하 1층부터 (탑 아래로 내려가는 별도 스토리,
+// story-fork 화면에서 들어온다). 각성모드와 같은 혼자(3명 파티, 교체
+// 있음)/같이(1명씩, 교체 없음) 구조에, 각성모드의 레벨 칩과 같은 모양으로
+// 지하층을 고른다 -- 다만 탑처럼 위로 올라가는 게 아니라 아래로 내려가는
+// 곳이라, 칩은 1층이 맨 위, 더 깊은 층일수록 아래로 뒤집지 않고 그대로
+// 늘어놓는다(아래로 누르면서 내려가는 느낌).
+const legendFloorChipsEl = document.getElementById('legend-floor-chips');
+const legendFloorNameEl = document.getElementById('legend-floor-name');
 const legendPartyEl = document.getElementById('legend-party');
 const legendPlayBtn = document.getElementById('legend-play-btn');
 const legendMsgEl = document.getElementById('legend-msg');
@@ -3029,7 +3033,44 @@ const legendCampfireEl = document.getElementById('legend-campfire');
 const LEGEND_WAIT_ELS = {
     campfire: legendCampfireEl, myReady: legendMyReadyBadge, partnerReady: legendPartnerReadyBadge
 };
-const LEGEND_FLOOR = 'legend1';
+
+let selectedLegendFloor = 1;
+
+// 이어서 할 층에서 시작한다: 마지막으로 깬 지하층의 다음 층, 없으면 1층,
+// 다 깼으면 마지막 층에 머문다 (resumeStoryFloor와 같은 규칙).
+function resumeLegendFloor() {
+    const cleared = (gameData.clearedLegendFloors || [])
+        .map(k => parseInt(String(k).replace('legend', ''), 10))
+        .filter(n => Number.isInteger(n) && n >= 1);
+    if (!cleared.length) return 1;
+    const last = Math.max(...cleared);
+    return Math.min(SHARED.LEGEND_TOTAL_FLOORS, last + 1);
+}
+function isLegendFloorUnlocked(n) {
+    if (adminPowerOn('stages')) return true;
+    if (n === 1) return true;
+    return gameData.clearedLegendFloors.includes(SHARED.legendFloorKey(n - 1));
+}
+function renderLegendFloorChips() {
+    legendFloorChipsEl.innerHTML = '';
+    for (let n = 1; n <= SHARED.LEGEND_TOTAL_FLOORS; n++) {
+        const unlocked = isLegendFloorUnlocked(n);
+        const chip = document.createElement('button');
+        chip.className = 'awaken-level-chip'
+            + (n === selectedLegendFloor ? ' selected' : '')
+            + (unlocked ? '' : ' locked');
+        chip.textContent = unlocked ? `지하 ${n}층` : `🔒 지하 ${n}층`;
+        chip.disabled = !unlocked;
+        if (unlocked) {
+            chip.addEventListener('click', () => {
+                leaveLegendRoomIfWaiting();
+                selectedLegendFloor = n;
+                renderLegendDetail();
+            });
+        }
+        legendFloorChipsEl.appendChild(chip);
+    }
+}
 
 // 3칸. 빈 칸은 null. 멀티에서는 0번 칸 하나만 쓴다(같이할 때는 캐릭터
 // 하나씩만 골라서 한다 -- storyPartySizeFor(floor, false)가 1을 준다).
@@ -3089,6 +3130,7 @@ function updateLegendPlayBtnLabel() {
 }
 function updateLegendPlayBtnState() {
     if (legendPhase === 'searching' || legendMyReady) { legendPlayBtn.disabled = true; return; }
+    if (!SHARED.floorDefFor(SHARED.legendFloorKey(selectedLegendFloor))) { legendPlayBtn.disabled = true; return; }
     legendPlayBtn.disabled = legendIsMulti ? !legendParty[0] : legendParty.some(id => !id);
 }
 function resetLegendActions() {
@@ -3132,13 +3174,17 @@ function showLegendMsg(text, good) {
 }
 
 function renderLegendDetail() {
-    const reward = SHARED.legendClearReward(LEGEND_FLOOR) || {};
-    legendFloorInfoEl.innerHTML = `
-        <ul class="awaken-stat-list">
+    const floorKey = SHARED.legendFloorKey(selectedLegendFloor);
+    const reward = SHARED.legendClearReward(floorKey) || {};
+    legendFloorNameEl.textContent = `레전드 스토리 · 지하 ${selectedLegendFloor}층`;
+    legendFloorInfoEl.innerHTML = SHARED.floorDefFor(floorKey)
+        ? `<ul class="awaken-stat-list">
             <li>입구 스위치를 밟아야 문이 열립니다</li>
             <li>잡몹 방 2개를 지나면 갈림길 -- 한쪽은 별로, 한쪽은 막다른 보물상자</li>
         </ul>
-        <div class="reward-chips">${rewardChipsHtml(reward)}</div>`;
+        <div class="reward-chips">${rewardChipsHtml(reward)}</div>`
+        : `<div>아직 만들어지지 않은 층입니다.</div>`;
+    renderLegendFloorChips();
     renderLegendParty();
     updateLegendPlayBtnLabel();
     updateLegendPlayBtnState();
@@ -3148,6 +3194,7 @@ document.getElementById('legend-story-card').addEventListener('click', () => {
     leaveLegendRoomIfWaiting();
     showLegendMsg('');
     syncLegendModeButtons();
+    selectedLegendFloor = resumeLegendFloor();
     renderLegendDetail();
     showScreen('legendDetail');
 });
@@ -3158,6 +3205,7 @@ document.getElementById('back-from-legend-detail-btn').addEventListener('click',
 
 legendPlayBtn.addEventListener('click', () => {
     if (legendPlayBtn.disabled) return;
+    const floorKey = SHARED.legendFloorKey(selectedLegendFloor);
 
     if (legendIsMulti) {
         const myChar = legendParty[0];
@@ -3177,7 +3225,7 @@ legendPlayBtn.addEventListener('click', () => {
             legendMyIconEl.style.background = charIconBackground(SHARED.CHARACTERS[myChar]);
             legendMyNameEl.textContent = (SHARED.CHARACTERS[myChar] || {}).name || '';
             socket.emit('joinStoryFloor', {
-                floor: LEGEND_FLOOR, charType: myChar, equip: equipPayload(myChar),
+                floor: floorKey, charType: myChar, equip: equipPayload(myChar),
                 instinct: instinctPayload(myChar), solo: false
             });
         } else if (legendPhase === 'matched' && !legendMyReady) {
@@ -3195,7 +3243,7 @@ legendPlayBtn.addEventListener('click', () => {
     }
     showLegendMsg('');
     socket.emit('joinStoryFloor', {
-        floor: LEGEND_FLOOR, charType: legendParty[0], equip: equipPayload(legendParty[0]),
+        floor: floorKey, charType: legendParty[0], equip: equipPayload(legendParty[0]),
         instinct: instinctPayload(legendParty[0]), solo: true,
         party: legendParty,
         equipParty: legendParty.map(id => equipPayload(id)),
@@ -3203,16 +3251,20 @@ legendPlayBtn.addEventListener('click', () => {
     });
 });
 
-// 한 판이 끝났을 때. 이겼으면 첫 클리어 여부와 상관없이 재화를 준다(지금은
-// 지하 1층 하나뿐이라 장비 드랍 같은 첫 클리어 전용 보상은 없다).
+// 한 판이 끝났을 때. 이겼으면 첫 클리어 여부와 상관없이 재화를 준다(장비
+// 드랍 같은 첫 클리어 전용 보상은 아직 없다). floor는 서버가 보낸 그대로의
+// 키('legend1' 등)라 selectedLegendFloor도 여기서 맞춰 둬야 결과 화면에서
+// "뒤로"를 누르면 방금 그 층이 그대로 선택돼 있다.
 function showLegendResult(floor, result) {
+    const n = parseInt(String(floor).replace('legend', ''), 10);
+    if (Number.isInteger(n)) selectedLegendFloor = n;
     resetLegendActions();
     resultReturnScreen = 'legendDetail';
     resultBackBtn.textContent = '레전드 스토리로';
     if (result !== 'win') {
         resultTitle.textContent = '패배...';
         resultTitle.style.color = '#e74c3c';
-        resultDesc.textContent = '지하 1층에서 쓰러졌습니다.';
+        resultDesc.textContent = `지하 ${n}층에서 쓰러졌습니다.`;
         showScreen('result');
         return;
     }
@@ -3224,7 +3276,7 @@ function showLegendResult(floor, result) {
     }
     const bag = SHARED.legendClearReward(floor);
     grantCurrencies(bag);
-    resultDesc.textContent = '지하 1층을 클리어했습니다.';
+    resultDesc.textContent = `지하 ${n}층을 클리어했습니다.`;
     resultRewardsEl.innerHTML = rewardChipsHtml(bag);
     showScreen('result');
 }

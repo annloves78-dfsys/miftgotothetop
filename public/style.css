@@ -3624,6 +3624,11 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     color: #fff;
 }
 
+.awaken-level-chip.locked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .awaken-level-info {
     width: 100%;
     padding: 10px 12px;

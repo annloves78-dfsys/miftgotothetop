@@ -392,6 +392,12 @@
          화면이다. 각성모드 화면과 같은 혼자(3명)/같이(1명씩) 구조를 쓴다. -->
     <div id="legend-detail-screen" class="screen hidden">
         <div class="awaken-layout">
+            <!-- 왼쪽: 지하 1, 2, 3층...을 위에서 아래로 -- 아래로 내려갈수록
+                 깊은 층이라 각성모드의 레벨 칩과 반대로 뒤집지 않는다. -->
+            <div class="awaken-levels">
+                <div class="awaken-col-title">지하층</div>
+                <div id="legend-floor-chips" class="awaken-level-chips"></div>
+            </div>
             <div class="awaken-party-col">
                 <div id="legend-party-title" class="awaken-col-title">파티 3명</div>
                 <div id="legend-party" class="awaken-party"></div>
@@ -401,7 +407,7 @@
                 </div>
             </div>
             <div class="awaken-info-col">
-                <div class="awaken-boss-name">레전드 스토리 · 지하 1층</div>
+                <div id="legend-floor-name" class="awaken-boss-name"></div>
                 <div id="legend-floor-info" class="awaken-level-info"></div>
                 <button id="legend-play-btn" class="play-btn">▶ 시작</button>
                 <div id="legend-msg" class="equip-picker-msg hidden"></div>
