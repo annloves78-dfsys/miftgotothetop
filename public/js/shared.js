@@ -2666,6 +2666,35 @@ const MONSTERS = {
         telegraphMs: 520,
         enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
         summonOnTimer: { type: 'icicle_archer', count: 1, everyMs: 7000, max: 3 }
+    },
+    // 50층 보스. 서리 여왕의 보스급 상위 버전 -- 공격 자체는 약하지만
+    // (10 dmg, 1초마다) 맞힐 때마다 5씩 회복하는 데다 체력이 10000이라
+    // 장기전으로 깎아내야 한다. 케이크 보스와 같은 방식(일반 몬스터 AI +
+    // growOnAttack/enrage/lowHpGuard/summonOnTimer 데이터)이라 서버에
+    // 새 코드가 필요 없다.
+    frost_empress_boss: {
+        name: '서리 여제',
+        color: '#aed6f1',
+        colorLeft: '#ffffff',
+        colorRight: '#154360',
+        health: 10000,
+        speed: 3,
+        aggroRange: 840,
+        preferredDistance: 85,
+        attackRange: 220,
+        attackDamage: 10,
+        attackCooldown: 1000,
+        telegraphMs: 500,
+        // 때릴 때마다 5씩 회복한다 (성장은 없음 -- attack/speed 필드가 없어서
+        // growMonsterOnAttack이 heal만 적용한다).
+        growOnAttack: { heal: 5 },
+        enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
+        // 막타 직전 한 번: 체력 20% 아래에서 보호막 1000 + 회복 1000.
+        lowHpGuard: { atHp: 2000, heal: 1000, shield: 1000 },
+        // 고드름 궁수 대신 더 묵직한 서리 골렘을 불러들인다.
+        summonOnTimer: { type: 'frost_golem', count: 1, everyMs: 8000, max: 2 },
+        bossBar: true,
+        radius: 44
     }
 };
 
@@ -4549,7 +4578,21 @@ const STORY_FLOOR_DEFS = {
             { type: 'snowman_bomber', at: -6560, off: -70, room: 3 }
         ],
         star: { at: -8321 }
-    })
+    }),
+    // 50층: 얼음/서리 챕터를 마무리하는 보스전. 10층/20층과 같은 틀(짧고
+    // 넓은 다리 위에 보스 하나, 잡몹 없음) -- winOnClear/bossFloor라
+    // 레전더리 드랍도 자동으로 붙는다.
+    50: {
+        levelType: 'bridge',
+        levelLength: 1100,
+        laneHalfWidth: 300,
+        gates: [],
+        monsters: [
+            { type: 'frost_empress_boss', x: -800, y: 0, room: 0 }
+        ],
+        winOnClear: true,
+        bossFloor: true
+    }
 };
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of

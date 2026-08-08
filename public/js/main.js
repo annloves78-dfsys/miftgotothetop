@@ -3635,8 +3635,8 @@ storyMultiBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-// 49층(얼음/서리 챕터 마지막)까지 만들어져 있다. 더 늘어나면 이 숫자만 올리면 된다.
-const STORY_TOTAL_FLOORS = 49;
+// 50층(얼음/서리 챕터 보스)까지 만들어져 있다. 더 늘어나면 이 숫자만 올리면 된다.
+const STORY_TOTAL_FLOORS = 50;
 let selectedStoryFloor = 1;
 // What the story engine was actually entered with -- a floor number from the
 // tower, or an event stage id. Decides where 나가기 sends you back to.
