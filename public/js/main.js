@@ -4633,22 +4633,41 @@ socket.on('monsterDefeated', ({ id }) => {
     updateStoryMonstersLeft();
 });
 
-socket.on('storyPlayerDamaged', ({ hp, alive, shieldHp }) => {
-    if (!storyPlayer) return;
-    storyPlayer.hp = hp;
-    storyPlayer.alive = alive;
-    storyPlayer.shieldHp = shieldHp || 0;
-    updateStoryHpBar();
-    if (awakenFightParty) {
-        awakenFightParty.partyHp[awakenFightParty.active] = hp;
-        renderAwakenSwapBar();
+// 이 방(room) 전체에 뿌려지는 이벤트라 파트너가 맞은 것도 내 클라이언트로
+// 들어온다 -- id를 안 보고 무조건 storyPlayer(나)한테 씌우면 파트너가 맞을
+// 때마다 내 체력도 같이 깎여 보인다. id로 나/파트너를 갈라야 한다.
+socket.on('storyPlayerDamaged', ({ id, hp, alive, shieldHp }) => {
+    if (id === socket.id) {
+        if (!storyPlayer) return;
+        storyPlayer.hp = hp;
+        storyPlayer.alive = alive;
+        storyPlayer.shieldHp = shieldHp || 0;
+        updateStoryHpBar();
+        if (awakenFightParty) {
+            awakenFightParty.partyHp[awakenFightParty.active] = hp;
+            renderAwakenSwapBar();
+        }
+    } else {
+        const partner = storyPartners[id];
+        if (!partner) return;
+        partner.hp = hp;
+        partner.alive = alive;
+        partner.shieldHp = shieldHp || 0;
+        renderStoryPartnerHp();
     }
 });
 
-socket.on('storyPlayerShielded', ({ shieldHp }) => {
-    if (!storyPlayer) return;
-    storyPlayer.shieldHp = shieldHp;
-    updateStoryHpBar();
+socket.on('storyPlayerShielded', ({ id, shieldHp }) => {
+    if (id === socket.id) {
+        if (!storyPlayer) return;
+        storyPlayer.shieldHp = shieldHp;
+        updateStoryHpBar();
+    } else {
+        const partner = storyPartners[id];
+        if (!partner) return;
+        partner.shieldHp = shieldHp;
+        renderStoryPartnerHp();
+    }
 });
 
 socket.on('storyPlayerRevived', ({ hp }) => {
@@ -4664,15 +4683,22 @@ socket.on('storyPlayerRevived', ({ hp }) => {
     updateStoryHpBar();
 });
 
-socket.on('storyPlayerHealed', ({ hp, partyHp }) => {
-    if (!storyPlayer) return;
-    storyPlayer.hp = hp;
-    storyPlayer.healEffectUntil = performance.now() + 250;
-    updateStoryHpBar();
-    // 팀 회복은 쉬고 있는 쿠키에게도 들어가므로 교체 줄의 체력 바도 같이 찬다.
-    if (partyHp && awakenFightParty) {
-        awakenFightParty.partyHp = partyHp;
-        renderAwakenSwapBar();
+socket.on('storyPlayerHealed', ({ id, hp, partyHp }) => {
+    if (id === socket.id) {
+        if (!storyPlayer) return;
+        storyPlayer.hp = hp;
+        storyPlayer.healEffectUntil = performance.now() + 250;
+        updateStoryHpBar();
+        // 팀 회복은 쉬고 있는 쿠키에게도 들어가므로 교체 줄의 체력 바도 같이 찬다.
+        if (partyHp && awakenFightParty) {
+            awakenFightParty.partyHp = partyHp;
+            renderAwakenSwapBar();
+        }
+    } else {
+        const partner = storyPartners[id];
+        if (!partner) return;
+        partner.hp = hp;
+        renderStoryPartnerHp();
     }
 });
 
