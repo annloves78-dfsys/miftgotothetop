@@ -1615,26 +1615,58 @@ function tickHealAuras(roomId, room, now) {
     }
 }
 
-// 소환(summonOnTimer): 정해진 간격마다 부하를 부른다. max까지만 부르므로
-// 무한히 불어나지는 않는다.
+// sp.count마리를 boss 둘레에 원을 그리듯 세우고, counterKey에 부른 수를 적립한다
+// (spec별로 따로 세므로 summonOnTimer/summonOnHits가 서로의 max를 갉아먹지 않는다).
+function summonAroundBoss(room, roomId, boss, sp, counterKey) {
+    const room0 = boss.roomIndex;
+    for (let i = 0; i < (sp.count || 1); i++) {
+        if ((boss[counterKey] || 0) >= sp.max) break;
+        boss[counterKey] = (boss[counterKey] || 0) + 1;
+        const ang = (Math.PI * 2 * i) / (sp.count || 1);
+        spawnStoryMonster(room, sp.type,
+            boss.x + Math.cos(ang) * 55, boss.y + Math.sin(ang) * 55, room0);
+    }
+    io.to(roomId).emit('monsterSummoned', { x: boss.x, y: boss.y });
+}
+
+// 소환(summonOnTimer): 정해진 간격마다 부하를 부른다.
+// 소환(summonOnHits): 플레이어에게 맞아 체력이 줄어들 때마다 세다가, every번째
+// 마다 한 번 더 부른다 -- 정확한 타격 "횟수"가 아니라 틱(50ms)마다 체력이
+// 줄었는지만 보는 근사치다 (같은 틱에 두 명이 동시에 때리면 1번으로 친다).
+// 둘 다 max까지만 부르므로 무한히 불어나지는 않는다.
 function tickMonsterSummons(roomId, room, now) {
     for (const [, boss] of Object.entries(room.monsters)) {
         if (!boss.alive) continue;
-        const sp = MONSTERS[boss.type] && MONSTERS[boss.type].summonOnTimer;
-        if (!sp) continue;
-        if (!boss.lastSummonAt) { boss.lastSummonAt = now; continue; }
-        if (now - boss.lastSummonAt < sp.everyMs) continue;
-        boss.lastSummonAt = now;
-        if ((boss.summonedTotal || 0) >= sp.max) continue;
-        const room0 = boss.roomIndex;
-        for (let i = 0; i < (sp.count || 1); i++) {
-            if ((boss.summonedTotal || 0) >= sp.max) break;
-            boss.summonedTotal = (boss.summonedTotal || 0) + 1;
-            const ang = (Math.PI * 2 * i) / (sp.count || 1);
-            spawnStoryMonster(room, sp.type,
-                boss.x + Math.cos(ang) * 55, boss.y + Math.sin(ang) * 55, room0);
+        const def = MONSTERS[boss.type];
+        if (!def) continue;
+
+        const sp = def.summonOnTimer;
+        if (sp) {
+            if (!boss.lastSummonAt) boss.lastSummonAt = now;
+            else if (now - boss.lastSummonAt >= sp.everyMs) {
+                boss.lastSummonAt = now;
+                if ((boss.summonedTimerTotal || 0) < sp.max) {
+                    summonAroundBoss(room, roomId, boss, sp, 'summonedTimerTotal');
+                }
+            }
         }
-        io.to(roomId).emit('monsterSummoned', { x: boss.x, y: boss.y });
+
+        const sh = def.summonOnHits;
+        if (sh) {
+            if (boss.hitTrackHp === undefined) {
+                boss.hitTrackHp = boss.hp;
+            } else if (boss.hp < boss.hitTrackHp) {
+                boss.hitsTaken = (boss.hitsTaken || 0) + 1;
+                boss.hitTrackHp = boss.hp;
+                if (boss.hitsTaken % sh.every === 0 && (boss.summonedHitsTotal || 0) < sh.max) {
+                    summonAroundBoss(room, roomId, boss, sh, 'summonedHitsTotal');
+                }
+            } else if (boss.hp > boss.hitTrackHp) {
+                // 자힐/보호막(growOnAttack, lowHpGuard)로 체력이 오른 것 -- 맞은 게
+                // 아니니 기준선만 다시 맞추고 지나간다.
+                boss.hitTrackHp = boss.hp;
+            }
+        }
     }
 }
 

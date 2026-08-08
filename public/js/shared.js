@@ -2693,6 +2693,8 @@ const MONSTERS = {
         lowHpGuard: { atHp: 2000, heal: 1000, shield: 1000 },
         // 고드름 궁수 대신 더 묵직한 서리 골렘을 불러들인다.
         summonOnTimer: { type: 'frost_golem', count: 1, everyMs: 8000, max: 2 },
+        // 시간과 별개로, 10대 맞을 때마다 고드름 궁수를 하나 더 부른다.
+        summonOnHits: { type: 'icicle_archer', count: 1, every: 10, max: 4 },
         bossBar: true,
         radius: 44
     }
