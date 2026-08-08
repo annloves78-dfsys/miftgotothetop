@@ -19,6 +19,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS,
     ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_WORKBENCH_ITEMS, ZOMBIE_MINER_ORE_INTERVAL_MS,
     ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT,
+    ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER,
     zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow,
     zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
     ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
@@ -4510,6 +4511,8 @@ function createZombieRoom(solo) {
         zombies: {},
         nextZombieId: 0,
         grid: new Array(ZOMBIE_CELL_COUNT).fill(null), // index -> { type, hp, maxHp, nextAttackAt? }
+        soldiers: {}, // id -> { spawnerIndex, x, y, hp, maxHp, facing, nextAttackAt }
+        nextSoldierId: 0,
         trees: {}, // treeId -> { x, y, hitsLeft }
         nextTreeId: 0,
         nextTreeSpawnAt: 0,
@@ -4517,10 +4520,11 @@ function createZombieRoom(solo) {
         coins: 0, // 파티 공용, 클리어(사망) 시 실제 재화로 전환됨
         ore: 0, // 채굴기가 캐낸 광석 (파티 공용)
         iron: 0, // 용광로가 정련한 철 (파티 공용)
-        // 강화대에서 산 강화 세 가지. 전부 이 판에서만(방이 사라지면) 유지된다.
+        // 강화대에서 산 강화 네 가지. 전부 이 판에서만(방이 사라지면) 유지된다.
         atkUpgradeLevel: 0, // 내 기본공격 피해
         turretAtkUpgradeLevel: 0, // 터렛/강화 터렛/대포의 발사 피해
         fenceHpUpgradeLevel: 0, // 새/기존 울타리 최대 체력
+        soldierAtkUpgradeLevel: 0, // 병사의 공격 피해
         zombieFields: [], // 매 틱 다시 계산되는 길찾기 거리장 (recomputeZombieFields)
         loopHandle: null
     };
@@ -4590,8 +4594,10 @@ function startZombieFight(roomId) {
     room.atkUpgradeLevel = 0;
     room.turretAtkUpgradeLevel = 0;
     room.fenceHpUpgradeLevel = 0;
+    room.soldierAtkUpgradeLevel = 0;
     room.zombies = {};
     room.grid = new Array(ZOMBIE_CELL_COUNT).fill(null);
+    room.soldiers = {};
     room.trees = {};
     for (let i = 0; i < ZOMBIE_MAX_TREES; i++) spawnZombieTree(room);
 
@@ -4600,8 +4606,8 @@ function startZombieFight(roomId) {
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
         wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron,
         atkUpgradeLevel: room.atkUpgradeLevel, turretAtkUpgradeLevel: room.turretAtkUpgradeLevel,
-        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel,
-        trees: room.trees, grid: room.grid
+        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel, soldierAtkUpgradeLevel: room.soldierAtkUpgradeLevel,
+        trees: room.trees, grid: room.grid, soldiers: room.soldiers
     });
 
     room.loopHandle = setInterval(() => tickZombieRoom(roomId), 50);
@@ -4703,11 +4709,33 @@ function tickZombie(roomId, room, zid, z, alivePlayers, now) {
     }
     if (!nearest) return;
 
+    // 병사가 나보다 더 가까이 있으면(그리고 사거리 안이면) 플레이어 대신
+    // 그 병사를 후려친다 -- 지나가다 마주친 병사와 서로 치고받는 셈이다.
+    // 경로 자체는 여전히 플레이어를 향한다 (병사를 쫓아다니지는 않는다).
+    let nearestSoldierId = null, nearestSoldier = null, nearestSoldierDist = Infinity;
+    for (const [sid, s] of Object.entries(room.soldiers)) {
+        const d = Math.hypot(s.x - z.x, s.y - z.y);
+        if (d < nearestSoldierDist) { nearestSoldierDist = d; nearestSoldier = s; nearestSoldierId = sid; }
+    }
+
     const reach = def.attackRange + PLAYER_RADIUS;
-    if (nearestDist <= reach) {
+    const reachSoldier = def.attackRange + ZOMBIE_SOLDIER_DEF.radius;
+    const playerInRange = nearestDist <= reach;
+    const soldierInRange = nearestSoldier && nearestSoldierDist <= reachSoldier;
+    if (playerInRange || soldierInRange) {
         if (now < z.nextAttackAt) return;
         z.nextAttackAt = now + def.attackCooldown;
-        zombieDamagePlayer(roomId, room, nearest, def.attackDamage);
+        if (soldierInRange && (!playerInRange || nearestSoldierDist < nearestDist)) {
+            nearestSoldier.hp -= def.attackDamage;
+            if (nearestSoldier.hp <= 0) {
+                delete room.soldiers[nearestSoldierId];
+                io.to(roomId).emit('zombieSoldierDied', { id: nearestSoldierId });
+            } else {
+                io.to(roomId).emit('zombieHitSoldier', { id: nearestSoldierId, hp: nearestSoldier.hp });
+            }
+        } else {
+            zombieDamagePlayer(roomId, room, nearest, def.attackDamage);
+        }
         return;
     }
 
@@ -4807,6 +4835,60 @@ function tickZombieHouseHealing(room, now) {
     }
 }
 
+// 병사소환기가 ZOMBIE_SOLDIER_SPAWN_MS마다 병사를 하나 뽑는다. 스포너
+// 하나당 살아있는 병사가 ZOMBIE_SOLDIER_CAP_PER_SPAWNER를 넘으면(그 스포너가
+// 뽑은 병사만 센다) 그 병사가 죽어 자리가 날 때까지 쉰다.
+function tickZombieSoldierSpawners(room, now) {
+    room.grid.forEach((cell, index) => {
+        if (!cell || cell.type !== 'soldierSpawner') return;
+        if (now < (cell.nextSpawnAt || 0)) return;
+        cell.nextSpawnAt = now + ZOMBIE_SOLDIER_SPAWN_MS;
+        const alive = Object.values(room.soldiers).filter(s => s.spawnerIndex === index).length;
+        if (alive >= ZOMBIE_SOLDIER_CAP_PER_SPAWNER) return;
+        const pos = zombieCellCenter(index);
+        const id = `s${room.nextSoldierId++}`;
+        room.soldiers[id] = {
+            spawnerIndex: index, x: pos.x, y: pos.y,
+            hp: ZOMBIE_SOLDIER_DEF.hp, maxHp: ZOMBIE_SOLDIER_DEF.hp,
+            facing: 0, nextAttackAt: 0
+        };
+    });
+}
+
+// 병사 하나하나의 행동: 가장 가까운 좀비가 있으면 그쪽으로 곧장 걸어가고
+// (격자 장애물은 좀비와 달리 무시한다 -- 내 편이 내가 지은 벽에 갇히면
+// 이상하다), 사거리 안이면 두드린다. 좀비가 없으면 제자리에 서 있는다.
+function tickZombieSoldiers(roomId, room, now) {
+    for (const [sid, s] of Object.entries(room.soldiers)) {
+        let nearest = null, nearestId = null, nearestDist = Infinity;
+        for (const [zid, z] of Object.entries(room.zombies)) {
+            const d = Math.hypot(z.x - s.x, z.y - s.y);
+            if (d < nearestDist) { nearestDist = d; nearest = z; nearestId = zid; }
+        }
+        if (!nearest) continue;
+
+        const reach = ZOMBIE_SOLDIER_DEF.attackRange + ZOMBIE_DEFS[nearest.type].radius;
+        if (nearestDist <= reach) {
+            if (now < s.nextAttackAt) continue;
+            s.nextAttackAt = now + ZOMBIE_SOLDIER_DEF.attackCooldown;
+            nearest.hp -= ZOMBIE_SOLDIER_DEF.attackDamage + room.soldierAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT;
+            io.to(roomId).emit('zombieSoldierAttacked', { id: sid, targetId: nearestId });
+            if (nearest.hp <= 0) {
+                delete room.zombies[nearestId];
+                room.coins += ZOMBIE_COIN_PER_KILL;
+                io.to(roomId).emit('zombieKilled', { id: nearestId, coins: room.coins });
+            }
+            continue;
+        }
+
+        s.facing = Math.atan2(nearest.y - s.y, nearest.x - s.x);
+        const step = ZOMBIE_SOLDIER_DEF.speed * 3; // px/tick, monsterSpeed의 관례와 맞춘 값
+        const move = Math.min(step, nearestDist - reach + 1);
+        s.x += Math.cos(s.facing) * move;
+        s.y += Math.sin(s.facing) * move;
+    }
+}
+
 function checkZombieWipe(roomId, room) {
     if (!Object.values(room.players).some(p => p.alive)) endZombieRoom(roomId);
 }
@@ -4857,6 +4939,9 @@ function tickZombieRoom(roomId) {
     if (!rooms[roomId]) return;
     tickZombieEconomy(room, now);
     tickZombieHouseHealing(room, now);
+    tickZombieSoldierSpawners(room, now);
+    tickZombieSoldiers(roomId, room, now);
+    if (!rooms[roomId]) return;
 
     for (const [zid, z] of Object.entries(room.zombies)) {
         tickZombie(roomId, room, zid, z, alivePlayers, now);
@@ -4867,11 +4952,12 @@ function tickZombieRoom(roomId) {
         players: publicZombiePlayers(room),
         zombies: room.zombies,
         grid: room.grid,
+        soldiers: room.soldiers,
         wave: room.wave, wavePhase: room.wavePhase, phaseUntil: room.phaseUntil,
         pendingSpawns: room.pendingSpawns || 0,
         wood: room.wood, coins: room.coins, ore: room.ore, iron: room.iron,
         atkUpgradeLevel: room.atkUpgradeLevel, turretAtkUpgradeLevel: room.turretAtkUpgradeLevel,
-        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel
+        fenceHpUpgradeLevel: room.fenceHpUpgradeLevel, soldierAtkUpgradeLevel: room.soldierAtkUpgradeLevel
     });
 }
 
@@ -7323,6 +7409,8 @@ io.on('connection', (socket) => {
             cell = { type, hp, maxHp: hp, nextOreAt: now + ZOMBIE_MINER_ORE_INTERVAL_MS };
         } else if (type === 'furnace') {
             cell = { type, hp, maxHp: hp, nextSmeltAt: now + ZOMBIE_FURNACE_SMELT_MS };
+        } else if (type === 'soldierSpawner') {
+            cell = { type, hp, maxHp: hp, nextSpawnAt: now + ZOMBIE_SOLDIER_SPAWN_MS };
         } else {
             cell = { type, hp, maxHp: hp };
         }
@@ -7338,7 +7426,8 @@ io.on('connection', (socket) => {
     const ZOMBIE_UPGRADE_LEVEL_KEYS = {
         attack: 'atkUpgradeLevel',
         turretAttack: 'turretAtkUpgradeLevel',
-        fenceHp: 'fenceHpUpgradeLevel'
+        fenceHp: 'fenceHpUpgradeLevel',
+        soldierAttack: 'soldierAtkUpgradeLevel'
     };
     socket.on('zombieUpgradeStat', ({ stat }) => {
         const roomId = socket.data.roomId;

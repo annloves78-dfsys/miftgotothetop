@@ -2,12 +2,13 @@
 // 가로로 긴 아레나에서 좀비 웨이브를 막는 생존 모드. 캐릭터는 로비에서 고른
 // 것을 그대로 쓴다(게스트 레이드처럼 파티를 새로 짜지 않는다). 아레나
 // 전체가 격자로 나뉘어 있고, F를 누르면 뜨는 목록에서 울타리/제작대/용광로/
-// 채굴기/집을 고른 뒤 내 근처 칸을 클릭해서 짓는다. 집 위에 서 있으면
-// 0.5초마다 체력을 1씩 회복한다. 제작대가 맵 어딘가에 있으면 목록에
+// 채굴기/집/병사소환기를 고른 뒤 내 근처 칸을 클릭해서 짓는다. 집 위에 서
+// 있으면 0.5초마다 체력을 1씩 회복하고, 병사소환기는 15초마다 좀비를 향해
+// 걸어가 싸우는 병사를 하나씩 뽑는다. 제작대가 맵 어딘가에 있으면 목록에
 // 터렛/강화대/강화 울타리/강화 터렛/대포가 추가로 뜬다 (대포는 사거리 제한이
-// 없어 맵 어디의 좀비든 쏜다). 강화대를 지은 뒤 그걸
-// 클릭하면 코인으로 공격력/터렛 공격력/울타리 체력을 강화하는 패널이 뜬다
-// (이 강화들은 이 판에서만 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
+// 없어 맵 어디의 좀비든 쏜다). 강화대를 지은 뒤 그걸 클릭하면 코인으로
+// 공격력/터렛 공격력/울타리 체력/병사 공격력을 강화하는 패널이 뜬다 (이
+// 강화들은 이 판에서만 유지된다). 콤보/스킬/궁극기 같은 캐릭터별 특수 전투는 재현하지 않고
 // (서버의 resolveAttack이 계산하는) 평범한 부채꼴 근접 공격 하나만 쓴다.
 //
 // main.js 뒤에 로드되므로 그 파일의 전역(socket, showScreen, gameData,
@@ -79,7 +80,8 @@ const zombieUpgradeCloseBtn = document.getElementById('zombie-upgrade-close-btn'
 const ZOMBIE_UPGRADE_STATS = [
     { stat: 'attack', levelKey: 'atkUpgradeLevel', el: 'zombie-atk' },
     { stat: 'turretAttack', levelKey: 'turretAtkUpgradeLevel', el: 'zombie-turretAtk' },
-    { stat: 'fenceHp', levelKey: 'fenceHpUpgradeLevel', el: 'zombie-fenceHp' }
+    { stat: 'fenceHp', levelKey: 'fenceHpUpgradeLevel', el: 'zombie-fenceHp' },
+    { stat: 'soldierAttack', levelKey: 'soldierAtkUpgradeLevel', el: 'zombie-soldierAtk' }
 ].map(row => ({
     ...row,
     levelEl: document.getElementById(`${row.el}-level`),
@@ -207,12 +209,14 @@ function zombieMyStats() {
 socket.on('zombieStarted', (data) => {
     zombieState = {
         players: data.players, zombies: {}, grid: data.grid || new Array(SHARED.ZOMBIE_CELL_COUNT).fill(null),
+        soldiers: data.soldiers || {},
         wave: data.wave, wavePhase: data.wavePhase, phaseUntil: data.phaseUntil,
         pendingSpawns: 0, wood: data.wood, coins: data.coins,
         ore: data.ore || 0, iron: data.iron || 0,
         atkUpgradeLevel: data.atkUpgradeLevel || 0,
         turretAtkUpgradeLevel: data.turretAtkUpgradeLevel || 0,
-        fenceHpUpgradeLevel: data.fenceHpUpgradeLevel || 0
+        fenceHpUpgradeLevel: data.fenceHpUpgradeLevel || 0,
+        soldierAtkUpgradeLevel: data.soldierAtkUpgradeLevel || 0
     };
     zombieTrees = { ...data.trees };
     const me = data.players[socket.id];
@@ -242,6 +246,7 @@ socket.on('zombieTick', (data) => {
     zombieState.players = data.players;
     zombieState.zombies = data.zombies || {};
     zombieState.grid = data.grid || zombieState.grid;
+    zombieState.soldiers = data.soldiers || {};
     zombieState.wave = data.wave;
     zombieState.wavePhase = data.wavePhase;
     zombieState.phaseUntil = data.phaseUntil;
@@ -253,6 +258,7 @@ socket.on('zombieTick', (data) => {
     zombieState.atkUpgradeLevel = data.atkUpgradeLevel || 0;
     zombieState.turretAtkUpgradeLevel = data.turretAtkUpgradeLevel || 0;
     zombieState.fenceHpUpgradeLevel = data.fenceHpUpgradeLevel || 0;
+    zombieState.soldierAtkUpgradeLevel = data.soldierAtkUpgradeLevel || 0;
     updateZombieHud();
     updateZombieHpBars();
     updateZombieUpgradePanel();
@@ -598,7 +604,8 @@ const ZOMBIE_STRUCT_COLORS = {
     upgradeTable: { fill: '#8e44ad', stroke: '#5b2c6f' },
     reinforcedFence: { fill: '#a5682f', stroke: '#5a3d21' },
     reinforcedTurret: { fill: '#2c5f7c', stroke: '#173040' },
-    cannon: { fill: '#4a4a2a', stroke: '#2a2a15' }
+    cannon: { fill: '#4a4a2a', stroke: '#2a2a15' },
+    soldierSpawner: { fill: '#4a6b4a', stroke: '#28402a' }
 };
 // 칸 위에 그릴 아이콘. 기본/제작대 전용 건조물 표 양쪽에서 찾는다.
 function zombieStructIcon(type) {
@@ -697,6 +704,27 @@ function zombieDrawMob(ctx, z) {
     ctx.fillRect(z.x - barW / 2, barY, barW * Math.max(0, z.hp / z.maxHp), barH);
 }
 
+// 병사소환기가 뽑은 병사. 좀비와 구분되게 파란 계열로 그린다.
+function zombieDrawSoldier(ctx, s) {
+    const R = SHARED.ZOMBIE_SOLDIER_DEF.radius;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fillStyle = '#3f6fb0';
+    ctx.fill();
+    ctx.strokeStyle = '#1b2733';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+    const barW = R * 2, barH = 4;
+    const barY = s.y - R - 8 - barH;
+    ctx.fillStyle = '#1d3a5f';
+    ctx.fillRect(s.x - barW / 2, barY, barW, barH);
+    ctx.fillStyle = '#5dade2';
+    ctx.fillRect(s.x - barW / 2, barY, barW * Math.max(0, s.hp / s.maxHp), barH);
+}
+
 function zombieDrawPlayer(ctx, p, isLocal, now) {
     const R = SHARED.PLAYER_RADIUS;
     const x = isLocal ? zombieLocal.x : p.x;
@@ -758,6 +786,7 @@ function zombieRender(now) {
 
     zombieDrawGrid(zombieCtx, now);
     Object.values(zombieTrees).forEach(t => zombieDrawTree(zombieCtx, t));
+    Object.values(zombieState.soldiers || {}).forEach(s => zombieDrawSoldier(zombieCtx, s));
     Object.values(zombieState.zombies).forEach(z => zombieDrawMob(zombieCtx, z));
     Object.entries(zombieState.players).forEach(([id, p]) => {
         zombieDrawPlayer(zombieCtx, p, id === socket.id, now);
