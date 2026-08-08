@@ -5042,6 +5042,27 @@ const EQUIPMENT = {
         },
         ownerText: '불꽃요정맛 쿠키 전용 — 부활 1회 추가(패시브 포함 총 3번). 3번째 부활부터는 화염 피해가 더 늘지 않는 대신 기본 공격력이 +2 됩니다. 궁극기 화염지대 유지시간 15초 → 18초.'
     },
+    // 쿠키맛쿠키는 원래 부활이 없는 쿠키라, 부활 횟수(bonusRevive)뿐 아니라
+    // 부활 시 체력 비율(passiveReviveHpRatio)도 이 장비가 처음으로 준다 --
+    // 다른 각성 장비들의 주인은 전부 이미 자기 패시브로 한 번은 부활하는
+    // 쿠키라 이 값이 필요 없었다.
+    gingerbread_man: {
+        name: '진저브레드맨', slot: 'awaken', grade: '게스트', icon: '🍪',
+        ownerChar: 'plaincookie',
+        ownerBonus: { bonusRevive: 1 },
+        // attackHealEveryHits:1 + attackHealSelf:1 -> 구슬 하나가 맞을 때마다
+        // (홈잉 4발이라 한 번 쏘면 최대 4번) 자기 체력 1 회복. passiveRegenAmount/
+        // passiveRegenTickMs -> 전투 중 1초마다 그냥 자기 체력 1 회복(자두맛
+        // 본능해제 5강과 같은 훅을 재사용).
+        awakenForm: {
+            passiveReviveHpRatio: 1,
+            attackHealEveryHits: 1,
+            attackHealSelf: 1,
+            passiveRegenAmount: 1,
+            passiveRegenTickMs: 1000
+        },
+        ownerText: '쿠키맛 쿠키 전용 — 기본 공격(구슬)이 하나 맞을 때마다 체력 1 회복, 전투 중 1초마다 체력 1 자동 회복, 쓰러지면 체력 100%로 한 번 부활합니다.'
+    },
     // ---- 등급 x 종류 채우기 (각성 장비 제외, 등급별 5종류 모두 하나씩) ----
     // ---- 일반 ----
     rusty_sword: { name: '녹슨 검', slot: 'weapon', grade: '일반', icon: '🗡', bonusAttack: 1 },
