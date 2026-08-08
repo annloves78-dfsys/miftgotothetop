@@ -720,8 +720,9 @@ function isAdmin() {
     return !!gameData.admin;
 }
 
-// 관리자 전용의 힘은 항목마다 따로 끌 수 있다. gameData.adminOff에 적힌 것만
-// 꺼진 것으로 보므로, 예전 세이브는 전부 켜진 상태 그대로다.
+// 관리자 전용의 힘은 항목마다 따로 켠다. gameData.adminOn에 적힌 것만 켜진
+// 것으로 보므로, 관리자 전용을 막 켰을 땐 전부 꺼진 상태로 시작하고 필요한
+// 것만 하나씩 직접 켜야 한다.
 const ADMIN_POWERS = [
     { key: 'currencies', label: '재화 무한', hint: '코인·다이아·재료·티켓이 ∞가 되고 쓸 때 줄지 않아요.' },
     { key: 'characters', label: '캐릭터 전부 해제', hint: '뽑지 않은 쿠키도 전부 고를 수 있어요.' },
@@ -729,12 +730,12 @@ const ADMIN_POWERS = [
 ];
 function adminPowerOn(key) {
     if (!isAdmin()) return false;
-    return !(gameData.adminOff && gameData.adminOff[key]);
+    return !!(gameData.adminOn && gameData.adminOn[key]);
 }
 function setAdminPower(key, on) {
-    if (!gameData.adminOff) gameData.adminOff = {};
-    if (on) delete gameData.adminOff[key];
-    else gameData.adminOff[key] = true;
+    if (!gameData.adminOn) gameData.adminOn = {};
+    if (on) gameData.adminOn[key] = true;
+    else delete gameData.adminOn[key];
     saveGameData(gameData);
 }
 
@@ -818,11 +819,9 @@ adminSubmitBtn.addEventListener('click', () => {
     adminPasswordInput.value = '';
     adminErrorEl.textContent = '';
     gameData.admin = true;
-    // Grant every cookie for real (not just visually) so the unlock survives
-    // admin mode being switched back off.
-    Object.keys(SHARED.CHARACTERS).forEach(id => {
-        if (!gameData.unlockedCharacters.includes(id)) gameData.unlockedCharacters.push(id);
-    });
+    // 캐릭터 전부 해제를 포함한 개별 힘은 전부 꺼진 채로 시작한다 -- 여기서
+    // 뭔가를 미리 켜거나 영구로 지급하지 않는다. 필요하면 관리자 화면에서
+    // 그 힘을 직접 켜서 쓴다 (adminPowerOn/setAdminPower 참고).
     saveGameData(gameData);
     updateAdminUI();
 });
@@ -5010,6 +5009,10 @@ function storyRender(now) {
         const halfW = storyFloorDef.laneHalfWidth;
         const winding = !!storyFloorDef.path;
         const vertical = SHARED.floorAxis(storyFloorDef) === 'y';
+        // 챕터별 배경 색(용암 챕터의 붉은 다리 등). 안 적힌 층은 지금까지와
+        // 똑같은 갈색 다리 그대로 나온다.
+        const deckColor = storyFloorDef.deckColor || '#4a3c2f';
+        const deckGlow = storyFloorDef.deckGlow || 'rgba(255,255,255,0.15)';
         if (winding) {
             // 꺾은선 다리: 길을 그대로 굵게 그으면 모퉁이까지 알아서 이어진다.
             // 모서리를 둥글게 이어야 꺾이는 자리에 구멍이 안 생긴다.
@@ -5021,10 +5024,10 @@ function storyRender(now) {
                 if (i === 0) storyCtx.moveTo(px, py);
                 else storyCtx.lineTo(px, py);
             });
-            storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+            storyCtx.strokeStyle = deckGlow;
             storyCtx.lineWidth = halfW * 2 + 4;
             storyCtx.stroke();
-            storyCtx.strokeStyle = '#4a3c2f';
+            storyCtx.strokeStyle = deckColor;
             storyCtx.lineWidth = halfW * 2;
             storyCtx.stroke();
             // 가운데 점선: 어느 쪽이 길인지 한눈에 보이게.
