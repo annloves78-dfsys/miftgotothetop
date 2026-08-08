@@ -3712,6 +3712,7 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 
 .awaken-party-slot .name { color: #ecf0f1; font-size: 12px; }
+.awaken-party-slot .cap { color: #7f8c8d; font-size: 10px; margin-top: 2px; }
 
 #awaken-play-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 

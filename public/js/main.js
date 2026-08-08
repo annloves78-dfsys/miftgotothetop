@@ -119,6 +119,7 @@ const selectedCharNameEl = document.getElementById('selected-char-name');
 const lobbyCharBody = document.getElementById('lobby-char-body');
 const lobbyCharName = document.getElementById('lobby-char-name');
 const characterListEl = document.getElementById('character-list');
+const characterSelectHintEl = document.getElementById('character-select-hint');
 const backFromCharacterBtn = document.getElementById('back-from-character-btn');
 const backFromModeBtn = document.getElementById('back-from-mode-btn');
 const storyModeCard = document.getElementById('story-mode-card');
@@ -1923,6 +1924,14 @@ function openCharacterSelect(returnScreen, pickTarget) {
     showScreen('characterSelect');
 }
 
+// 이 자리가 등급 제한이 있으면(레전드 스토리 파티 2·3번째 자리 등) 그 등급
+// 초과인 쿠키는 소유 여부와 상관없이 이 자리에는 고를 수 없다.
+function characterAllowedForPickTarget(stats) {
+    const cap = characterPickTarget && characterPickTarget.maxGrade;
+    if (!cap) return true;
+    return SHARED.GRADE_ORDER.indexOf(stats.grade) <= SHARED.GRADE_ORDER.indexOf(cap);
+}
+
 // Highest grade first; within a grade the most recently added cookie comes
 // first, which is its position in the CHARACTERS roster (appended in order).
 function charactersByGradeDesc() {
@@ -1938,8 +1947,11 @@ function charactersByGradeDesc() {
 function renderCharacterList() {
     characterListEl.innerHTML = '';
     const currentId = characterPickTarget ? characterPickTarget.selectedId : gameData.selectedCharacter;
+    const cap = characterPickTarget && characterPickTarget.maxGrade;
+    characterSelectHintEl.classList.toggle('hidden', !cap);
+    if (cap) characterSelectHintEl.textContent = `이 자리는 ${cap} 등급까지만 데려갈 수 있습니다.`;
     charactersByGradeDesc().forEach(([id, stats]) => {
-        const unlocked = isCharacterUnlocked(id);
+        const unlocked = isCharacterUnlocked(id) && characterAllowedForPickTarget(stats);
         const card = document.createElement('div');
         card.className = 'boss-card' + (unlocked ? '' : ' locked') + (id === currentId ? ' selected' : '');
         const iconHtml = unlocked
@@ -3085,20 +3097,26 @@ function renderLegendParty() {
     legendPartyEl.innerHTML = '';
     const slots = legendIsMulti ? legendParty.slice(0, 1) : legendParty;
     slots.forEach((id, i) => {
+        // 파티 자리마다 최대 등급이 다르다(1번째는 제한 없음, 2번째는
+        // 레전더리까지, 3번째는 에픽까지 -- LEGEND_PARTY_SLOT_MAX_GRADE).
+        // 멀티(1명 자리)는 제한 없이 아무 등급이나 데려간다.
+        const cap = !legendIsMulti && SHARED.LEGEND_PARTY_SLOT_MAX_GRADE[i];
         const slot = document.createElement('div');
         slot.className = 'awaken-party-slot' + (id ? ' filled' : '');
+        const capHtml = cap ? `<div class="cap">최대 ${cap}</div>` : '';
         if (id) {
             const stats = SHARED.CHARACTERS[id];
             slot.innerHTML = `
                 <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
-                <div class="name">${stats.shortName || stats.name}</div>`;
+                <div class="name">${stats.shortName || stats.name}</div>${capHtml}`;
         } else {
-            slot.innerHTML = '<div class="icon">＋</div><div class="name">비어 있음</div>';
+            slot.innerHTML = `<div class="icon">＋</div><div class="name">비어 있음</div>${capHtml}`;
         }
         slot.addEventListener('click', () => {
             leaveLegendRoomIfWaiting();
             openCharacterSelect('legendDetail', {
                 selectedId: id,
+                maxGrade: cap || null,
                 onPick: (picked) => {
                     // 같은 쿠키가 두 칸에 들어가지 않게, 있던 칸은 비운다.
                     const already = legendParty.indexOf(picked);
