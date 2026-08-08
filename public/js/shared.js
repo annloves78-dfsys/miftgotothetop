@@ -2668,7 +2668,7 @@ const MONSTERS = {
         summonOnTimer: { type: 'icicle_archer', count: 1, everyMs: 7000, max: 3 }
     },
     // 50층 보스. 서리 여왕의 보스급 상위 버전 -- 공격 자체는 약하지만
-    // (10 dmg, 1초마다) 맞힐 때마다 5씩 회복하는 데다 체력이 10000이라
+    // (35 dmg, 1초마다) 맞힐 때마다 5씩 회복하는 데다 체력이 10000이라
     // 장기전으로 깎아내야 한다. 케이크 보스와 같은 방식(일반 몬스터 AI +
     // growOnAttack/enrage/lowHpGuard/summonOnTimer 데이터)이라 서버에
     // 새 코드가 필요 없다.
@@ -2682,7 +2682,7 @@ const MONSTERS = {
         aggroRange: 840,
         preferredDistance: 85,
         attackRange: 220,
-        attackDamage: 10,
+        attackDamage: 35,
         attackCooldown: 1000,
         telegraphMs: 500,
         // 때릴 때마다 5씩 회복한다 (성장은 없음 -- attack/speed 필드가 없어서
