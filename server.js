@@ -114,6 +114,29 @@ function healTeam(room, roomId, amount) {
     }
 }
 
+// 바람궁수맛 궁극기 3단계 (보스 레이드): 죽은 사람이 있으면 부활시키고,
+// 없으면 마법진을 열어 팀을 꽉 채우고 보스 체력을 깎는다. 보스 레이드는
+// 파티가 없어 플레이어 한 명 = 캐릭터 한 명이라 alive만 보면 된다.
+function reviveDownedPlayer(roomId, room, character) {
+    const entry = Object.entries(room.players).find(([, pl]) => !pl.alive);
+    if (!entry) return false;
+    const [id, pl] = entry;
+    pl.hp = Math.max(1, Math.round(pl.maxHp * (character.ultimateReviveHpRatio || 1)));
+    pl.alive = true;
+    io.to(roomId).emit('playerRevived', { id, hp: pl.hp });
+    return true;
+}
+function natureSanctuary(roomId, room, character) {
+    healTeam(room, roomId, Infinity);
+    const ratio = character.ultimateSanctuaryEnemyDamageRatio || 0;
+    if (ratio && room.bossHp > 0) {
+        const dmg = Math.max(1, Math.round(room.bossHp * ratio));
+        room.bossHp = Math.max(0, room.bossHp - dmg);
+        io.to(roomId).emit('bossDamaged', { bossHp: room.bossHp });
+        if (room.bossHp <= 0) endRoom(roomId, 'win');
+    }
+}
+
 function shieldTeam(room, roomId, amount) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
@@ -509,9 +532,32 @@ function passiveHitHeal(character, p) {
     return character.attackHealSelf || 0;
 }
 
-// Is the awakening_rapid ultimate (orangelemon) currently active for this player?
+// p.rapidStrikeUntil is only ever set by the awakening_rapid (orangelemon)
+// and nature_awaken (바람궁수맛 1·2단계) ultimate handlers, so the timer alone
+// is enough -- no need to also check which ultimateType set it.
 function rapidStrikeActive(character, p, now) {
-    return character.ultimateType === 'awakening_rapid' && !!p.rapidStrikeUntil && now < p.rapidStrikeUntil;
+    return !!p.rapidStrikeUntil && now < p.rapidStrikeUntil;
+}
+
+// 바람궁수맛 궁극기: 쓸 때마다 1→2→3단계, 그다음 다시 1단계로 순환한다
+// (p.natureAwakenLevel은 "다음에 쓸 단계"를 0-indexed로 담는다: 0=1단계,
+// 1=2단계, 2=3단계). 1·2단계는 rapidStrikeUntil을 공유해 무한 연사가
+// 되고, 2단계는 그 위에 이동속도(moveSpeedFor의 natureBoostUntil)와
+// 적중마다 팀 회복(attackHealBoostUntil/ultimateHealPerAttack)이 더 붙는다.
+// 3단계는 버프가 아니라 즉시 발동이라 모드별 핸들러에서 따로 처리한다.
+function natureAwakenLevelOf(p) {
+    return (p.natureAwakenLevel || 0) % 3;
+}
+function advanceNatureAwakenLevel(p) {
+    p.natureAwakenLevel = ((p.natureAwakenLevel || 0) + 1) % 3;
+}
+function applyNatureAwakenBuff(p, character, now, level) {
+    p.rapidStrikeUntil = now + character.ultimateDurationMs;
+    p.rapidAttackCount = 0;
+    if (level === 1) {
+        p.natureBoostUntil = now + character.ultimateDurationMs;
+        p.attackHealBoostUntil = now + character.ultimateDurationMs;
+    }
 }
 
 // alternating_punch (orangelemon): right/left punches alternate in damage;
@@ -1789,7 +1835,9 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
         io.to(roomId).emit('playerHealed', { id: attackerId, hp: p.hp });
     }
     if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-        const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+        // ultimateType 체크 없이 타이머+수치만 본다 (시금치맛의 attack_heal_boost뿐
+        // 아니라 바람궁수맛의 nature_awaken 2단계도 같은 타이머를 재사용한다).
+        const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
         healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
     }
 
@@ -1877,6 +1925,51 @@ function healStoryTeamBy(room, roomId, amountFor) {
             p.hp = healed;
             io.to(roomId).emit('storyPlayerHealed', { id, hp: p.hp });
         }
+    }
+}
+
+// 바람궁수맛 궁극기 3단계 (스토리): 팀 중 죽은 캐릭터가 있으면 하나
+// 부활시킨다. 통째로 쓰러진 플레이어를 우선(파티가 있으면 1번 슬롯부터
+// 다시 세운다), 없으면 어느 파티에서든 쓰러진 슬롯 하나를 되살린다.
+function reviveDownedStoryTeammate(roomId, room) {
+    for (const [id, pl] of Object.entries(room.players)) {
+        if (pl.alive) continue;
+        if (pl.party && pl.party.length) {
+            activatePartyCookie(pl, 0, true);
+            io.to(roomId).emit('storyPlayerSwapped', {
+                id, charType: pl.charType, hp: pl.hp, maxHp: pl.maxHp,
+                active: pl.active, partyAlive: pl.partyAlive, partyHp: pl.partyHp
+            });
+        } else {
+            pl.hp = pl.maxHp;
+        }
+        pl.alive = true;
+        io.to(id).emit('storyPlayerRevived', { hp: pl.hp });
+        return true;
+    }
+    for (const pl of Object.values(room.players)) {
+        if (!pl.partyAlive) continue;
+        const idx = pl.partyAlive.findIndex(a => !a);
+        if (idx === -1) continue;
+        pl.partyAlive[idx] = true;
+        pl.partyHp[idx] = pl.partyMaxHp[idx];
+        return true;
+    }
+    return false;
+}
+// 죽은 사람이 없을 때의 대체 효과: 마법진을 열어 팀을 꽉 채우고, 살아있는
+// 몬스터 전부의 (지금) 체력을 ultimateSanctuaryEnemyDamageRatio만큼 깎는다.
+// 번개지옥맛 부활 충격파와 같은 방식(직접 깎기, 방어막/피해감소 무시).
+function natureStorySanctuary(roomId, room, character) {
+    healStoryTeamBy(room, roomId, () => Infinity);
+    const ratio = character.ultimateSanctuaryEnemyDamageRatio || 0;
+    if (!ratio) return;
+    for (const [mid, m] of Object.entries(room.monsters)) {
+        if (!m.alive) continue;
+        const dmg = Math.max(1, Math.round(m.hp * ratio));
+        m.hp = Math.max(0, m.hp - dmg);
+        if (m.hp <= 0) { m.alive = false; io.to(roomId).emit('monsterDefeated', { id: mid }); }
+        else io.to(roomId).emit('monsterDamaged', { id: mid, hp: m.hp });
     }
 }
 
@@ -2207,7 +2300,7 @@ function activatePartyCookie(p, next, fresh) {
     // 자유 교체면 그 쿠키가 쉬는 동안 남아 있던 체력을 그대로 쓴다.
     p.hp = fresh ? p.partyMaxHp[next] : (p.partyHp ? p.partyHp[next] : p.partyMaxHp[next]);
     p.shieldHp = 0;
-    if (fresh) { p.revivesUsed = 0; p.awakened = false; }
+    if (fresh) { p.revivesUsed = 0; p.awakened = false; p.natureAwakenLevel = 0; }
     // 새로 들어온 쿠키는 쿨다운을 처음부터 쓴다.
     p.lastAttackTime = 0; p.lastSkillTime = 0; p.lastUltimateTime = 0;
     p.undyingSoulUntil = 0; p.rapidStrikeUntil = 0; p.awakenUntil = 0;
@@ -2997,7 +3090,10 @@ function tickStoryRoom(roomId) {
                     io.to(roomId).emit('storyPlayerHealed', { id: pr.ownerId, hp: owner.hp });
                 }
                 if (oc.attackHealOnUse && Math.random() < (oc.attackHealChance ?? 1)) {
-                    healStoryPlayer(room, roomId, oc.attackHealOnUse);
+                    // 던진 화살/구슬도 근접과 같은 나선(attack_heal_boost류) 증폭을 받는다.
+                    const boosted = oc.ultimateHealPerAttack != null && owner.attackHealBoostUntil
+                        && Date.now() < owner.attackHealBoostUntil;
+                    healStoryPlayer(room, roomId, boosted ? oc.ultimateHealPerAttack : oc.attackHealOnUse);
                 }
             }
             return true;
@@ -3197,6 +3293,51 @@ function healGuestTeamByRatio(room, roomId, ratio) {
         if (!changed) continue;
         p.hp = p.partyHp[p.active];
         io.to(roomId).emit('guestPlayerHealed', { id, hp: p.hp, partyHp: p.partyHp });
+    }
+}
+
+// 바람궁수맛 궁극기 3단계 (게스트 레이드): 팀 중 죽은 캐릭터가 있으면
+// 하나 부활시킨다. 통째로 쓰러진 플레이어를 우선(슬롯 0부터 다시 세운다),
+// 없으면 어느 파티에서든 쓰러진 슬롯 하나를 되살린다.
+function reviveDownedGuestTeammate(roomId, room) {
+    for (const [id, pl] of Object.entries(room.players)) {
+        if (pl.alive) continue;
+        pl.partyAlive[0] = true;
+        pl.partyHp[0] = pl.partyMaxHp[0];
+        activateGuestSlot(pl, 0);
+        pl.alive = true;
+        io.to(roomId).emit('guestForcedSwap', { id, active: 0, charType: pl.charType });
+        io.to(id).emit('guestPlayerRevived', { hp: pl.hp });
+        io.to(roomId).emit('guestPlayerDamaged', {
+            id, hp: pl.hp, alive: true, shieldHp: pl.shieldHp || 0,
+            partyHp: pl.partyHp, partyAlive: pl.partyAlive, active: pl.active, charType: pl.charType
+        });
+        return true;
+    }
+    for (const pl of Object.values(room.players)) {
+        if (!pl.partyAlive) continue;
+        const idx = pl.partyAlive.findIndex(a => !a);
+        if (idx === -1) continue;
+        pl.partyAlive[idx] = true;
+        pl.partyHp[idx] = pl.partyMaxHp[idx];
+        return true;
+    }
+    return false;
+}
+// 죽은 사람이 없을 때의 대체 효과: 마법진을 열어 팀을 꽉 채우고, 보스와
+// 살아있는 부하 전부의 (지금) 체력을 ultimateSanctuaryEnemyDamageRatio만큼 깎는다.
+function natureGuestSanctuary(roomId, room, character, casterId) {
+    healGuestTeam(room, roomId, Infinity);
+    const ratio = character.ultimateSanctuaryEnemyDamageRatio || 0;
+    if (!ratio) return;
+    if (!room.phaseTransitioned && room.bossHp > 0) {
+        damageGuestBoss(roomId, room, Math.max(1, Math.round(room.bossHp * ratio)), casterId);
+        if (!rooms[roomId]) return;
+    }
+    for (const mid of Object.keys(room.monsters)) {
+        const m = room.monsters[mid];
+        if (!m || !m.alive) continue;
+        damageGuestMonster(roomId, room, mid, Math.max(1, Math.round(m.hp * ratio)));
     }
 }
 
@@ -4026,7 +4167,10 @@ function tickGuestRoom(roomId) {
                 io.to(roomId).emit('guestPlayerHealed', { id: pr.ownerId, hp: owner.hp, partyHp: owner.partyHp });
             }
             if (oc.attackHealOnUse && Math.random() < (oc.attackHealChance ?? 1)) {
-                healGuestTeam(room, roomId, oc.attackHealOnUse);
+                // 던진 화살/구슬도 근접과 같은 나선(attack_heal_boost류) 증폭을 받는다.
+                const boosted = oc.ultimateHealPerAttack != null && owner.attackHealBoostUntil
+                    && Date.now() < owner.attackHealBoostUntil;
+                healGuestTeam(room, roomId, boosted ? oc.ultimateHealPerAttack : oc.attackHealOnUse);
             }
         }
         return true;
@@ -5066,7 +5210,7 @@ io.on('connection', (socket) => {
             }
         }
         if (anyHit && character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+            const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
     });
@@ -5085,7 +5229,18 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
+        // 바람궁수맛 특수스킬: 조준 없이 즉시 발동, 팀 전체에게 초당 회복
+        // 버프를 건다. team_heal_over_time 궁극기와 같은 버프를 스킬 쪽
+        // 필드(skill*)로 채워서 그대로 재사용한다.
+        if (character.skillType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.skillTickMs,
+                healPerTick: character.skillHealPerTick,
+                endAt: now + character.skillDurationMs,
+                lastTickAt: now
+            });
+        } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             for (const [mid, m] of Object.entries(room.monsters)) {
                 if (!m.alive) continue;
@@ -5383,7 +5538,17 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
 
-        if (character.ultimateType === 'team_heal_over_time') {
+        if (character.ultimateType === 'nature_awaken') {
+            const level = natureAwakenLevelOf(p);
+            if (level < 2) {
+                applyNatureAwakenBuff(p, character, now, level);
+                io.to(roomId).emit('natureAwaken', { id: socket.id, level: level + 1 });
+            } else if (!reviveDownedStoryTeammate(roomId, room)) {
+                natureStorySanctuary(roomId, room, character);
+                io.to(roomId).emit('natureSanctuary', { id: socket.id });
+            }
+            advanceNatureAwakenLevel(p);
+        } else if (character.ultimateType === 'team_heal_over_time') {
             room.activeBuffs.push({
                 type: 'team_heal_over_time',
                 tickMs: character.ultimateTickMs,
@@ -5738,7 +5903,18 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'pull_in') {
+        // 바람궁수맛 특수스킬: 조준 없이 즉시 발동, 팀 전체에게 초당 회복
+        // 버프를 건다. team_heal_over_time 궁극기와 같은 버프를 스킬 쪽
+        // 필드(skill*)로 채워서 그대로 재사용한다.
+        if (character.skillType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.skillTickMs,
+                healPerTick: character.skillHealPerTick,
+                endAt: now + character.skillDurationMs,
+                lastTickAt: now
+            });
+        } else if (character.skillType === 'pull_in') {
             // The raid boss is bolted to the middle of the arena, so there is
             // nothing to drag -- it takes the "can't be pulled" damage instead.
             io.to(roomId).emit('pullIn', { id: socket.id, x: p.x, y: p.y, radius: character.skillRange });
@@ -5969,7 +6145,17 @@ io.on('connection', (socket) => {
 
         socket.to(roomId).emit('playerUltimateUsed', { id: socket.id });
 
-        if (character.ultimateType === 'team_heal_over_time') {
+        if (character.ultimateType === 'nature_awaken') {
+            const level = natureAwakenLevelOf(p);
+            if (level < 2) {
+                applyNatureAwakenBuff(p, character, now, level);
+                io.to(roomId).emit('natureAwaken', { id: socket.id, level: level + 1 });
+            } else if (!reviveDownedPlayer(roomId, room, character)) {
+                natureSanctuary(roomId, room, character);
+                io.to(roomId).emit('natureSanctuary', { id: socket.id });
+            }
+            advanceNatureAwakenLevel(p);
+        } else if (character.ultimateType === 'team_heal_over_time') {
             room.activeBuffs.push({
                 type: 'team_heal_over_time',
                 tickMs: character.ultimateTickMs,
@@ -6455,7 +6641,7 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
         }
         if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-            const boosted = character.ultimateType === 'attack_heal_boost' && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+            const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
     });
@@ -6473,7 +6659,18 @@ io.on('connection', (socket) => {
         p.lastSkillTime = now;
         socket.to(roomId).emit('guestPlayerSkillUsed', { id: socket.id });
 
-        if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
+        // 바람궁수맛 특수스킬: 조준 없이 즉시 발동, 팀 전체에게 초당 회복
+        // 버프를 건다. team_heal_over_time 궁극기와 같은 버프를 스킬 쪽
+        // 필드(skill*)로 채워서 그대로 재사용한다.
+        if (character.skillType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.skillTickMs,
+                healPerTick: character.skillHealPerTick,
+                endAt: now + character.skillDurationMs,
+                lastTickAt: now
+            });
+        } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             damageGuestTargets(roomId, room,
                 guestCircleTargets(room, p.x, p.y, character.skillRange), character.skillDamage, socket.id);
         } else if (character.skillType === 'guard_stance' || character.skillType === 'shield_block') {
@@ -6712,6 +6909,18 @@ io.on('connection', (socket) => {
         if (character.ultimateType !== 'butterfly_mode') p.lastUltimateTime = now;
         socket.to(roomId).emit('guestPlayerUltimateUsed', { id: socket.id });
 
+        if (character.ultimateType === 'nature_awaken') {
+            const level = natureAwakenLevelOf(p);
+            if (level < 2) {
+                applyNatureAwakenBuff(p, character, now, level);
+                io.to(roomId).emit('natureAwaken', { id: socket.id, level: level + 1 });
+            } else if (!reviveDownedGuestTeammate(roomId, room)) {
+                natureGuestSanctuary(roomId, room, character, socket.id);
+                io.to(roomId).emit('natureSanctuary', { id: socket.id });
+            }
+            advanceNatureAwakenLevel(p);
+            return;
+        }
         if (character.ultimateType === 'guard_surge') {
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
             healGuestTeam(room, roomId, character.ultimateHealAmount);

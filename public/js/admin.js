@@ -80,7 +80,8 @@ const CURRENCY_LABELS = {
     ticketDemon: '악마 뽑기 티켓',
     ticketWaterdrop: '물방울맛 뽑기 티켓',
     ticketMagma: '마그마맛 뽑기 티켓',
-    ticketLightning: '번개전사맛 뽑기 티켓'
+    ticketLightning: '번개전사맛 뽑기 티켓',
+    ticketWindarcher: '바람궁수맛 뽑기 티켓'
 };
 
 $('currency-select').innerHTML = Object.entries(CURRENCY_LABELS)

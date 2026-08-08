@@ -455,7 +455,7 @@ BEGIN
   SET game_data = game_data || jsonb_build_object('currencies', jsonb_build_object(
     'coins', 0, 'diamonds', 0, 'ticketNormal', 0, 'material', 0, 'materialRare', 0,
     'potion', 0, 'potionRare', 0, 'ticketDemon', 0, 'ticketWaterdrop', 0,
-    'ticketMagma', 0, 'ticketLightning', 0
+    'ticketMagma', 0, 'ticketLightning', 0, 'ticketWindarcher', 0
   ))
   WHERE id = p_user_id;
   IF NOT FOUND THEN
@@ -505,7 +505,8 @@ BEGIN
   PERFORM br_verify_admin(p_token);
   IF p_currency NOT IN (
     'coins', 'diamonds', 'ticketNormal', 'material', 'materialRare',
-    'potion', 'potionRare', 'ticketDemon', 'ticketWaterdrop', 'ticketMagma', 'ticketLightning'
+    'potion', 'potionRare', 'ticketDemon', 'ticketWaterdrop', 'ticketMagma', 'ticketLightning',
+    'ticketWindarcher'
   ) THEN
     RAISE EXCEPTION 'INVALID_CURRENCY';
   END IF;

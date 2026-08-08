@@ -936,6 +936,59 @@ const CHARACTERS = {
         ultimateRapidCooldown: 100,
         ultimateCooldownMs: 30000
     },
+    // 레전더리 이벤트 한정(바람 side). 빛 속성 원거리 힐러 -- 기본 공격 자체가
+    // 팀을 회복시키고, 특수스킬은 조준 없는 팀 지속회복, 궁극기는 쓸 때마다
+    // 강해지는 3단계 각성(바다펄맛의 밀물처럼 순환하되, 자리는 스킬이 아니라
+    // 궁극기)이다.
+    windarcher: {
+        name: '바람궁수맛 쿠키',
+        shortName: '바람궁수', // shown on the lobby's character-select button
+        color: '#2ecc71',
+        colorLeft: '#27ae60', // 진한 초록
+        colorRight: '#82e0aa', // 연한 초록
+        weaponShape: 'bow',
+        weaponColor: '#27ae60',
+        grade: '레전더리',
+        element: '빛',
+        role: '힐러',
+        seasonLimited: true,
+        health: 140,
+        speed: 2,
+        // 초록 화살: 실제로 날아가는 투사체라 빗나갈 수 있지만, 재사용
+        // 대기시간이 0.3초로 이 게임에서 가장 빠른 기본 공격이다. 적중하면
+        // 피해와 별개로 팀 전체를 항상(확률 없이) 조금 회복시킨다.
+        attackType: 'throw_projectile',
+        attackProjectileTheme: 'wind', // 빛 속성이지만 금빛이 아니라 초록으로 그린다
+        attackProjectileNoun: '화살',
+        attackProjectileRadius: 6,
+        attackProjectileSpeed: 800,
+        attackRange: 520,
+        attackDamage: 3,
+        attackCooldown: 300,
+        attackHealOnUse: 2,
+        // 자연의 힘: 조준 없이 즉시 발동, 팀 전체에게 초당 회복 버프를 건다.
+        // team_heal_over_time 궁극기와 같은 버프를 스킬 쪽 필드로 재사용한다.
+        skillType: 'team_heal_over_time',
+        skillHealPerTick: 5,
+        skillTickMs: 1000,
+        skillDurationMs: 4000,
+        skillCooldown: 10000,
+        // 각성: 쓸 때마다 1→2→3단계, 그다음 다시 1단계로 순환한다.
+        // 1단계: 10초 동안 기본 공격 재사용 대기시간이 사실상 사라진다.
+        // 2단계: 1단계 효과에 이동 속도와 적중마다 팀 회복이 더해진다.
+        // 3단계: 조준 없이 즉시 발동. 죽은 팀원이 있으면 부활시키고, 없으면
+        // 마법진으로 팀을 꽉 채우고 적 체력을 깎는다.
+        ultimateType: 'nature_awaken',
+        ultimateDurationMs: 10000,
+        ultimateRapidCooldown: 100,
+        ultimateLevel2SpeedBonus: 0.5,
+        // attackHealOnUse의 boosted 버전. server.js의 attack_heal_boost 소비
+        // 로직이 ultimateType 상관없이 이 필드+attackHealBoostUntil만 본다.
+        ultimateHealPerAttack: 3,
+        ultimateReviveHpRatio: 0.5,
+        ultimateSanctuaryEnemyDamageRatio: 0.3,
+        ultimateCooldownMs: 30000
+    },
     seaguardian: {
         name: '바다 수호자맛 쿠키',
         shortName: '수호자', // shown on the lobby's character-select button
@@ -1487,6 +1540,108 @@ const EVENT = {
                     star: { x: -1720, y: 0 }
                 }
             }
+        },
+        // 바람 side: 바람궁수맛 쿠키 전용. 물 side와 같은 짝 구성(근접+원거리)
+        // 이지만 근접이 앞장서고 궁수가 뒤에서 쏘는 순서라 물 side와는 체감이
+        // 다르다.
+        wind: {
+            label: '🍃 바람',
+            icon: '🍃',
+            ticketKey: 'ticketWindarcher',
+            stages: [
+                {
+                    id: 'ev_a1', name: '산들바람', reward: 1,
+                    def: {
+                        levelType: 'bridge', levelLength: 1500, laneHalfWidth: 70,
+                        gates: [{ entrance: -800, exit: -1300, room: 0 }],
+                        monsters: [
+                            { type: 'wind_slice', x: -950, y: -35, room: 0 },
+                            { type: 'wind_slice', x: -950, y: 35, room: 0 },
+                            { type: 'wind_slice', x: -1100, y: 0, room: 0 },
+                            { type: 'wind_slice', x: -1220, y: -35, room: 0 }
+                        ],
+                        star: { x: -1420, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_a2', name: '돌풍', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 1900, laneHalfWidth: 70,
+                        gates: [{ entrance: -800, exit: -1700, room: 0 }],
+                        monsters: [
+                            { type: 'wind_slice', x: -950, y: -40, room: 0 },
+                            { type: 'wind_slice', x: -950, y: 0, room: 0 },
+                            { type: 'wind_slice', x: -950, y: 40, room: 0 },
+                            { type: 'wind_slice', x: -1150, y: -25, room: 0 },
+                            { type: 'wind_arrow', x: -1450, y: -35, room: 0 },
+                            { type: 'wind_arrow', x: -1450, y: 35, room: 0 }
+                        ],
+                        star: { x: -1820, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_a3', name: '바람의 참호', reward: 2,
+                    def: {
+                        levelType: 'bridge', levelLength: 2300, laneHalfWidth: 70,
+                        gates: [
+                            { entrance: -700, exit: -1150, room: 0 },
+                            { entrance: -1150, exit: -2150, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'wind_slice', x: -850, y: -35, room: 0 },
+                            { type: 'wind_slice', x: -850, y: 35, room: 0 },
+                            { type: 'wind_slice', x: -1000, y: 0, room: 0 },
+                            { type: 'wind_arrow', x: -1500, y: -50, room: 1 },
+                            { type: 'wind_arrow', x: -1500, y: 0, room: 1 },
+                            { type: 'wind_arrow', x: -1500, y: 50, room: 1 },
+                            { type: 'wind_arrow', x: -1800, y: 0, room: 1 }
+                        ],
+                        star: { x: -2250, y: 0 }
+                    }
+                },
+                {
+                    id: 'ev_a4', name: '거센 폭풍', reward: 3,
+                    def: {
+                        levelType: 'bridge', levelLength: 2600, laneHalfWidth: 70,
+                        gates: [
+                            { entrance: -700, exit: -1350, room: 0 },
+                            { entrance: -1350, exit: -2400, room: 1 }
+                        ],
+                        monsters: [
+                            { type: 'wind_slice', x: -850, y: -45, room: 0 },
+                            { type: 'wind_slice', x: -850, y: 0, room: 0 },
+                            { type: 'wind_slice', x: -850, y: 45, room: 0 },
+                            { type: 'wind_slice', x: -1000, y: -25, room: 0 },
+                            { type: 'wind_arrow', x: -1200, y: -40, room: 0 },
+                            { type: 'wind_arrow', x: -1200, y: 40, room: 0 },
+                            { type: 'wind_arrow', x: -1600, y: -45, room: 1 },
+                            { type: 'wind_arrow', x: -1600, y: 0, room: 1 },
+                            { type: 'wind_arrow', x: -1600, y: 45, room: 1 },
+                            { type: 'wind_arrow', x: -1850, y: -30, room: 1 },
+                            { type: 'wind_slice', x: -1850, y: 30, room: 1 },
+                            { type: 'wind_slice', x: -2100, y: 0, room: 1 }
+                        ],
+                        star: { x: -2520, y: 0 }
+                    }
+                }
+            ],
+            // 4개를 다 깨야 열리는 보스. 반복 도전 가능(임시 보스 -- 진짜
+            // 보스가 오면 이 def만 갈아끼우면 된다).
+            boss: {
+                id: 'ev_ab', name: '바람의 수호자', reward: 1, repeatable: true,
+                def: {
+                    levelType: 'bridge', levelLength: 1800, laneHalfWidth: 90,
+                    gates: [{ entrance: -700, exit: -1600, room: 0 }],
+                    monsters: [
+                        { type: 'wind_guardian', x: -1200, y: 0, room: 0 },
+                        { type: 'wind_arrow', x: -1000, y: -60, room: 0 },
+                        { type: 'wind_arrow', x: -1000, y: 60, room: 0 },
+                        { type: 'wind_slice', x: -900, y: -30, room: 0 },
+                        { type: 'wind_slice', x: -900, y: 30, room: 0 }
+                    ],
+                    star: { x: -1720, y: 0 }
+                }
+            }
         }
     },
     // 전체 클리어 보너스. Paid as this many of EACH side's ticket, since the two
@@ -1823,6 +1978,32 @@ const MONSTERS = {
         laserWidth: 24,
         laserTrackSpeed: 90
     },
+    // 바람 side: 근접 조각과 원거리 궁수를 섞어 쓴다(물 side와 같은 짝 구성).
+    wind_slice: {
+        name: '바람 조각',
+        color: '#27ae60',
+        health: 45,
+        speed: 4,
+        aggroRange: 560,
+        preferredDistance: 70,
+        attackRange: 110,
+        attackDamage: 6,
+        attackCooldown: 2300,
+        telegraphMs: 350
+    },
+    wind_arrow: {
+        name: '바람 궁수병',
+        color: '#58d68d',
+        health: 35,
+        speed: 2,
+        aggroRange: 540,
+        preferredDistance: 260,
+        projectileSpeed: 460,
+        attackRange: 320,
+        attackDamage: 4,
+        attackCooldown: 2400,
+        telegraphMs: 450
+    },
     // ---- 이벤트 보스 (임시) ----
     // Placeholder guardians so the boss slot is playable and its ticket loop
     // works; the real bosses are coming as a data swap.
@@ -1868,6 +2049,19 @@ const MONSTERS = {
         laserRange: 700,
         laserWidth: 30,
         laserTrackSpeed: 100
+    },
+    wind_guardian: {
+        name: '바람의 수호자',
+        color: '#1e8449',
+        health: 400,
+        speed: 3,
+        aggroRange: 700,
+        preferredDistance: 240,
+        projectileSpeed: 480,
+        attackRange: 340,
+        attackDamage: 7,
+        attackCooldown: 1500,
+        telegraphMs: 380
     },
     // ---- 4~9층에서 처음 나오는 것들 ----
     // 4층: 느리고 단단한 앞줄. 케이크 조각보다 두 배 가까이 질기다.
@@ -5482,7 +5676,7 @@ const INSTINCT_L2_SKILL_HEAL_BONUS = 10;
 // 스킬 수치 중 고정값으로 표현된 필드만 2강 보너스를 받는다. 비율형(skillHealRatio 등)이나
 // 단계별 배열로 표현된 스킬은 대상이 아니다 -- 캐릭터마다 형태가 달라서 안전하게 더할 수 없다.
 const INSTINCT_SKILL_DAMAGE_KEYS = ['skillDamage'];
-const INSTINCT_SKILL_HEAL_KEYS = ['skillHealAmount', 'skillHealOnHit'];
+const INSTINCT_SKILL_HEAL_KEYS = ['skillHealAmount', 'skillHealOnHit', 'skillHealPerTick'];
 const INSTINCT_SKILL_SHIELD_KEYS = ['skillShieldAmount'];
 
 // 값이 이상해도(문자열, undefined, 음수, NaN 등) 항상 0~INSTINCT_MAX_LEVEL 사이의
@@ -5878,6 +6072,21 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackHealEveryHits: 1, attackHealSelf: 1 },
             desc: '기본 공격이 맞을 때마다 자신의 체력을 1만큼 회복합니다.'
         }
+    },
+    // 바람궁수맛 쿠키: 궁극기(각성) 3단계와 2단계, 기본공격 회복을 강화한다.
+    windarcher: {
+        3: {
+            effect: { ultimateSanctuaryEnemyDamageRatio: 0.4 },
+            desc: '궁극기 3단계 마법진이 깎는 적 체력이 30%에서 40%로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateHealPerAttack: 5 },
+            desc: '궁극기 2단계 동안 기본 공격이 적중할 때마다 회복량이 5로 늘어납니다.'
+        },
+        5: {
+            effect: { attackHealOnUse: 3 },
+            desc: '기본 공격이 적중할 때마다 팀 전체를 3만큼 회복시킵니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
@@ -5920,7 +6129,8 @@ const LEGENDARY_BANNER_TAKEN_FROM = '일반';
 const LEGENDARY_BANNERS = [
     { id: 'waterdrop', charType: 'waterdrop', icon: '💧', ticketKey: 'ticketWaterdrop', side: 'water' },
     { id: 'magma', charType: 'magma', icon: '🔥', ticketKey: 'ticketMagma', side: 'fire' },
-    { id: 'lightning', charType: 'lightning', icon: '⚡', ticketKey: 'ticketLightning', side: 'lightning' }
+    { id: 'lightning', charType: 'lightning', icon: '⚡', ticketKey: 'ticketLightning', side: 'lightning' },
+    { id: 'windarcher', charType: 'windarcher', icon: '🏹', ticketKey: 'ticketWindarcher', side: 'wind' }
 ];
 
 // The banner's own table: the normal one with the featured cookie carved out of

@@ -17,7 +17,8 @@ const defaultCurrencies = {
     ticketDemon: 0,
     ticketWaterdrop: 0,
     ticketMagma: 0,
-    ticketLightning: 0
+    ticketLightning: 0,
+    ticketWindarcher: 0
 };
 
 const defaultData = {

@@ -417,7 +417,8 @@ const CURRENCY_LABELS = {
     ticketDemon: '악마 뽑기 티켓',
     ticketWaterdrop: '물방울맛 뽑기 티켓',
     ticketMagma: '마그마맛 뽑기 티켓',
-    ticketLightning: '번개전사맛 뽑기 티켓'
+    ticketLightning: '번개전사맛 뽑기 티켓',
+    ticketWindarcher: '바람궁수맛 뽑기 티켓'
 };
 
 const CURRENCY_ICONS = {
@@ -431,7 +432,8 @@ const CURRENCY_ICONS = {
     ticketDemon: '😈',
     ticketWaterdrop: '🎫',
     ticketMagma: '🎫',
-    ticketLightning: '🎫'
+    ticketLightning: '🎫',
+    ticketWindarcher: '🎫'
 };
 
 // The pills in the lobby's top-right corner. Tickets are left out -- they have
@@ -968,7 +970,8 @@ function describeAbility(stats, kind) {
                 + ` 보스도 마찬가지입니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
         if (stats.attackType === 'throw_projectile') {
-            const noun = stats.element === '불' ? '불꽃' : stats.element === '빛' ? '버블티 펄' : '물방울';
+            const noun = stats.attackProjectileNoun
+                || (stats.element === '불' ? '불꽃' : stats.element === '빛' ? '버블티 펄' : '물방울');
             return `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
         }
@@ -988,6 +991,8 @@ function describeAbility(stats, kind) {
     if (kind === 'skill') {
         const cd = ` (재사용 대기시간 ${sec(stats.skillCooldown)}초)`;
         switch (stats.skillType) {
+            case 'team_heal_over_time':
+                return `조준 없이 즉시 발동합니다. ${sec(stats.skillDurationMs)}초 동안 ${sec(stats.skillTickMs)}초마다 팀 전체를 ${stats.skillHealPerTick}만큼 회복시킵니다.${cd}`;
             case 'spin_kick':
                 return `제자리에서 회전하며 반경 ${stats.skillRange}px 내의 적에게 ${stats.skillDamage}의 피해를 줍니다.${cd}`;
             case 'speed_boost':
@@ -1135,6 +1140,13 @@ function describeAbility(stats, kind) {
                     + ` 그 안의 적은 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 화염 피해를 입고,`
                     + ` 자신이 그 안에 있으면 ${sec(stats.ultimateZoneTickMs)}초마다 체력을 ${stats.ultimateZoneSelfHealPerTick}만큼 회복합니다.`
                     + ` 그 안에 있는 적을 기본 공격으로 맞히면 화염 피해가 ${stats.ultimateZoneAttackBonusBurn} 더 붙습니다.${cd}`;
+            case 'nature_awaken':
+                return [
+                    `쓸 때마다 1→2→3단계, 그다음 다시 1단계로 돌아갑니다.`,
+                    `1단계 · ${sec(stats.ultimateDurationMs)}초 동안 기본 공격의 재사용 대기시간이 ${stats.ultimateRapidCooldown / 1000}초로 줄어듭니다.`,
+                    `2단계 · 1단계 효과에 더해 ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateLevel2SpeedBonus} 빨라지고, 기본 공격이 적중할 때마다 팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복시킵니다.`,
+                    `3단계 · 조준 없이 즉시 발동합니다. 팀 중 죽은 캐릭터가 있으면 하나를 부활시키고, 없으면 마법진을 열어 팀 전체 체력을 100%로 채우고 적 체력의 ${Math.round((stats.ultimateSanctuaryEnemyDamageRatio || 0) * 100)}%를 깎습니다.${cd}`
+                ].join('\n');
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -1322,7 +1334,8 @@ const SKILL_ICONS = {
     freeze_burst: '❄️',
     targeted_line_aoe: '✨',
     sea_hide: '🌊',
-    team_hot_shield: '🛡️'
+    team_hot_shield: '🛡️',
+    nature_awaken: '🍃'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -1721,18 +1734,29 @@ function isLightProjectile(charType) {
     const stats = charType && SHARED.CHARACTERS[charType];
     return !!(stats && stats.element === '빛');
 }
+// 바람궁수맛의 초록 화살처럼 attackProjectileTheme을 따로 적어 둔 투사체는
+// 속성과 상관없이 그 테마 색으로 그린다 (빛 속성인데 금빛이 아니어야 하는 경우).
+function isWindProjectile(charType) {
+    const stats = charType && SHARED.CHARACTERS[charType];
+    return !!(stats && stats.attackProjectileTheme === 'wind');
+}
 function drawThrownDrops(c, drops, now) {
     Object.values(drops).forEach(d => {
         const t = (now - d.at) / 1000;
         const x = d.x + d.vx * t;
         const y = d.y + d.vy * t;
         const r = d.radius || 10;
-        const fire = isFireProjectile(d.charType);
-        const light = !fire && isLightProjectile(d.charType);
+        const wind = isWindProjectile(d.charType);
+        const fire = !wind && isFireProjectile(d.charType);
+        const light = !wind && !fire && isLightProjectile(d.charType);
         c.save();
         c.translate(x, y);
         const grad = c.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.2, 0, 0, r);
-        if (fire) {
+        if (wind) {
+            grad.addColorStop(0, '#eafff0');
+            grad.addColorStop(0.5, '#58d68d');
+            grad.addColorStop(1, '#1e8449');
+        } else if (fire) {
             grad.addColorStop(0, '#fff3c4');
             grad.addColorStop(0.5, '#ff8a3d');
             grad.addColorStop(1, '#c0392b');
@@ -1748,7 +1772,7 @@ function drawThrownDrops(c, drops, now) {
         c.arc(0, 0, r, 0, Math.PI * 2);
         c.fillStyle = grad;
         c.fill();
-        c.strokeStyle = (fire || light) ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
+        c.strokeStyle = (fire || light || wind) ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
         c.lineWidth = 2;
         c.stroke();
         c.restore();
@@ -1759,13 +1783,16 @@ function drawThrownDrops(c, drops, now) {
 function drawDropSplashes(c, splashes, now) {
     splashes.forEach(s => {
         const life = (s.until - now) / 260;
-        const fire = isFireProjectile(s.charType);
-        const light = !fire && isLightProjectile(s.charType);
+        const wind = isWindProjectile(s.charType);
+        const fire = !wind && isFireProjectile(s.charType);
+        const light = !wind && !fire && isLightProjectile(s.charType);
         c.beginPath();
         c.arc(s.x, s.y, 8 + (1 - life) * 16, 0, Math.PI * 2);
-        c.strokeStyle = fire
-            ? `rgba(255, 138, 61, ${Math.max(0, life)})`
-            : (light ? `rgba(255, 229, 138, ${Math.max(0, life)})` : `rgba(127, 212, 245, ${Math.max(0, life)})`);
+        c.strokeStyle = wind
+            ? `rgba(88, 214, 141, ${Math.max(0, life)})`
+            : fire
+                ? `rgba(255, 138, 61, ${Math.max(0, life)})`
+                : (light ? `rgba(255, 229, 138, ${Math.max(0, life)})` : `rgba(127, 212, 245, ${Math.max(0, life)})`);
         c.lineWidth = 3;
         c.stroke();
     });
@@ -3941,6 +3968,7 @@ socket.on('storyFloorStarted', (data) => {
         equipSpeed: 0, equipCooldown: 1, // filled in below from what this cookie has on
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
+        natureBoostUntil: 0, natureAwakenLevel: 0,
         comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0,
         tideStage: 1 // 바다펄맛 밀물은 언제나 1단계부터 시작한다
     };
@@ -4539,6 +4567,14 @@ function tryStoryUseUltimate() {
     if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'great_slash') storyPlayer.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
+    if (stats.ultimateType === 'nature_awaken') {
+        const level = (storyPlayer.natureAwakenLevel || 0) % 3;
+        if (level < 2) {
+            storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
+            if (level === 1) storyPlayer.natureBoostUntil = now + stats.ultimateDurationMs;
+        }
+        storyPlayer.natureAwakenLevel = (level + 1) % 3;
+    }
     socket.emit('storyPlayerUltimate');
 }
 
@@ -4604,7 +4640,7 @@ function tryStoryAttack() {
     const now = performance.now();
     if (now < (storyPlayer.untouchableUntil || 0)) return; // 바다 수호자맛 sea_hide
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-    const rapid = stats.ultimateType === 'awakening_rapid' && now < storyPlayer.rapidStrikeUntil;
+    const rapid = now < storyPlayer.rapidStrikeUntil; // awakening_rapid, nature_awaken 1·2단계가 공유하는 타이머
     let cooldown = stats.attackCooldown;
     if (rapid) cooldown = stats.ultimateRapidCooldown;
     else if (stats.attackType === 'combo_two_stage' && storyPlayer.comboStage === 1) {
@@ -4669,7 +4705,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil);
         let dx = 0, dy = 0;
         if (storyJoystickMoveVec) {
             dx = storyJoystickMoveVec.x * speed;

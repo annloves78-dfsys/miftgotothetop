@@ -256,6 +256,22 @@ function drawCharacterWeapon(ctx, R, stats, alive) {
             ctx.stroke();
             break;
         }
+        case 'bow': {
+            // 활대(호)와 시위 하나. 몸 옆에 세로로 들고 있는 모습.
+            const br = R * 1.1;
+            const half = Math.PI * 0.38;
+            ctx.lineWidth = Math.max(3, R * 0.16);
+            ctx.beginPath();
+            ctx.arc(hx, 0, br, -half, half);
+            ctx.stroke();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+            ctx.beginPath();
+            ctx.moveTo(hx + Math.cos(-half) * br, Math.sin(-half) * br);
+            ctx.lineTo(hx + Math.cos(half) * br, Math.sin(half) * br);
+            ctx.stroke();
+            break;
+        }
     }
     ctx.restore();
 }
@@ -407,7 +423,7 @@ function withEquipSpeed(base, equipSpeed) {
 // isJoystick: 모바일 조이스틱은 입력 특성상 실제 체감 이동속도가 키보드보다
 // 느리게 느껴지므로, 계산된 이동속도에 보정값을 더해 체감을 맞춘다.
 const JOYSTICK_SPEED_BONUS = 0.5;
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick) {
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil) {
     const bonus = isJoystick ? JOYSTICK_SPEED_BONUS : 0;
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
@@ -425,6 +441,10 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     // 본능해제 4강(오렌지레몬맛): awakening_rapid 궁극기가 켜져 있는 동안 이동속도를 더한다.
     if (stats.ultimateType === 'awakening_rapid' && stats.instinctRapidSpeedBonus && now < (rapidStrikeUntil || 0)) {
         return withEquipSpeed(stats.speed + stats.instinctRapidSpeedBonus, equipSpeed) + bonus;
+    }
+    // 바람궁수맛 궁극기 2단계: rapidStrikeUntil과 별도 타이머로, 그동안만 이동속도가 붙는다.
+    if (stats.ultimateLevel2SpeedBonus && now < (natureBoostUntil || 0)) {
+        return withEquipSpeed(stats.speed + stats.ultimateLevel2SpeedBonus, equipSpeed) + bonus;
     }
     return stats.speed + bonus;
 }
@@ -463,6 +483,8 @@ class Player {
         this.equipSpeed = 0; // 장비의 이동 속도 보너스 (내 쿠키에만 의미가 있다)
         this.awakenUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
         this.rapidStrikeUntil = 0; // performance.now() timestamp; see triggerUltimateEffect()
+        this.natureBoostUntil = 0; // performance.now() timestamp; 바람궁수맛 궁극기 2단계 이동속도
+        this.natureAwakenLevel = 0; // 0/1/2 = 다음에 쓸 궁극기가 1/2/3단계 (로컬 예측용; 서버가 진짜 값)
         this.untouchableUntil = 0; // performance.now() timestamp; 바다 수호자맛 sea_hide -- 이 동안 아무도 못 때리고 자기도 못 때린다
     }
 
@@ -473,7 +495,7 @@ class Player {
     canAttack(now) {
         if (!this.alive) return false;
         if (now < this.untouchableUntil) return false; // 바다 수호자맛 sea_hide: 숨어 있는 동안은 공격 불가
-        const rapid = this.stats.ultimateType === 'awakening_rapid' && now < this.rapidStrikeUntil;
+        const rapid = now < this.rapidStrikeUntil; // awakening_rapid, nature_awaken 1·2단계가 공유하는 타이머
         let cooldown = this.stats.attackCooldown;
         if (rapid) cooldown = this.stats.ultimateRapidCooldown;
         else if (this.stats.attackType === 'combo_two_stage' && this.comboStage === 1) {
@@ -504,7 +526,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
@@ -584,6 +606,13 @@ class Player {
             this.rapidStrikeUntil = performance.now() + this.stats.ultimateDurationMs;
         } else if (this.stats.ultimateType === 'undying_soul') {
             this.speedBoostUntil = performance.now() + this.stats.ultimateDurationMs;
+        } else if (this.stats.ultimateType === 'nature_awaken') {
+            const level = (this.natureAwakenLevel || 0) % 3;
+            if (level < 2) {
+                this.rapidStrikeUntil = performance.now() + this.stats.ultimateDurationMs;
+                if (level === 1) this.natureBoostUntil = performance.now() + this.stats.ultimateDurationMs;
+            }
+            this.natureAwakenLevel = (level + 1) % 3;
         }
     }
 

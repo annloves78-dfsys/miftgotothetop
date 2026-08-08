@@ -78,13 +78,15 @@ let guestQuakeUntil = 0;
 // ultimate doesn't spend anybody else's.
 const GUEST_SLOT_FIELDS = ['lastSkillClientTime', 'lastUltimateClientTime',
     'skillEffectUntil', 'ultimateEffectUntil', 'speedBoostUntil', 'awakenUntil', 'rapidStrikeUntil',
+    'natureBoostUntil', 'natureAwakenLevel', // 바람궁수맛 궁극기 2단계 이동속도 + 다음 단계 예측
     'untouchableUntil', // 바다 수호자맛 sea_hide -- 숨은 쿠키만 무적이어야 하니 슬롯마다 따로
     // 바다펄맛 밀물의 단계도 쿠키마다 따로 센다.
     'tideStage'];
 const GUEST_SLOT_DEFAULTS = {
     lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
     skillEffectUntil: 0, ultimateEffectUntil: 0,
-    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, untouchableUntil: 0, tideStage: 1
+    speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, natureBoostUntil: 0, natureAwakenLevel: 0,
+    untouchableUntil: 0, tideStage: 1
 };
 
 function guestSlotBag(i) {
@@ -715,7 +717,7 @@ function tryGuestAttack() {
     const stats = guestStats();
     const now = performance.now();
     if (now < (guestLocal.untouchableUntil || 0)) return; // 바다 수호자맛 sea_hide
-    const rapid = stats.ultimateType === 'awakening_rapid' && now < guestLocal.rapidStrikeUntil;
+    const rapid = now < guestLocal.rapidStrikeUntil; // awakening_rapid, nature_awaken 1·2단계가 공유하는 타이머
     let cd = stats.attackCooldown;
     if (rapid) cd = stats.ultimateRapidCooldown;
     else if (stats.attackType === 'combo_two_stage' && guestLocal.comboStage === 1) cd = stats.comboFollowupCooldown;
@@ -786,6 +788,14 @@ function tryGuestUseUltimate() {
     if (stats.ultimateType === 'awakening_rapid') guestLocal.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') guestLocal.speedBoostUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'great_slash') guestLocal.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
+    if (stats.ultimateType === 'nature_awaken') {
+        const level = (guestLocal.natureAwakenLevel || 0) % 3;
+        if (level < 2) {
+            guestLocal.rapidStrikeUntil = now + stats.ultimateDurationMs;
+            if (level === 1) guestLocal.natureBoostUntil = now + stats.ultimateDurationMs;
+        }
+        guestLocal.natureAwakenLevel = (level + 1) % 3;
+    }
     socket.emit('guestPlayerUltimate');
 }
 
@@ -864,7 +874,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
