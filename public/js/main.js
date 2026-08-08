@@ -2206,7 +2206,7 @@ const SHOP_CATEGORIES = {
 const IAP_BANK_INFO = { bank: '카카오뱅크', account: '7777-03-9029488' };
 const IAP_PACKAGES = [
     { key: 'iapDiamonds5000', name: '다이아 5000개', icon: '💎', priceKrw: 1000, desc: '다이아 5000개를 지급합니다.' },
-    { key: 'iapTicketNormal100', name: '일반 뽑기 티켓 100장', icon: '🏷️', priceKrw: 1000, desc: '일반 뽑기 티켓 100장을 지급합니다.' },
+    { key: 'iapTicketNormal260', name: '일반 뽑기 티켓 260장', icon: '🏷️', priceKrw: 1000, desc: '일반 뽑기 티켓 260장을 지급합니다.' },
     {
         key: 'iapRandomCharBox', name: '랜덤 캐릭터 상자', icon: '🎁', priceKrw: 2000,
         desc: '에픽 40% · 레전더리 30% · 비스트 20% · 게스트 10% 확률로 캐릭터 하나를 지급합니다. 이미 보유 중인 캐릭터가 나오면 그 캐릭터의 영혼석 30개로 대신 지급됩니다.'

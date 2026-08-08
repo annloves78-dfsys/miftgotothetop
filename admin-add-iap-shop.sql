@@ -35,7 +35,7 @@ BEGIN
 
   price := CASE p_package_key
     WHEN 'iapDiamonds5000' THEN 1000
-    WHEN 'iapTicketNormal100' THEN 1000
+    WHEN 'iapTicketNormal260' THEN 1000
     WHEN 'iapRandomCharBox' THEN 2000
     ELSE NULL
   END;
@@ -156,9 +156,9 @@ BEGIN
     cur_val := COALESCE((base->'currencies'->>'diamonds')::bigint, 0);
     base := jsonb_set(base, ARRAY['currencies', 'diamonds'], to_jsonb(cur_val + 5000), true);
 
-  ELSIF req.package_key = 'iapTicketNormal100' THEN
+  ELSIF req.package_key = 'iapTicketNormal260' THEN
     cur_val := COALESCE((base->'currencies'->>'ticketNormal')::bigint, 0);
-    base := jsonb_set(base, ARRAY['currencies', 'ticketNormal'], to_jsonb(cur_val + 100), true);
+    base := jsonb_set(base, ARRAY['currencies', 'ticketNormal'], to_jsonb(cur_val + 260), true);
 
   ELSIF req.package_key = 'iapRandomCharBox' THEN
     roll := random() * 100;

@@ -429,7 +429,7 @@ $('delete-user-btn').addEventListener('click', () => {
 // main.js의 IAP_PACKAGES와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
 const PACKAGE_LABELS = {
     iapDiamonds5000: '다이아 5000개',
-    iapTicketNormal100: '일반 뽑기 티켓 100장',
+    iapTicketNormal260: '일반 뽑기 티켓 260장',
     iapRandomCharBox: '랜덤 캐릭터 상자'
 };
 const PURCHASE_STATUS_LABELS = { pending: '대기중', approved: '지급완료', rejected: '거절됨' };
