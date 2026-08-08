@@ -79,6 +79,32 @@
             <span id="page-label" class="page-label">1</span>
             <button id="next-page-btn" class="ghost-btn">다음 →</button>
         </section>
+
+        <section class="purchase-section">
+            <div class="section-head-row">
+                <h2 class="section-heading">현질 신청 <span id="purchase-pending-count" class="pending-badge hidden">0</span></h2>
+                <button id="purchase-refresh-btn" class="ghost-btn">새로고침</button>
+            </div>
+            <div class="table-wrap">
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>닉네임</th>
+                            <th>이메일</th>
+                            <th>상품</th>
+                            <th class="num">금액</th>
+                            <th>입금자명</th>
+                            <th>신청일</th>
+                            <th>상태</th>
+                            <th class="right">처리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="purchase-tbody">
+                        <tr><td colspan="8" class="table-empty">불러오는 중...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <!-- 유저 상세 드로어 -->

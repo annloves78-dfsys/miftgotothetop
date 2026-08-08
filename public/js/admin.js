@@ -65,7 +65,11 @@ const ERROR_MESSAGES = {
     INVALID_CURRENCY: '알 수 없는 재화 종류입니다.',
     INVALID_AMOUNT: '수량을 입력해주세요.',
     INVALID_CHARACTER: '알 수 없는 캐릭터입니다.',
-    CANNOT_REVOKE_KICKER: '자두맛 쿠키는 제거할 수 없습니다.'
+    CANNOT_REVOKE_KICKER: '자두맛 쿠키는 제거할 수 없습니다.',
+    INVALID_PACKAGE: '알 수 없는 상품입니다.',
+    DEPOSITOR_REQUIRED: '입금자명을 입력해주세요.',
+    REQUEST_NOT_FOUND: '해당 신청을 찾을 수 없습니다.',
+    ALREADY_RESOLVED: '이미 처리된 신청입니다.'
 };
 
 // main.js의 CURRENCY_LABELS와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
@@ -151,6 +155,7 @@ function enterConsole() {
     $('admin-who').textContent = `${admin.nickname}님 (${admin.email})`;
     loadStats();
     loadUsers();
+    loadPurchaseRequests();
 }
 
 function logout(message) {
@@ -419,3 +424,78 @@ $('delete-user-btn').addEventListener('click', () => {
     if (!confirm(`${openUser.nickname}(${openUser.email}) 계정을 삭제할까요? 세이브 데이터까지 영구 삭제되며 되돌릴 수 없습니다.`)) return;
     runAction('br_admin_delete_user', { p_user_id: openUser.id }, '계정을 삭제했습니다.', { close: true });
 });
+
+// ---- 현질 신청 ----
+// main.js의 IAP_PACKAGES와 같은 표. 게임 쪽 표시 이름을 그대로 씁니다.
+const PACKAGE_LABELS = {
+    iapDiamonds5000: '다이아 5000개',
+    iapTicketNormal100: '일반 뽑기 티켓 100장',
+    iapRandomCharBox: '랜덤 캐릭터 상자'
+};
+const PURCHASE_STATUS_LABELS = { pending: '대기중', approved: '지급완료', rejected: '거절됨' };
+
+let purchaseRequests = [];
+
+function describePurchaseResult(result) {
+    if (!result || !result.character) return '';
+    const name = CHARACTER_LABELS[result.character] || result.character;
+    return result.duplicate ? `${name} 보유 중 → 영혼석 30개 지급` : `${name} 지급 (${result.grade})`;
+}
+
+async function loadPurchaseRequests() {
+    try {
+        purchaseRequests = await rpc('br_admin_list_purchase_requests', { p_status: '' });
+        renderPurchaseRequests();
+    } catch (e) {
+        $('purchase-tbody').innerHTML = `<tr><td colspan="8" class="table-empty">${escapeHtml(describeError(e))}</td></tr>`;
+    }
+}
+
+function renderPurchaseRequests() {
+    const tbody = $('purchase-tbody');
+    const pendingCount = purchaseRequests.filter(r => r.status === 'pending').length;
+    $('purchase-pending-count').textContent = pendingCount;
+    $('purchase-pending-count').classList.toggle('hidden', pendingCount === 0);
+
+    if (!purchaseRequests.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="table-empty">신청 내역이 없습니다.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = purchaseRequests.map(r => `
+        <tr>
+            <td>${escapeHtml(r.nickname)}</td>
+            <td class="muted">${escapeHtml(r.email)}</td>
+            <td>${escapeHtml(PACKAGE_LABELS[r.package_key] || r.package_key)}</td>
+            <td class="num">₩${Number(r.price_krw).toLocaleString()}</td>
+            <td class="muted">${escapeHtml(r.depositor_name || '-')}</td>
+            <td class="muted">${formatDate(r.created_at)}</td>
+            <td>${PURCHASE_STATUS_LABELS[r.status] || r.status}${r.result ? `<div class="hint">${escapeHtml(describePurchaseResult(r.result))}</div>` : ''}</td>
+            <td class="right">${r.status === 'pending' ? `
+                <button class="primary-btn small" data-approve="${r.id}">지급</button>
+                <button class="danger-btn small" data-reject="${r.id}">거절</button>
+            ` : '-'}</td>
+        </tr>
+    `).join('');
+    tbody.querySelectorAll('button[data-approve]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePurchase(btn.dataset.approve, true));
+    });
+    tbody.querySelectorAll('button[data-reject]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePurchase(btn.dataset.reject, false));
+    });
+}
+
+async function resolvePurchase(id, approve) {
+    const req = purchaseRequests.find(r => r.id === id);
+    if (!req) return;
+    const label = approve ? '지급' : '거절';
+    if (!confirm(`${req.nickname}님의 "${PACKAGE_LABELS[req.package_key] || req.package_key}" (₩${Number(req.price_krw).toLocaleString()}) 신청을 ${label}할까요?`)) return;
+    try {
+        await rpc('br_admin_resolve_purchase_request', { p_request_id: id, p_approve: approve });
+        toast(`${label}했습니다.`);
+        await loadPurchaseRequests();
+    } catch (e) {
+        toast(describeError(e), true);
+    }
+}
+
+$('purchase-refresh-btn').addEventListener('click', loadPurchaseRequests);

@@ -2199,9 +2199,106 @@ const shopCatButtons = {
 };
 const SHOP_CATEGORIES = {
     currency: '아직 판매 중인 재화가 없습니다.',
-    iap: '아직 판매 중인 상품이 없습니다.',
     item: '아직 판매 중인 아이템이 없습니다.'
 };
+
+// ---- 현질 (계좌이체 -> 구매 신청 -> 관리자 확인 후 지급) ----
+const IAP_BANK_INFO = { bank: '카카오뱅크', account: '7777-03-9029488' };
+const IAP_PACKAGES = [
+    { key: 'iapDiamonds5000', name: '다이아 5000개', icon: '💎', priceKrw: 1000, desc: '다이아 5000개를 지급합니다.' },
+    { key: 'iapTicketNormal100', name: '일반 뽑기 티켓 100장', icon: '🏷️', priceKrw: 1000, desc: '일반 뽑기 티켓 100장을 지급합니다.' },
+    {
+        key: 'iapRandomCharBox', name: '랜덤 캐릭터 상자', icon: '🎁', priceKrw: 2000,
+        desc: '에픽 40% · 레전더리 30% · 비스트 20% · 게스트 10% 확률로 캐릭터 하나를 지급합니다. 이미 보유 중인 캐릭터가 나오면 그 캐릭터의 영혼석 30개로 대신 지급됩니다.'
+    }
+];
+const IAP_STATUS_LABELS = { pending: '심사중', approved: '지급완료', rejected: '거절됨' };
+
+function iapResultText(r) {
+    if (!r.result) return '';
+    const name = SHARED.CHARACTERS[r.result.character]?.name || r.result.character;
+    return r.result.duplicate ? `→ ${name} 보유 중, 영혼석 30개 지급` : `→ ${name} 지급`;
+}
+
+async function loadMyPurchaseRequests() {
+    const listEl = document.getElementById('iap-history-list');
+    if (!listEl) return;
+    if (!currentUser) { listEl.innerHTML = ''; return; }
+    try {
+        const { data, error } = await sb.rpc('br_my_purchase_requests', { p_token: currentUser.session_token });
+        if (error) throw error;
+        if (!data || !data.length) {
+            listEl.innerHTML = '<p class="shop-empty">신청 내역이 없습니다.</p>';
+            return;
+        }
+        listEl.innerHTML = data.map(r => {
+            const pkg = IAP_PACKAGES.find(p => p.key === r.package_key);
+            return `<div class="iap-history-row iap-status-${r.status}">
+                <span class="iap-history-name">${pkg ? pkg.name : r.package_key}</span>
+                <span class="iap-history-price">₩${r.price_krw.toLocaleString()}</span>
+                <span class="iap-history-status">${IAP_STATUS_LABELS[r.status] || r.status}</span>
+                ${r.status === 'approved' && r.result ? `<span class="iap-history-result">${iapResultText(r)}</span>` : ''}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        listEl.innerHTML = '<p class="shop-empty">내역을 불러오지 못했습니다.</p>';
+    }
+}
+
+async function submitIapPurchase(key) {
+    const pkg = IAP_PACKAGES.find(p => p.key === key);
+    const msgEl = document.getElementById('shop-item-msg');
+    const depositorInput = document.getElementById('iap-depositor-input');
+    if (!pkg || !currentUser) return;
+    const depositor = (depositorInput?.value || '').trim();
+    if (!depositor) {
+        if (msgEl) { msgEl.textContent = '입금자명을 입력해주세요.'; msgEl.classList.remove('hidden', 'good'); }
+        return;
+    }
+    try {
+        const { error } = await sb.rpc('br_submit_purchase_request', {
+            p_token: currentUser.session_token, p_package_key: key, p_depositor_name: depositor
+        });
+        if (error) throw error;
+        if (msgEl) {
+            msgEl.textContent = `${pkg.name} 구매 신청이 접수되었습니다. 입금 확인 후 지급됩니다.`;
+            msgEl.classList.remove('hidden');
+            msgEl.classList.add('good');
+        }
+        loadMyPurchaseRequests();
+    } catch (e) {
+        if (msgEl) { msgEl.textContent = '신청에 실패했습니다.'; msgEl.classList.remove('hidden', 'good'); }
+    }
+}
+
+function renderIapTab() {
+    shopContent.classList.add('shop-content-list');
+    if (!currentUser) {
+        shopContent.classList.remove('shop-content-list');
+        shopContent.innerHTML = `<p class="shop-empty">현질은 계정 로그인 후 이용할 수 있습니다.<br>☰ 메뉴 → 계정에서 로그인해주세요.</p>`;
+        return;
+    }
+    shopContent.innerHTML = `
+        <div class="iap-bank-info">
+            <div class="iap-bank-title">입금 계좌</div>
+            <div class="iap-bank-line">${IAP_BANK_INFO.bank} ${IAP_BANK_INFO.account}</div>
+            <div class="iap-bank-hint">먼저 상품 가격만큼 입금한 뒤, 입금하신 분 성함을 아래에 입력하고 구매 신청을 눌러주세요. 입금 확인 후 지급됩니다.</div>
+            <input id="iap-depositor-input" class="iap-depositor-input" type="text" placeholder="입금자명">
+        </div>
+        ${IAP_PACKAGES.map(p => `
+            <div class="shop-item-card" data-key="${p.key}">
+                <span class="shop-item-icon">${p.icon}</span>
+                <span class="shop-item-name">${p.name}<div class="iap-item-desc">${p.desc}</div></span>
+                <button class="shop-item-buy-btn iap-buy-btn">₩${p.priceKrw.toLocaleString()}</button>
+            </div>`).join('')}
+        <p id="shop-item-msg" class="shop-item-msg hidden"></p>
+        <div class="iap-history">
+            <div class="iap-history-title">내 신청 내역</div>
+            <div id="iap-history-list" class="iap-history-list">불러오는 중...</div>
+        </div>
+    `;
+    loadMyPurchaseRequests();
+}
 // 다이아로 사는 것들. category: 상점의 어느 탭('item'|'currency')에 카드로 뜨는지.
 // grantsTo: 사면 어디로 들어가는지 -- 'currencies'(기본)면 바로 재화로, 'items'면
 // 아이템창(gameData.items)에 들어가서 나중에 "사용" 버튼으로 쓴다.
@@ -2236,6 +2333,7 @@ function buyShopItem(key) {
 
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
+    if (key === 'iap') { renderIapTab(); return; }
     const goods = SHOP_ITEMS.filter(it => it.category === key);
     shopContent.classList.toggle('shop-content-list', goods.length > 0);
     if (goods.length) {
@@ -2256,6 +2354,11 @@ Object.entries(shopCatButtons).forEach(([key, btn]) => {
 });
 
 shopContent.addEventListener('click', (e) => {
+    const iapBtn = e.target.closest('.iap-buy-btn');
+    if (iapBtn) {
+        submitIapPurchase(iapBtn.closest('.shop-item-card').dataset.key);
+        return;
+    }
     const btn = e.target.closest('.shop-item-buy-btn');
     if (!btn) return;
     const card = btn.closest('.shop-item-card');

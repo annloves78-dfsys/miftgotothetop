@@ -367,6 +367,36 @@ button:disabled {
     color: #a9b4c4;
 }
 
+/* ---- 현질 신청 ---- */
+.purchase-section {
+    margin-top: 32px;
+}
+
+.section-head-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.section-heading {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pending-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(180, 55, 47, 0.25);
+    border: 1px solid rgba(180, 55, 47, 0.55);
+    color: #f3a49e;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 /* ---- 상세 드로어 ---- */
 .detail-overlay {
     position: fixed;

@@ -512,6 +512,89 @@ html, body {
 
 .shop-item-msg.good { color: #2ecc71; }
 
+/* 현질 (계좌이체 구매 신청) */
+.iap-bank-info {
+    background: #1c2735;
+    border: 1px solid #34495e;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 4px;
+}
+
+.iap-bank-title {
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.iap-bank-line {
+    color: #ecf0f1;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+.iap-bank-hint {
+    color: #9fb1c1;
+    font-size: 12px;
+    margin-top: 6px;
+    line-height: 1.5;
+}
+
+.iap-depositor-input {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #34495e;
+    background: #16202c;
+    color: #ecf0f1;
+    font-size: 14px;
+}
+
+.iap-item-desc {
+    color: #9fb1c1;
+    font-size: 11px;
+    font-weight: normal;
+    margin-top: 3px;
+    line-height: 1.4;
+}
+
+.iap-history {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #34495e;
+}
+
+.iap-history-title {
+    color: #9fb1c1;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.iap-history-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #1c2735;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.iap-history-name { color: #ecf0f1; font-weight: bold; }
+.iap-history-price { color: #9fb1c1; }
+.iap-history-status { font-weight: bold; }
+.iap-history-result { color: #9fb1c1; flex-basis: 100%; }
+
+.iap-status-pending .iap-history-status { color: #f1c40f; }
+.iap-status-approved .iap-history-status { color: #2ecc71; }
+.iap-status-rejected .iap-history-status { color: #e74c3c; }
+
 /* Gacha */
 .gacha-banner-list {
     display: flex;
