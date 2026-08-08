@@ -1670,7 +1670,7 @@ const EVENT_STAGE_DEFS = allEventPlayable().reduce((acc, s) => { acc[s.id] = s.d
 // The one place that turns whatever a story room was entered with -- a floor
 // number or an event stage id -- into its level layout.
 function floorDefFor(floor) {
-    const known = STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor];
+    const known = STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor] || LEGEND_STORY_FLOOR_DEFS[floor];
     if (known) return known;
     const parsed = parseAwakenFloorKey(floor);
     if (!parsed) return null;
@@ -2854,22 +2854,48 @@ function floorAxis(floorDef) {
 // along은 시작점에서 길을 따라 걸어온 거리(음수), across는 길 한가운데에서
 // 옆으로 벗어난 거리. 덕분에 게이트·몬스터·클램프 같은 기존 계산이 전부
 // 그대로 돌아간다.
-function pathSegs(floorDef) {
-    if (!floorDef || !floorDef.path) return null;
-    if (floorDef.__segs) return floorDef.__segs;
+// 각 점에는 [x, y] 뒤에 세 번째 값으로 half-width를 얹을 수 있다(예: [x, y, 220]).
+// 그 점에서 시작하는 구간이 그 폭을 쓰고, 안 적으면 floorDef.laneHalfWidth를
+// 그대로 쓴다 -- 레전드 스토리처럼 방(넓게)과 다리(좁게)를 한 길 안에서
+// 번갈아 쓰려고 만들었다.
+// `floorDef.forks`가 있으면 trunk(=path)가 끝나는 지점에서 갈라지는 추가
+// 구간들이다. 각 fork는 첫 점이 trunk의 마지막 점과 같아야 이어져 보이고,
+// along 누적은 trunk가 끝난 지점부터 fork마다 독립적으로 다시 시작한다
+// (물리적으로 다른 자리에 있으니 projectOnPath의 최근접 탐색이 알아서
+// 갈래를 구분한다 -- along 값 자체는 두 갈래가 겹쳐도 상관없다).
+function pathSegsFromPoints(points, startAcc, defaultHalfWidth) {
     const segs = [];
-    let acc = 0;
-    for (let i = 0; i + 1 < floorDef.path.length; i++) {
-        const [x0, y0] = floorDef.path[i];
-        const [x1, y1] = floorDef.path[i + 1];
+    let acc = startAcc;
+    for (let i = 0; i + 1 < points.length; i++) {
+        const [x0, y0, w0] = points[i];
+        const [x1, y1] = points[i + 1];
         const dx = x1 - x0, dy = y1 - y0;
         const len = Math.hypot(dx, dy);
         if (len < 1e-6) continue;
-        segs.push({ x0, y0, ux: dx / len, uy: dy / len, len, start: acc });
+        segs.push({
+            x0, y0, ux: dx / len, uy: dy / len, len, start: acc,
+            halfWidth: typeof w0 === 'number' ? w0 : defaultHalfWidth
+        });
         acc += len;
     }
+    return { segs, end: acc };
+}
+function pathSegs(floorDef) {
+    if (!floorDef || !floorDef.path) return null;
+    if (floorDef.__segs) return floorDef.__segs;
+    const defW = floorDef.laneHalfWidth || 70;
+    const trunk = pathSegsFromPoints(floorDef.path, 0, defW);
+    let segs = trunk.segs;
+    let maxEnd = trunk.end;
+    if (floorDef.forks && floorDef.forks.length) {
+        floorDef.forks.forEach(fork => {
+            const built = pathSegsFromPoints(fork, trunk.end, defW);
+            segs = segs.concat(built.segs);
+            maxEnd = Math.max(maxEnd, built.end);
+        });
+    }
     floorDef.__segs = segs;
-    floorDef.__pathLength = acc;
+    floorDef.__pathLength = maxEnd;
     return segs;
 }
 
@@ -2878,8 +2904,9 @@ function pathLength(floorDef) {
     return (floorDef && floorDef.__pathLength) || 0;
 }
 
-// 가장 가까운 구간에 붙여서 (along, across)를 뽑는다. 모퉁이에서는 두 구간이
-// 다 후보가 되는데, 실제로 더 가까운 쪽을 고른다.
+// 가장 가까운 구간에 붙여서 (along, across, 그 구간의 halfWidth)를 뽑는다.
+// 모퉁이(그리고 갈림길)에서는 여러 구간이 다 후보가 되는데, 실제로 더
+// 가까운 쪽을 고른다 -- 갈림길도 이 최근접 탐색 하나로 자연히 구분된다.
 function projectOnPath(floorDef, x, y) {
     const segs = pathSegs(floorDef);
     let best = null;
@@ -2892,13 +2919,26 @@ function projectOnPath(floorDef, x, y) {
             best = {
                 d,
                 along: -(s.start + t),
-                across: -s.uy * (x - s.x0) + s.ux * (y - s.y0)
+                across: -s.uy * (x - s.x0) + s.ux * (y - s.y0),
+                halfWidth: s.halfWidth
             };
         }
     }
-    return best || { d: 0, along: 0, across: 0 };
+    return best || { d: 0, along: 0, across: 0, halfWidth: (floorDef && floorDef.laneHalfWidth) || 70 };
 }
 
+// 지금 서 있는 자리의 실제 통행 가능 폭. 길 전체가 한 폭이면(floorDef.path가
+// 없으면) 그냥 floorDef.laneHalfWidth, 방/다리가 섞인 길이면 가장 가까운
+// 구간의 폭을 쓴다.
+function laneHalfWidthAt(floorDef, x, y) {
+    if (floorDef && floorDef.path) return projectOnPath(floorDef, x, y).halfWidth;
+    return (floorDef && floorDef.laneHalfWidth) || 70;
+}
+
+// along 값 하나만으로는 갈림길 너머를 가리킬 수 없다(어느 쪽 구간인지
+// 알 길이 없어서 항상 배열에서 먼저 나오는 쪽으로 붙는다) -- trunk 구간
+// 범위 안에서만 쓴다. 갈림길 너머의 몬스터/별/스위치/보물상자는 authoring
+// 스펙에 x,y를 직접 적어서 이 함수를 거치지 않는다.
 function pointOnPath(floorDef, along, across) {
     const segs = pathSegs(floorDef);
     const total = pathLength(floorDef);
@@ -2914,6 +2954,14 @@ function pointOnPath(floorDef, along, across) {
     };
 }
 
+// at/off(길을 따라 잰 거리)나 x/y(절대 좌표) 어느 쪽으로 적혀 있든 실제
+// 좌표로 바꾼다. 갈림길 너머는 along 값이 갈래를 구분 못 하므로 x,y로
+// 직접 적어야 한다(makePathFloor 주석 참고).
+function resolvePathPoint(def, spec) {
+    if (spec.x != null && spec.y != null) return { x: spec.x, y: spec.y };
+    return pointOnPath(def, spec.at, spec.off || 0);
+}
+
 // 층 데이터를 사람이 적기 쉬운 형태(길을 따라 얼마나 갔는지 + 옆으로 얼마)로
 // 적어 두고, 실제 좌표는 여기서 한 번에 계산한다. 꺾인 길의 x,y를 손으로
 // 세는 것은 사람이 할 짓이 아니다.
@@ -2921,20 +2969,34 @@ function makePathFloor(spec) {
     const def = {
         levelType: 'bridge',
         path: spec.path,
+        forks: spec.forks || null,
         laneHalfWidth: spec.laneHalfWidth || 70,
         deckColor: spec.deckColor || null,
         deckGlow: spec.deckGlow || null,
         gates: spec.gates || [],
         monsters: [],
+        switches: [],
+        chests: [],
         star: null
     };
     def.levelLength = Math.round(pathLength(def));
     def.monsters = (spec.monsters || []).map(m => {
-        const pt = pointOnPath(def, m.at, m.off || 0);
+        const pt = resolvePathPoint(def, m);
         return { type: m.type, x: Math.round(pt.x), y: Math.round(pt.y), room: m.room || 0 };
     });
+    // 레전드 스토리 전용: 밟으면 열리는 스위치(문)와 밟으면 한 번 보상을
+    // 주는 보물상자. 둘 다 스타(별)와 똑같이 "그 자리를 밟으면" 발동한다
+    // (server.js tickStoryRoom 참고) -- 공격으로 부수는 게 아니다.
+    def.switches = (spec.switches || []).map(sw => {
+        const pt = resolvePathPoint(def, sw);
+        return { id: sw.id, x: Math.round(pt.x), y: Math.round(pt.y) };
+    });
+    def.chests = (spec.chests || []).map(ch => {
+        const pt = resolvePathPoint(def, ch);
+        return { id: ch.id, x: Math.round(pt.x), y: Math.round(pt.y), reward: ch.reward || null };
+    });
     if (spec.star != null) {
-        const pt = pointOnPath(def, spec.star.at, spec.star.off || 0);
+        const pt = resolvePathPoint(def, spec.star);
         def.star = { x: Math.round(pt.x), y: Math.round(pt.y) };
     }
     return def;
@@ -2954,7 +3016,8 @@ function fromAlongAcross(floorDef, along, across) {
 }
 function clampToLane(floorDef, x, y) {
     const along = Math.max(-floorDef.levelLength, Math.min(LEVEL_START_SLACK, alongOf(floorDef, x, y)));
-    const across = Math.max(-floorDef.laneHalfWidth, Math.min(floorDef.laneHalfWidth, acrossOf(floorDef, x, y)));
+    const halfWidth = laneHalfWidthAt(floorDef, x, y);
+    const across = Math.max(-halfWidth, Math.min(halfWidth, acrossOf(floorDef, x, y)));
     return fromAlongAcross(floorDef, along, across);
 }
 
@@ -5080,8 +5143,8 @@ const STORY_FLOOR_DEFS = {
 // 모드. 보통 스토리 층은 길 전체가 laneHalfWidth 하나로 고정인데, 여기는
 // 넓은 네모난 방에서 싸우고 좁은 다리로 방과 방 사이를 건너간다 -- path의
 // 각 점에 세 번째 값(half-width)을 얹어 구간마다 폭을 다르게 준다
-// (pathSegs 주석 참고). 화면은 배경/벽만 어둡게 그린다(darkTheme, main.js
-// storyRender 참고) -- 캐릭터·몬스터 색은 다른 층과 같다.
+// (pathSegs 주석 참고). 화면은 배경/벽만 검정으로(deckColor/deckGlow --
+// 용암 챕터와 같은 메커니즘) -- 캐릭터·몬스터 색은 다른 층과 같다.
 //
 // 파티 규칙이 STORY_FLOOR_DEFS의 11층+와 다르다: 혼자면 3명을 데려가
 // 바꿔가며 싸우고(각성모드와 같은 파티 구조), 2인 멀티면 한 사람당 1명씩만
@@ -5840,7 +5903,12 @@ function equipBonusFor(equipped, charType) {
 // 그 아래 층은 지금까지처럼 한 명이다.
 const STORY_PARTY_FROM_FLOOR = 11;
 const STORY_PARTY_SIZE = 2;
-function storyPartySizeFor(floor) {
+// 레전드 스토리는 11층+ 규칙과 다르다 -- 혼자면 3명(각성모드와 같은 파티
+// 구조), 2인 멀티면 한 사람당 1명씩만(교체 없이, 1~10층처럼 캐릭터 하나).
+// solo는 joinStoryFloor가 받는 것과 같은 값(false면 멀티) -- 안 주면(다른
+// 모든 호출자처럼) 기존 층은 그대로, 레전드 층은 혼자 온 걸로 보고 3을 준다.
+function storyPartySizeFor(floor, solo) {
+    if (isLegendFloor(floor)) return solo === false ? 1 : LEGEND_PARTY_SIZE;
     const n = Number(floor);
     return Number.isInteger(n) && n >= STORY_PARTY_FROM_FLOOR ? STORY_PARTY_SIZE : 1;
 }
@@ -7025,7 +7093,7 @@ function zombieWaveReward(wave) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, makePathFloor, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
 }

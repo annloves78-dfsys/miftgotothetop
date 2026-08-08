@@ -28,6 +28,7 @@ const defaultData = {
     // 처음에는 자두맛 하나뿐이다. 나머지는 뽑기로 얻거나 영혼석을 모아야 한다.
     unlockedCharacters: ['kicker'],
     clearedStoryFloors: [],
+    clearedLegendFloors: [], // 레전드 스토리(지하) 전용. 'legend1' 같은 문자열 키.
     soulStones: {}, // charType -> count; SOUL_STONES_PER_CHARACTER of one unlocks it
     instinctLevels: {}, // charType -> 0~INSTINCT_MAX_LEVEL; 본능해제, 그 캐릭터의 영혼석으로 강화한다
     currencies: { ...defaultCurrencies },

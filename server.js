@@ -5,7 +5,7 @@ const io = require('socket.io')(http);
 const path = require('path');
 
 const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, floorDefFor,
-    LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane,
+    LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane, laneHalfWidthAt,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
     instinctStatBonus, characterWithInstinct,
@@ -1171,6 +1171,14 @@ function anyMonsterAliveInRoom(room, roomIndex) {
     return Object.values(room.monsters).some(m => m.alive && m.roomIndex === roomIndex);
 }
 
+// 레전드 스토리의 입구 문처럼 몬스터가 아니라 스위치로 여는 문(gate.manual)도
+// 있다 -- room.legendSwitchesHit[gate.room]이 true가 될 때까지 잠겨 있다.
+// 나머지 문은 그대로 몬스터 생존 여부로 잠긴다.
+function gateSealed(room, gate) {
+    if (gate.manual) return !(room.legendSwitchesHit && room.legendSwitchesHit[gate.room]);
+    return anyMonsterAliveInRoom(room, gate.room);
+}
+
 // 이 몬스터의 덩치. 케이크처럼 표에 radius가 붙은 적은 잡몹보다 크고, 판정도
 // 그림과 같은 값을 쓴다.
 function mR(m) {
@@ -2051,6 +2059,15 @@ function startStoryFight(roomId) {
                 // 꺾은선 다리(4층부터)는 꺾이는 지점까지 넘겨야 클라이언트가
                 // 같은 길을 그리고 같은 자리로 클램프한다.
                 path: floorDef.path,
+                // 챕터별 다리 색(용암 챕터의 붉은 다리, 레전드 스토리의 검정
+                // 등) -- 안 보내면 클라이언트는 기본 갈색 다리로 그린다.
+                deckColor: floorDef.deckColor,
+                deckGlow: floorDef.deckGlow,
+                // 레전드 스토리 전용(다른 층은 전부 undefined로 넘어가 그대로
+                // 무시된다): 갈림길, 스위치/보물상자 위치.
+                forks: floorDef.forks,
+                switches: floorDef.switches,
+                chests: floorDef.chests,
                 gates: floorDef.gates,
                 star: floorDef.star
             },
@@ -2394,7 +2411,7 @@ function shieldBetween(room, floorDef, m, p) {
     const mAlong = alongOf(floorDef, m.x, m.y);
     const pAlong = alongOf(floorDef, p.x, p.y);
     for (const gate of floorDef.gates) {
-        if (!anyMonsterAliveInRoom(room, gate.room)) continue;
+        if (!gateSealed(room, gate)) continue;
         for (const edge of [gate.entrance, gate.exit]) {
             if ((mAlong < edge) !== (pAlong < edge)) return true;
         }
@@ -2969,6 +2986,39 @@ function tickStoryRoom(roomId) {
                 io.to(roomId).emit('starHit', {});
                 endStoryRoom(roomId, 'win');
                 return;
+            }
+        }
+    }
+
+    // 레전드 스토리 스위치: 공격이 아니라 밟으면 열린다. gateSealed가
+    // room.legendSwitchesHit[gate.room]을 읽으므로 여기서 채워 둔다(입구
+    // 문처럼 manual 게이트를 여는 용도).
+    if (starFloorDef && starFloorDef.switches && starFloorDef.switches.length) {
+        if (!room.legendSwitchesHit) room.legendSwitchesHit = {};
+        for (const sw of starFloorDef.switches) {
+            if (room.legendSwitchesHit[sw.id]) continue;
+            for (const p of alivePlayers) {
+                if (Math.hypot(p.x - sw.x, p.y - sw.y) <= PLAYER_RADIUS + STAR_RADIUS) {
+                    room.legendSwitchesHit[sw.id] = true;
+                    io.to(roomId).emit('legendSwitchHit', { id: sw.id });
+                    break;
+                }
+            }
+        }
+    }
+    // 레전드 스토리 보물상자: 밟으면 한 번만 열린다. 실제 재화 지급은 다른
+    // 스토리 보상과 같은 자리(main.js, 로컬 저장)에서 하고, 서버는 "열렸다"는
+    // 사실만 알린다.
+    if (starFloorDef && starFloorDef.chests && starFloorDef.chests.length) {
+        if (!room.legendChestsHit) room.legendChestsHit = {};
+        for (const ch of starFloorDef.chests) {
+            if (room.legendChestsHit[ch.id]) continue;
+            for (const p of alivePlayers) {
+                if (Math.hypot(p.x - ch.x, p.y - ch.y) <= PLAYER_RADIUS + STAR_RADIUS) {
+                    room.legendChestsHit[ch.id] = true;
+                    io.to(roomId).emit('legendChestHit', { id: ch.id });
+                    break;
+                }
             }
         }
     }
@@ -5147,9 +5197,10 @@ io.on('connection', (socket) => {
         // 둘이 겹쳐서 시작하지 않게 두 번째 사람은 옆으로 조금 비켜 세운다.
         const slot = Object.keys(room.players).length;
         const spot = slot === 0 ? { x: 0, y: 0 } : fromAlongAcross(floorDef, 0, 30);
-        // 11층부터는 쿠키 두 명을 데려간다. 각성모드와 같은 파티 구조를 쓰므로
-        // 교체·죽음·부활이 전부 그대로 돌아간다.
-        const partySize = storyPartySizeFor(floor);
+        // 11층부터는 쿠키 두 명을 데려간다. 레전드 스토리는 혼자면 세 명,
+        // 멀티면 한 명(storyPartySizeFor가 solo로 가른다). 각성모드와 같은
+        // 파티 구조를 쓰므로 교체·죽음·부활이 전부 그대로 돌아간다.
+        const partySize = storyPartySizeFor(floor, solo);
         if (partySize > 1) {
             const wanted = Array.isArray(party) ? party.filter(id => CHARACTERS[id]) : [];
             const chosen = wanted.slice(0, partySize);
@@ -5255,18 +5306,21 @@ io.on('connection', (socket) => {
         let along = alongOf(floorDef, x, y);
         const across = acrossOf(floorDef, x, y);
         if (along > LEVEL_START_SLACK || along < -floorDef.levelLength - 1) return; // out-of-bounds claim
-        if (Math.abs(across) > floorDef.laneHalfWidth + 1) return;
+        // 레전드 스토리는 방마다 폭이 다르므로(넓은 방/좁은 다리) 층 전체에
+        // 하나뿐인 laneHalfWidth 대신 지금 서 있는 자리의 실제 폭을 본다.
+        if (Math.abs(across) > laneHalfWidthAt(floorDef, x, y) + 1) return;
 
         // Energy-shield gates: once inside (or moving into) a room, neither
         // of its edges can be crossed until every monster in that room is
-        // dead. A floor can have several rooms back to back (see `gates`);
-        // each is checked independently against the (possibly already
-        // reclamped) position, since only one room's shield is ever actually
-        // up at any given point along the bridge.
+        // dead (or, for a manual gate, until its switch is hit -- gateSealed
+        // covers both). A floor can have several rooms back to back (see
+        // `gates`); each is checked independently against the (possibly
+        // already reclamped) position, since only one room's shield is ever
+        // actually up at any given point along the bridge.
         if (floorDef.gates) {
             const wasAlong = alongOf(floorDef, p.x, p.y);
             for (const gate of floorDef.gates) {
-                if (!anyMonsterAliveInRoom(room, gate.room)) continue;
+                if (!gateSealed(room, gate)) continue;
                 if (wasAlong <= gate.entrance || along <= gate.entrance) {
                     if (along > gate.entrance) along = gate.entrance;
                     if (along < gate.exit) along = gate.exit;

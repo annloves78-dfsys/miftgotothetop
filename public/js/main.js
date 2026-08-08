@@ -13,6 +13,7 @@ const screens = {
     legendary: document.getElementById('legendary-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
     storyFork: document.getElementById('story-fork-screen'),
+    legendDetail: document.getElementById('legend-detail-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
     storyFight: document.getElementById('story-fight-screen'),
@@ -3005,6 +3006,229 @@ function showAwakenResult(awaken, result) {
     showScreen('result');
 }
 
+// ---- 레전드 스토리: 지하 1층 (탑 아래로 내려가는 별도 스토리, story-fork
+// 화면에서 들어온다). 각성모드와 같은 혼자(3명 파티, 교체 있음)/같이(1명씩,
+// 교체 없음) 구조를 재사용하되, 각성모드처럼 레벨 목록이 없다 -- 지금은
+// 지하 1층 하나뿐이라 바로 파티/시작 화면이다.
+const legendPartyEl = document.getElementById('legend-party');
+const legendPlayBtn = document.getElementById('legend-play-btn');
+const legendMsgEl = document.getElementById('legend-msg');
+const legendSoloBtn = document.getElementById('legend-solo-btn');
+const legendMultiBtn = document.getElementById('legend-multi-btn');
+const legendPartyTitleEl = document.getElementById('legend-party-title');
+const legendFloorInfoEl = document.getElementById('legend-floor-info');
+const legendWaitingRowEl = document.getElementById('legend-waiting-row');
+const legendMyIconEl = document.getElementById('legend-my-icon');
+const legendMyNameEl = document.getElementById('legend-my-name');
+const legendMyReadyBadge = document.getElementById('legend-my-ready');
+const legendPartnerPreviewEl = document.getElementById('legend-partner-preview');
+const legendPartnerIconEl = document.getElementById('legend-partner-icon');
+const legendPartnerNameEl = document.getElementById('legend-partner-name');
+const legendPartnerReadyBadge = document.getElementById('legend-partner-ready');
+const legendCampfireEl = document.getElementById('legend-campfire');
+const LEGEND_WAIT_ELS = {
+    campfire: legendCampfireEl, myReady: legendMyReadyBadge, partnerReady: legendPartnerReadyBadge
+};
+const LEGEND_FLOOR = 'legend1';
+
+// 3칸. 빈 칸은 null. 멀티에서는 0번 칸 하나만 쓴다(같이할 때는 캐릭터
+// 하나씩만 골라서 한다 -- storyPartySizeFor(floor, false)가 1을 준다).
+let legendParty = new Array(SHARED.LEGEND_PARTY_SIZE).fill(null);
+let legendIsMulti = false;
+let legendPhase = 'idle'; // 'idle' | 'searching' | 'matched'
+let legendMyReady = false;
+let legendSearchStartAt = 0;
+let legendSearchHandle = null;
+
+function renderLegendParty() {
+    legendPartyEl.innerHTML = '';
+    const slots = legendIsMulti ? legendParty.slice(0, 1) : legendParty;
+    slots.forEach((id, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'awaken-party-slot' + (id ? ' filled' : '');
+        if (id) {
+            const stats = SHARED.CHARACTERS[id];
+            slot.innerHTML = `
+                <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
+                <div class="name">${stats.shortName || stats.name}</div>`;
+        } else {
+            slot.innerHTML = '<div class="icon">＋</div><div class="name">비어 있음</div>';
+        }
+        slot.addEventListener('click', () => {
+            leaveLegendRoomIfWaiting();
+            openCharacterSelect('legendDetail', {
+                selectedId: id,
+                onPick: (picked) => {
+                    // 같은 쿠키가 두 칸에 들어가지 않게, 있던 칸은 비운다.
+                    const already = legendParty.indexOf(picked);
+                    if (already >= 0) legendParty[already] = null;
+                    legendParty[i] = picked;
+                    renderLegendDetail();
+                }
+            });
+        });
+        legendPartyEl.appendChild(slot);
+    });
+}
+
+function stopLegendSearchTimer() {
+    if (legendSearchHandle) clearInterval(legendSearchHandle);
+    legendSearchHandle = null;
+}
+function updateLegendSearchLabel() {
+    const secs = Math.floor((Date.now() - legendSearchStartAt) / 1000);
+    legendPlayBtn.textContent = `대기중 (${secs}초)`;
+}
+function updateLegendPlayBtnLabel() {
+    if (legendPhase === 'searching') return; // 타이머가 초 단위로 계속 고쳐 쓴다.
+    if (legendPhase === 'matched') {
+        legendPlayBtn.textContent = legendMyReady ? '준비 완료 (대기중)' : '▶ 준비';
+        return;
+    }
+    legendPlayBtn.textContent = legendIsMulti ? '▶ 같이하기' : '▶ 시작';
+}
+function updateLegendPlayBtnState() {
+    if (legendPhase === 'searching' || legendMyReady) { legendPlayBtn.disabled = true; return; }
+    legendPlayBtn.disabled = legendIsMulti ? !legendParty[0] : legendParty.some(id => !id);
+}
+function resetLegendActions() {
+    legendPhase = 'idle';
+    legendMyReady = false;
+    stopLegendSearchTimer();
+    legendWaitingRowEl.classList.add('hidden');
+    legendPartnerPreviewEl.classList.add('hidden');
+    updateLegendPlayBtnLabel();
+    updateLegendPlayBtnState();
+}
+function leaveLegendRoomIfWaiting() {
+    if (legendPhase !== 'idle') socket.emit('leaveStoryRoom');
+    resetLegendActions();
+}
+function syncLegendModeButtons() {
+    legendSoloBtn.classList.toggle('selected', !legendIsMulti);
+    legendMultiBtn.classList.toggle('selected', legendIsMulti);
+    legendPartyTitleEl.textContent = legendIsMulti ? '내 캐릭터' : '파티 3명';
+}
+legendSoloBtn.addEventListener('click', () => {
+    if (!legendIsMulti) return;
+    leaveLegendRoomIfWaiting();
+    legendIsMulti = false;
+    syncLegendModeButtons();
+    renderLegendDetail();
+});
+legendMultiBtn.addEventListener('click', () => {
+    if (legendIsMulti) return;
+    leaveLegendRoomIfWaiting();
+    legendIsMulti = true;
+    syncLegendModeButtons();
+    renderLegendDetail();
+});
+
+function showLegendMsg(text, good) {
+    if (!legendMsgEl) return;
+    legendMsgEl.textContent = text || '';
+    legendMsgEl.classList.toggle('hidden', !text);
+    legendMsgEl.classList.toggle('good', !!good);
+}
+
+function renderLegendDetail() {
+    const reward = SHARED.legendClearReward(LEGEND_FLOOR) || {};
+    legendFloorInfoEl.innerHTML = `
+        <ul class="awaken-stat-list">
+            <li>입구 스위치를 밟아야 문이 열립니다</li>
+            <li>잡몹 방 2개를 지나면 갈림길 -- 한쪽은 별로, 한쪽은 막다른 보물상자</li>
+        </ul>
+        <div class="reward-chips">${rewardChipsHtml(reward)}</div>`;
+    renderLegendParty();
+    updateLegendPlayBtnLabel();
+    updateLegendPlayBtnState();
+}
+
+document.getElementById('legend-story-card').addEventListener('click', () => {
+    leaveLegendRoomIfWaiting();
+    showLegendMsg('');
+    syncLegendModeButtons();
+    renderLegendDetail();
+    showScreen('legendDetail');
+});
+document.getElementById('back-from-legend-detail-btn').addEventListener('click', () => {
+    leaveLegendRoomIfWaiting();
+    showScreen('storyFork');
+});
+
+legendPlayBtn.addEventListener('click', () => {
+    if (legendPlayBtn.disabled) return;
+
+    if (legendIsMulti) {
+        const myChar = legendParty[0];
+        if (!myChar) {
+            showLegendMsg('캐릭터를 선택해 주세요.');
+            return;
+        }
+        showLegendMsg('');
+        if (legendPhase === 'idle') {
+            legendPhase = 'searching';
+            legendSearchStartAt = Date.now();
+            updateLegendSearchLabel();
+            legendPlayBtn.disabled = true;
+            stopLegendSearchTimer();
+            legendSearchHandle = setInterval(updateLegendSearchLabel, 1000);
+            legendWaitingRowEl.classList.remove('hidden');
+            legendMyIconEl.style.background = charIconBackground(SHARED.CHARACTERS[myChar]);
+            legendMyNameEl.textContent = (SHARED.CHARACTERS[myChar] || {}).name || '';
+            socket.emit('joinStoryFloor', {
+                floor: LEGEND_FLOOR, charType: myChar, equip: equipPayload(myChar),
+                instinct: instinctPayload(myChar), solo: false
+            });
+        } else if (legendPhase === 'matched' && !legendMyReady) {
+            legendMyReady = true;
+            legendPlayBtn.disabled = true;
+            updateLegendPlayBtnLabel();
+            socket.emit('storyPlayerReady');
+        }
+        return;
+    }
+
+    if (legendParty.some(id => !id)) {
+        showLegendMsg('파티 3명을 모두 채워 주세요.');
+        return;
+    }
+    showLegendMsg('');
+    socket.emit('joinStoryFloor', {
+        floor: LEGEND_FLOOR, charType: legendParty[0], equip: equipPayload(legendParty[0]),
+        instinct: instinctPayload(legendParty[0]), solo: true,
+        party: legendParty,
+        equipParty: legendParty.map(id => equipPayload(id)),
+        instinctParty: legendParty.map(id => instinctPayload(id))
+    });
+});
+
+// 한 판이 끝났을 때. 이겼으면 첫 클리어 여부와 상관없이 재화를 준다(지금은
+// 지하 1층 하나뿐이라 장비 드랍 같은 첫 클리어 전용 보상은 없다).
+function showLegendResult(floor, result) {
+    resetLegendActions();
+    resultReturnScreen = 'legendDetail';
+    resultBackBtn.textContent = '레전드 스토리로';
+    if (result !== 'win') {
+        resultTitle.textContent = '패배...';
+        resultTitle.style.color = '#e74c3c';
+        resultDesc.textContent = '지하 1층에서 쓰러졌습니다.';
+        showScreen('result');
+        return;
+    }
+    resultTitle.textContent = '층 클리어!';
+    resultTitle.style.color = '#2ecc71';
+    if (!gameData.clearedLegendFloors.includes(floor)) {
+        gameData.clearedLegendFloors.push(floor);
+        saveGameData(gameData);
+    }
+    const bag = SHARED.legendClearReward(floor);
+    grantCurrencies(bag);
+    resultDesc.textContent = '지하 1층을 클리어했습니다.';
+    resultRewardsEl.innerHTML = rewardChipsHtml(bag);
+    showScreen('result');
+}
+
 // ---- Event: 레전더리 이벤트 ----
 // Laid out like the shop -- categories down the left, the selected one on the
 // right. 안내 / 물 미션 / 불 미션.
@@ -3912,8 +4136,39 @@ towerPlayBtn.addEventListener('click', () => {
 
 // 짝이 붙거나 떨어질 때마다 버튼과 파트너 칸을 고쳐 그린다.
 socket.on('storyRoomUpdate', (data) => {
-    // 각성모드 같이하기도 이 이벤트를 그대로 쓴다 (findOpenStoryRoom/스토리
-    // 방을 그대로 재사용하기 때문). 짝 찾는 중이면 여기서 갈라진다.
+    // 레전드 스토리 같이하기도, 각성모드 같이하기도 이 이벤트를 그대로 쓴다
+    // (findOpenStoryRoom/스토리 방을 그대로 재사용하기 때문). 짝 찾는 중이면
+    // 여기서 갈라진다.
+    if (legendPhase !== 'idle') {
+        if (data.count >= 2) {
+            legendPhase = 'matched';
+            stopLegendSearchTimer();
+            const partner = Object.entries(data.players).find(([id]) => id !== socket.id);
+            if (partner) {
+                const pStats = SHARED.CHARACTERS[partner[1].charType] || SHARED.CHARACTERS.kicker;
+                legendPartnerIconEl.style.background = charIconBackground(pStats);
+                legendPartnerNameEl.textContent = pStats.name;
+                legendPartnerPreviewEl.classList.remove('hidden');
+            }
+            renderWaitingScene(LEGEND_WAIT_ELS, data.players, true);
+            if (!legendMyReady) {
+                legendPlayBtn.textContent = '▶ 준비';
+                legendPlayBtn.disabled = false;
+            }
+        } else {
+            // 같이 기다리던 사람이 나갔다 -- 다시 혼자 기다린다.
+            legendPhase = 'searching';
+            legendMyReady = false;
+            legendPartnerPreviewEl.classList.add('hidden');
+            renderWaitingScene(LEGEND_WAIT_ELS, data.players, false);
+            legendPlayBtn.disabled = true;
+            legendSearchStartAt = Date.now();
+            updateLegendSearchLabel();
+            stopLegendSearchTimer();
+            legendSearchHandle = setInterval(updateLegendSearchLabel, 1000);
+        }
+        return;
+    }
     if (awakenPhase !== 'idle') {
         if (data.count >= 2) {
             awakenPhase = 'matched';
@@ -4074,6 +4329,8 @@ socket.on('storyFloorStarted', (data) => {
     renderStoryPartnerHp();
     storyFloorDef = data.floorDef;
     storyMonsters = data.monsters;
+    storyLegendSwitchesHit = {};
+    storyLegendChestsHit = {};
     const p = data.player;
     storyPlayer = {
         x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, facing: p.facing, charType: p.charType, alive: true, shieldHp: p.shieldHp || 0,
@@ -4419,6 +4676,24 @@ socket.on('storyPlayerHealed', ({ hp, partyHp }) => {
     }
 });
 
+// 레전드 스토리 스위치: 공격이 아니라 밟으면 열린다. 판정은 서버가 하고,
+// 여기선 문 그림/이동 클램프가 참고하는 로컬 상태만 갱신한다.
+socket.on('legendSwitchHit', ({ id }) => {
+    storyLegendSwitchesHit[id] = true;
+});
+
+// 레전드 스토리 보물상자: 밟으면 한 번만 재화를 준다.
+socket.on('legendChestHit', ({ id }) => {
+    if (storyLegendChestsHit[id]) return;
+    storyLegendChestsHit[id] = true;
+    const reward = SHARED.legendChestReward(id);
+    if (reward) grantCurrencies(reward);
+    const chest = storyFloorDef && storyFloorDef.chests && storyFloorDef.chests.find(c => c.id === id);
+    if (chest) {
+        storyImpactEffects.push({ x: chest.x, y: chest.y, radius: 40, until: performance.now() + 500, heal: true });
+    }
+});
+
 // 전기줄맛: 상체 <-> 하체 <-> 합체. 체력 상한 자체가 바뀌므로 다른 회복
 // 이벤트와 달리 maxHp도 같이 받아야 한다.
 socket.on('storyBodyFormChanged', ({ id, form, hp, maxHp, partyHp, partyMaxHp }) => {
@@ -4511,6 +4786,8 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     // 각성모드는 판 이름이 'awaken:쿠키:레벨'이라 여기서 갈라진다.
     const awaken = SHARED.parseAwakenFloorKey(floor);
     if (awaken) { showAwakenResult(awaken, result); return; }
+    // 레전드 스토리는 판 이름이 'legend1' 같은 고정 문자열 키다.
+    if (SHARED.isLegendFloor(floor)) { showLegendResult(floor, result); return; }
     const stage = eventStageById(floor);
     if (!stage) selectedStoryFloor = floor;
     if (result === 'win') {
@@ -4858,7 +5135,7 @@ function storyFrame() {
             if (storyFloorDef.gates) {
                 const wasAlong = SHARED.alongOf(storyFloorDef, storyPlayer.x, storyPlayer.y);
                 for (const gate of storyFloorDef.gates) {
-                    if (!storyAnyMonsterAliveInRoom(gate.room)) continue;
+                    if (!storyGateSealed(gate)) continue;
                     if (wasAlong <= gate.entrance || along <= gate.entrance) {
                         if (along > gate.entrance) along = gate.entrance;
                         if (along < gate.exit) along = gate.exit;
@@ -4902,6 +5179,16 @@ function storyFrame() {
 
 function storyAnyMonsterAliveInRoom(roomIndex) {
     return Object.values(storyMonsters).some(m => m.alive && m.room === roomIndex);
+}
+
+// 레전드 스토리 입구 문처럼 몬스터가 아니라 스위치로 여는 문(gate.manual)도
+// 있다 -- server.js의 gateSealed와 같은 규칙(움직임 예측·문 그리기 둘 다
+// 여기 하나로 정리).
+let storyLegendSwitchesHit = {};
+let storyLegendChestsHit = {};
+function storyGateSealed(gate) {
+    if (gate.manual) return !storyLegendSwitchesHit[gate.room];
+    return storyAnyMonsterAliveInRoom(gate.room);
 }
 
 function drawStarPath(ctx, radius) {
@@ -5024,27 +5311,44 @@ function storyRender(now) {
         const deckColor = storyFloorDef.deckColor || '#4a3c2f';
         const deckGlow = storyFloorDef.deckGlow || 'rgba(255,255,255,0.15)';
         if (winding) {
-            // 꺾은선 다리: 길을 그대로 굵게 그으면 모퉁이까지 알아서 이어진다.
-            // 모서리를 둥글게 이어야 꺾이는 자리에 구멍이 안 생긴다.
+            // 꺾은선 다리: 구간(방/다리/갈림길)마다 자기 폭(halfWidth)으로 따로
+            // 긋는다 -- 폭이 전부 같던 예전과 달리 레전드 스토리는 방(넓게)과
+            // 다리(좁게)가 한 길 안에 섞여 있어서, 길 전체를 한 굵기로 그으면
+            // 방이 다리만큼 좁게 나온다. 둥근 캡/조인이 구간 경계를 자연스럽게
+            // 이어 준다.
+            const segs = SHARED.pathSegs(storyFloorDef);
             storyCtx.save();
             storyCtx.lineJoin = 'round';
             storyCtx.lineCap = 'round';
-            storyCtx.beginPath();
-            storyFloorDef.path.forEach(([px, py], i) => {
-                if (i === 0) storyCtx.moveTo(px, py);
-                else storyCtx.lineTo(px, py);
+            segs.forEach(s => {
+                storyCtx.beginPath();
+                storyCtx.moveTo(s.x0, s.y0);
+                storyCtx.lineTo(s.x0 + s.ux * s.len, s.y0 + s.uy * s.len);
+                storyCtx.strokeStyle = deckGlow;
+                storyCtx.lineWidth = s.halfWidth * 2 + 4;
+                storyCtx.stroke();
+                storyCtx.strokeStyle = deckColor;
+                storyCtx.lineWidth = s.halfWidth * 2;
+                storyCtx.stroke();
             });
-            storyCtx.strokeStyle = deckGlow;
-            storyCtx.lineWidth = halfW * 2 + 4;
-            storyCtx.stroke();
-            storyCtx.strokeStyle = deckColor;
-            storyCtx.lineWidth = halfW * 2;
-            storyCtx.stroke();
             // 가운데 점선: 어느 쪽이 길인지 한눈에 보이게.
             storyCtx.setLineDash([26, 26]);
             storyCtx.strokeStyle = 'rgba(255,255,255,0.10)';
             storyCtx.lineWidth = 3;
+            storyCtx.beginPath();
+            storyFloorDef.path.forEach(([px, py], i) => {
+                if (i === 0) storyCtx.moveTo(px, py); else storyCtx.lineTo(px, py);
+            });
             storyCtx.stroke();
+            if (storyFloorDef.forks) {
+                storyFloorDef.forks.forEach(fork => {
+                    storyCtx.beginPath();
+                    fork.forEach(([px, py], i) => {
+                        if (i === 0) storyCtx.moveTo(px, py); else storyCtx.lineTo(px, py);
+                    });
+                    storyCtx.stroke();
+                });
+            }
             storyCtx.restore();
         } else {
             // The bridge runs along the level axis; on a vertical floor the same
@@ -5078,20 +5382,22 @@ function storyRender(now) {
         if (storyFloorDef.gates) {
             const shieldAlpha = 0.35 + Math.sin(now / 150) * 0.1;
             storyFloorDef.gates.forEach(gate => {
-                if (!storyAnyMonsterAliveInRoom(gate.room)) return;
+                if (!storyGateSealed(gate)) return;
                 [gate.entrance, gate.exit].forEach(at => {
                     if (winding) {
                         // 길이 휘어 있으니 그 자리의 길 방향을 구해서 가로로 세운다.
+                        // 방/다리마다 폭이 다르므로 그 자리의 실제 폭을 쓴다.
                         const a = SHARED.pointOnPath(storyFloorDef, at, 0);
                         const b = SHARED.pointOnPath(storyFloorDef, at - 1, 0);
+                        const gateHalfW = SHARED.laneHalfWidthAt(storyFloorDef, a.x, a.y);
                         storyCtx.save();
                         storyCtx.translate(a.x, a.y);
                         storyCtx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
                         storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
-                        storyCtx.fillRect(-6, -halfW, 12, halfW * 2);
+                        storyCtx.fillRect(-6, -gateHalfW, 12, gateHalfW * 2);
                         storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
                         storyCtx.lineWidth = 2;
-                        storyCtx.strokeRect(-6, -halfW, 12, halfW * 2);
+                        storyCtx.strokeRect(-6, -gateHalfW, 12, gateHalfW * 2);
                         storyCtx.restore();
                         return;
                     }
@@ -5104,6 +5410,40 @@ function storyRender(now) {
                     storyCtx.lineWidth = 2;
                     storyCtx.strokeRect(...bar);
                 });
+            });
+        }
+
+        // 레전드 스토리 전용: 스위치(레버)와 보물상자. 별과 같은 방식으로
+        // "그 위를 밟으면" 발동한다 -- 공격 판정이 없다.
+        if (storyFloorDef.switches) {
+            storyFloorDef.switches.forEach(sw => {
+                const hit = !!storyLegendSwitchesHit[sw.id];
+                storyCtx.save();
+                storyCtx.translate(sw.x, sw.y);
+                storyCtx.fillStyle = hit ? 'rgba(46, 204, 113, 0.9)' : 'rgba(231, 76, 60, 0.9)';
+                storyCtx.strokeStyle = 'rgba(255,255,255,0.8)';
+                storyCtx.lineWidth = 3;
+                storyCtx.beginPath();
+                storyCtx.arc(0, 0, 20, 0, Math.PI * 2);
+                storyCtx.fill();
+                storyCtx.stroke();
+                storyCtx.restore();
+            });
+        }
+        if (storyFloorDef.chests) {
+            storyFloorDef.chests.forEach(ch => {
+                const opened = !!storyLegendChestsHit[ch.id];
+                storyCtx.save();
+                storyCtx.translate(ch.x, ch.y);
+                storyCtx.globalAlpha = opened ? 0.35 : 1;
+                storyCtx.fillStyle = '#c8791b';
+                storyCtx.strokeStyle = 'rgba(255,255,255,0.8)';
+                storyCtx.lineWidth = 3;
+                storyCtx.fillRect(-22, -16, 44, 32);
+                storyCtx.strokeRect(-22, -16, 44, 32);
+                storyCtx.fillStyle = '#8b5a2b';
+                storyCtx.fillRect(-22, -4, 44, 6);
+                storyCtx.restore();
             });
         }
     }
@@ -5976,6 +6316,9 @@ resultBackBtn.addEventListener('click', () => {
         // 각성모드에서 왔으면 보스 선택이 아니라 각성모드로 돌아간다.
         renderAwakenDetail();
         showScreen('awakenDetail');
+    } else if (resultReturnScreen === 'legendDetail') {
+        renderLegendDetail();
+        showScreen('legendDetail');
     } else if (resultReturnScreen === 'modeSelect') {
         showScreen('modeSelect');
     } else {

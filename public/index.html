@@ -371,16 +371,14 @@
         <button id="back-from-awaken-detail-btn" class="secondary-btn">뒤로</button>
     </div>
 
-    <!-- 50층(얼음/서리 챕터 보스)을 깨야 보이는 갈림길. 왼쪽 레전드 스토리는
-         아직 안 만들어서 잠금(locked)으로만 표시한다 -- 나중에 내용이 생기면
-         잠금을 풀고 자기 화면으로 연결하면 된다. -->
+    <!-- 50층(얼음/서리 챕터 보스)을 깨면 보이는 갈림길. 왼쪽은 탑 아래로
+         내려가는 레전드 스토리, 오른쪽은 지금까지처럼 탑 위로 계속. -->
     <div id="story-fork-screen" class="screen hidden">
         <h2>스토리 모드</h2>
         <div class="mode-list">
-            <div id="legend-story-card" class="mode-card locked">
+            <div id="legend-story-card" class="mode-card">
                 <div class="icon">👑</div>
                 <div class="name">레전드 스토리</div>
-                <div class="sub">준비중</div>
             </div>
             <div id="story-fork-story-card" class="mode-card">
                 <div class="icon">📖</div>
@@ -388,6 +386,45 @@
             </div>
         </div>
         <button id="back-from-story-fork-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 레전드 스토리: 지금은 지하 1층 하나뿐이라 층 목록 없이 바로 파티/시작
+         화면이다. 각성모드 화면과 같은 혼자(3명)/같이(1명씩) 구조를 쓴다. -->
+    <div id="legend-detail-screen" class="screen hidden">
+        <div class="awaken-layout">
+            <div class="awaken-party-col">
+                <div id="legend-party-title" class="awaken-col-title">파티 3명</div>
+                <div id="legend-party" class="awaken-party"></div>
+                <div class="awaken-mode-toggle">
+                    <button id="legend-solo-btn" class="awaken-toggle-btn selected">혼자</button>
+                    <button id="legend-multi-btn" class="awaken-toggle-btn">같이</button>
+                </div>
+            </div>
+            <div class="awaken-info-col">
+                <div class="awaken-boss-name">레전드 스토리 · 지하 1층</div>
+                <div id="legend-floor-info" class="awaken-level-info"></div>
+                <button id="legend-play-btn" class="play-btn">▶ 시작</button>
+                <div id="legend-msg" class="equip-picker-msg hidden"></div>
+            </div>
+        </div>
+        <!-- 같이하기: 짝을 기다리는 모닥불 화면 (각성모드와 같은 UI) -->
+        <div id="legend-waiting-row" class="char-preview-row waiting-row hidden">
+            <div class="char-preview">
+                <div id="legend-my-ready" class="ready-badge hidden">✅ READY</div>
+                <div id="legend-my-icon" class="char-icon-circle small"></div>
+                <div id="legend-my-name" class="char-name"></div>
+            </div>
+            <div id="legend-campfire" class="campfire hidden" aria-hidden="true">
+                <div class="campfire-flame">🔥</div>
+                <div class="campfire-logs">🪵</div>
+            </div>
+            <div id="legend-partner-preview" class="char-preview hidden">
+                <div id="legend-partner-ready" class="ready-badge hidden">✅ READY</div>
+                <div id="legend-partner-icon" class="char-icon-circle small"></div>
+                <div id="legend-partner-name" class="char-name"></div>
+            </div>
+        </div>
+        <button id="back-from-legend-detail-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Story mode: multi (locked) / solo entry -->
