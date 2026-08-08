@@ -6314,8 +6314,12 @@ const ZOMBIE_WORKBENCH_ITEMS = {
 function zombieUpgradeCost(level) {
     return 5 * (level + 1);
 }
-const ZOMBIE_ATK_UPGRADE_AMOUNT = 1; // 공격력/터렛 공격력/병사 공격력 모두 강화 1번당 +1
-const ZOMBIE_FENCE_HP_UPGRADE_AMOUNT = 2; // 울타리 체력은 강화 1번당 +2
+// 레벨당 늘어나는 값 자체는 소수점이 있는 작은 수다 -- 실제로 적용할 때는
+// (레벨 * 이 값)을 한 번에 계산해서 소수점을 버린다(Math.floor). 그래서
+// 낮은 레벨에서는 살아도 눈에 보이는 변화가 없다가, 버림 문턱을 넘는
+// 레벨부터 정수 단위로 훅훅 오른다 -- 의도된 동작이다.
+const ZOMBIE_ATK_UPGRADE_AMOUNT = 0.2; // 공격력/터렛 공격력/병사 공격력: 레벨당 +0.2
+const ZOMBIE_FENCE_HP_UPGRADE_AMOUNT = 0.5; // 울타리 체력: 레벨당 +0.5
 
 const ZOMBIE_CELL_COUNT = ZOMBIE_GRID_COLS * ZOMBIE_GRID_ROWS;
 

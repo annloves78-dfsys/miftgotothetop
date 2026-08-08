@@ -457,7 +457,9 @@ zombieCanvas.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     if (zombiePendingBuildType) { tryZombiePlaceAtMouse(); return; }
     if (tryZombieOpenUpgradeAtMouse()) return;
-    if (autoAimActive()) fireZombieAutoAimedAttack();
+    // 조이스틱이 켜져 있으면 자동조준은 끈다 (조이스틱 방향과 어긋나므로) --
+    // mc-attack-zombie 버튼과 같은 이유.
+    if (!mobileControlsEnabled && autoAimEnabled) fireZombieAutoAimedAttack();
     else tryZombieAttack();
 });
 
@@ -539,10 +541,15 @@ function fireZombieAutoAimedAttack() {
 // never on screen at the same time, same trick guest_raid.js uses). 좀비막기는
 // 스킬/궁극기가 없으니 조이스틱과 공격 버튼만 있으면 된다 -- 건설은 여전히
 // F키/건설 버튼으로.
+//
+// 조이스틱이 켜져 있으면(mobileControlsEnabled) 이미 조이스틱 방향이 바로
+// facing이 된다(zombieFrame 참고) -- 그 위에 자동조준까지 덮어씌우면 스틱을
+// 미는 방향과 실제 공격 방향이 어긋난다. 그래서 공격 버튼은 자동조준으로
+// 방향을 다시 잡지 않고, 지금 향한 방향 그대로 휘두른다.
 const mcJoystickZombieEl = document.getElementById('mc-joystick-zombie');
 const mcAttackZombieEl = document.getElementById('mc-attack-zombie');
 setupJoystick(mcJoystickZombieEl, false);
-mcTap(mcAttackZombieEl, () => fireZombieAutoAimedAttack());
+mcTap(mcAttackZombieEl, () => tryZombieAttack());
 
 // ---------------- 루프 + 렌더 ----------------
 function startZombieLoop() {

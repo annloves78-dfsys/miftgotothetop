@@ -4673,6 +4673,13 @@ function recomputeZombieFields(room) {
     room.zombieFields = fields;
 }
 
+// 레벨당 +0.5처럼 소수점 있는 값이 쌓인 것 -- 실제로 적용할 때만 정수로
+// 버림한다. 새로 짓는 울타리(빌드 시점)와 이미 지어진 울타리(강화 살 때
+// 차액만큼 보정)가 똑같은 이 계산을 공유한다.
+function zombieFenceHpBonus(level) {
+    return Math.floor(level * ZOMBIE_FENCE_HP_UPGRADE_AMOUNT);
+}
+
 function damageZombieStructure(roomId, room, index, amount) {
     const cell = room.grid[index];
     if (!cell) return;
@@ -4796,7 +4803,7 @@ function tickZombieTurrets(roomId, room, now) {
         }
         if (!nearest || nearestDist > def.range) return;
         cell.nextAttackAt = now + def.attackCooldown;
-        nearest.hp -= def.damage + room.turretAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT;
+        nearest.hp -= def.damage + Math.floor(room.turretAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT);
         io.to(roomId).emit('zombieTurretFired', { index, targetId: nearestId });
         if (nearest.hp <= 0) {
             delete room.zombies[nearestId];
@@ -4871,7 +4878,7 @@ function tickZombieSoldiers(roomId, room, now) {
         if (nearestDist <= reach) {
             if (now < s.nextAttackAt) continue;
             s.nextAttackAt = now + ZOMBIE_SOLDIER_DEF.attackCooldown;
-            nearest.hp -= ZOMBIE_SOLDIER_DEF.attackDamage + room.soldierAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT;
+            nearest.hp -= ZOMBIE_SOLDIER_DEF.attackDamage + Math.floor(room.soldierAtkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT);
             io.to(roomId).emit('zombieSoldierAttacked', { id: sid, targetId: nearestId });
             if (nearest.hp <= 0) {
                 delete room.zombies[nearestId];
@@ -7341,7 +7348,7 @@ io.on('connection', (socket) => {
         if (now - p.lastAttackTime < character.attackCooldown) return;
         p.lastAttackTime = now;
         const swing = resolveAttack(character, p, now, false);
-        swing.damage += room.atkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT; // 강화대에서 산 만큼 이 판 내내 붙는다
+        swing.damage += Math.floor(room.atkUpgradeLevel * ZOMBIE_ATK_UPGRADE_AMOUNT); // 강화대에서 산 만큼 이 판 내내 붙는다
         advanceAttackSequence(character, p);
 
         for (const [zid, z] of Object.entries(room.zombies)) {
@@ -7400,7 +7407,7 @@ io.on('connection', (socket) => {
         room.iron -= (def.iron || 0);
         const now = Date.now();
         // 울타리는 지금까지 산 울타리 체력 강화만큼 처음부터 더 튼튼하게 지어진다.
-        const hp = def.hp + (type === 'fence' ? room.fenceHpUpgradeLevel * ZOMBIE_FENCE_HP_UPGRADE_AMOUNT : 0);
+        const hp = def.hp + (type === 'fence' ? zombieFenceHpBonus(room.fenceHpUpgradeLevel) : 0);
         let cell;
         if (def.range != null) {
             // 자동으로 공격하는 시설(터렛류/대포) -- 다음 발사 시각을 따로 든다.
@@ -7445,15 +7452,23 @@ io.on('connection', (socket) => {
         const cost = zombieUpgradeCost(room[levelKey]);
         if (room.coins < cost) return;
         room.coins -= cost;
-        room[levelKey]++;
 
         if (stat === 'fenceHp') {
-            room.grid.forEach(cell => {
-                if (cell && cell.type === 'fence') {
-                    cell.maxHp += ZOMBIE_FENCE_HP_UPGRADE_AMOUNT;
-                    cell.hp += ZOMBIE_FENCE_HP_UPGRADE_AMOUNT;
-                }
-            });
+            // 레벨당 +0.5는 매번 정수로 안 떨어지므로, 버림 문턱을 넘을 때만
+            // (예: 1강->2강처럼) 이미 지어진 울타리에 그 차액을 더한다.
+            const before = zombieFenceHpBonus(room[levelKey]);
+            room[levelKey]++;
+            const delta = zombieFenceHpBonus(room[levelKey]) - before;
+            if (delta > 0) {
+                room.grid.forEach(cell => {
+                    if (cell && cell.type === 'fence') {
+                        cell.maxHp += delta;
+                        cell.hp += delta;
+                    }
+                });
+            }
+        } else {
+            room[levelKey]++;
         }
 
         io.to(roomId).emit('zombieStatUpgraded', { stat, level: room[levelKey], coins: room.coins });
