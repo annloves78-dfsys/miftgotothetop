@@ -371,6 +371,25 @@
         <button id="back-from-awaken-detail-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- 50층(얼음/서리 챕터 보스)을 깨야 보이는 갈림길. 왼쪽 레전드 스토리는
+         아직 안 만들어서 잠금(locked)으로만 표시한다 -- 나중에 내용이 생기면
+         잠금을 풀고 자기 화면으로 연결하면 된다. -->
+    <div id="story-fork-screen" class="screen hidden">
+        <h2>스토리 모드</h2>
+        <div class="mode-list">
+            <div id="legend-story-card" class="mode-card locked">
+                <div class="icon">👑</div>
+                <div class="name">레전드 스토리</div>
+                <div class="sub">준비중</div>
+            </div>
+            <div id="story-fork-story-card" class="mode-card">
+                <div class="icon">📖</div>
+                <div class="name">스토리 모드</div>
+            </div>
+        </div>
+        <button id="back-from-story-fork-btn" class="secondary-btn">뒤로</button>
+    </div>
+
     <!-- Story mode: multi (locked) / solo entry -->
     <div id="story-mode-screen" class="screen hidden">
         <h2>스토리 모드</h2>

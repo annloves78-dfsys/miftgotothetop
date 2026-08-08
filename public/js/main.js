@@ -12,6 +12,7 @@ const screens = {
     gachaPull: document.getElementById('gacha-pull-screen'),
     legendary: document.getElementById('legendary-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
+    storyFork: document.getElementById('story-fork-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
     storyFight: document.getElementById('story-fight-screen'),
@@ -3592,7 +3593,16 @@ bossRaidModeCard.addEventListener('click', () => {
     renderBossList();
     showScreen('bossSelect');
 });
-storyModeCard.addEventListener('click', () => showScreen('storyMode'));
+// 50층(얼음/서리 챕터 보스)을 깨기 전에는 지금까지와 똑같이 바로
+// 멀티/솔로 화면으로 간다. 깬 뒤에는 레전드 스토리 갈림길을 먼저 보여준다.
+storyModeCard.addEventListener('click', () => {
+    if (gameData.clearedStoryFloors.includes(50)) showScreen('storyFork');
+    else showScreen('storyMode');
+});
+
+// ---- Story fork: legend story (locked, 준비중) / story mode ----
+document.getElementById('story-fork-story-card').addEventListener('click', () => showScreen('storyMode'));
+document.getElementById('back-from-story-fork-btn').addEventListener('click', () => showScreen('modeSelect'));
 
 // ---- Story mode: multi (locked) / solo entry ----
 const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');
