@@ -3747,8 +3747,8 @@ storyMultiBtn.addEventListener('click', () => {
 });
 
 // ---- Story tower: floor select ----
-// 50층(얼음/서리 챕터 보스)까지 만들어져 있다. 더 늘어나면 이 숫자만 올리면 된다.
-const STORY_TOTAL_FLOORS = 50;
+// 59층(용암 챕터)까지 만들어져 있다. 더 늘어나면 이 숫자만 올리면 된다.
+const STORY_TOTAL_FLOORS = 59;
 let selectedStoryFloor = 1;
 // What the story engine was actually entered with -- a floor number from the
 // tower, or an event stage id. Decides where 나가기 sends you back to.
@@ -5054,9 +5054,9 @@ function storyRender(now) {
             const deck = vertical
                 ? [-halfW, deckAlong, halfW * 2, deckLen]
                 : [deckAlong, -halfW, deckLen, halfW * 2];
-            storyCtx.fillStyle = '#4a3c2f';
+            storyCtx.fillStyle = deckColor;
             storyCtx.fillRect(...deck);
-            storyCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+            storyCtx.strokeStyle = deckGlow;
             storyCtx.lineWidth = 2;
             storyCtx.strokeRect(...deck);
         }

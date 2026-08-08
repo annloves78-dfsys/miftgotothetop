@@ -2697,6 +2697,142 @@ const MONSTERS = {
         summonOnHits: { type: 'icicle_archer', count: 1, every: 10, max: 4 },
         bossBar: true,
         radius: 44
+    },
+    // ==================== 51~59층: 용암 챕터 ====================
+    // 50층(서리 여제)을 넘은 뒤 이어지는 새 챕터. 얼음/서리 챕터처럼 이 챕터도
+    // 이전 챕터 몹과 안 섞고 자기 몹만 쓴다. 51~56층에 하나씩 새로 풀고,
+    // 57~59층은 그 6종을 섞어서 수만 늘려 나간다. 보스전은 없다(다음 보스는
+    // 60층 몫 -- 지금은 웨이브만).
+    // 51층: 용암 임프. 고드름 궁수 자리를 잇는 종잇장 원거리.
+    lava_imp: {
+        name: '용암 임프',
+        color: '#e8590c',
+        colorLeft: '#ffa94d',
+        colorRight: '#7a1e00',
+        health: 110,
+        speed: 4,
+        aggroRange: 780,
+        preferredDistance: 260,
+        projectileSpeed: 580,
+        attackRange: 400,
+        attackDamage: 24,
+        attackCooldown: 1700,
+        telegraphMs: 340
+    },
+    // 52층: 마그마 하운드. 눈보라 늑대보다 더 빨리 파고든다.
+    magma_hound: {
+        name: '마그마 하운드',
+        color: '#bf2600',
+        colorLeft: '#ff8787',
+        colorRight: '#4d0000',
+        health: 260,
+        speed: 6.5,
+        aggroRange: 830,
+        preferredDistance: 55,
+        attackRange: 150,
+        attackDamage: 24,
+        attackCooldown: 1600,
+        telegraphMs: 300
+    },
+    // 53층: 흑요석 골렘. 서리 골렘처럼 쓰러지면 조각으로 갈라진다.
+    obsidian_golem: {
+        name: '흑요석 골렘',
+        color: '#2b0f06',
+        colorLeft: '#5c3a21',
+        colorRight: '#100603',
+        health: 540,
+        speed: 2,
+        aggroRange: 780,
+        preferredDistance: 65,
+        attackRange: 190,
+        attackDamage: 30,
+        attackCooldown: 2800,
+        telegraphMs: 550,
+        splitOnDeath: { type: 'obsidian_shard', count: 2, spread: 45 }
+    },
+    obsidian_shard: {
+        name: '흑요석 조각',
+        color: '#5c3a21',
+        health: 110,
+        speed: 5,
+        aggroRange: 780,
+        preferredDistance: 40,
+        attackRange: 120,
+        attackDamage: 14,
+        attackCooldown: 1700,
+        telegraphMs: 320
+    },
+    // 54층: 불씨 사제. 눈꽃 치유사보다 오라가 더 넓고 세다.
+    ember_priest: {
+        name: '불씨 사제',
+        color: '#ff922b',
+        colorLeft: '#ffd8a8',
+        colorRight: '#c1440e',
+        health: 260,
+        speed: 2,
+        aggroRange: 800,
+        preferredDistance: 270,
+        projectileSpeed: 450,
+        attackRange: 350,
+        attackDamage: 10,
+        attackCooldown: 2400,
+        telegraphMs: 460,
+        healAura: { radius: 310, amount: 11, tickMs: 1300 }
+    },
+    // 55층: 용암 기사. 얼음 기사처럼 한 번은 반드시 버틴다.
+    molten_knight: {
+        name: '용암 기사',
+        color: '#d9480f',
+        colorLeft: '#ffc078',
+        colorRight: '#5c1a00',
+        health: 440,
+        speed: 3,
+        aggroRange: 800,
+        preferredDistance: 75,
+        attackRange: 200,
+        attackDamage: 32,
+        attackCooldown: 2600,
+        telegraphMs: 520,
+        lowHpGuard: { atHp: 100, heal: 80, shield: 100 }
+    },
+    // 56층: 화산 대포. 지금까지 나온 포탑 중 빔이 가장 세고 잘 따라온다.
+    volcano_cannon: {
+        name: '화산 대포',
+        color: '#e03131',
+        colorLeft: '#ffa8a8',
+        colorRight: '#5c0000',
+        health: 240,
+        speed: 0,
+        aggroRange: 700,
+        preferredDistance: 0,
+        attackRange: 700,
+        attackCooldown: 2200,
+        telegraphMs: 360,
+        laser: true,
+        laserDurationMs: 1300,
+        laserDamage: 6,
+        laserTickMs: 100,
+        laserRange: 700,
+        laserWidth: 48,
+        laserTrackSpeed: 170
+    },
+    // 57층: 화산 군주. 서리 여왕처럼 57~59층 내내 섞여 나오는 이 챕터의 정예.
+    // 체력이 40% 아래로 떨어지면 격노하고, 용암 임프를 계속 불러들인다.
+    volcano_lord: {
+        name: '화산 군주',
+        color: '#c92a2a',
+        colorLeft: '#ff8787',
+        colorRight: '#3d0000',
+        health: 700,
+        speed: 3,
+        aggroRange: 850,
+        preferredDistance: 90,
+        attackRange: 225,
+        attackDamage: 38,
+        attackCooldown: 2400,
+        telegraphMs: 520,
+        enrage: { atHpRatio: 0.4, attackMult: 1.5, speedMult: 1.4 },
+        summonOnTimer: { type: 'lava_imp', count: 1, everyMs: 7000, max: 3 }
     }
 };
 
@@ -2786,6 +2922,8 @@ function makePathFloor(spec) {
         levelType: 'bridge',
         path: spec.path,
         laneHalfWidth: spec.laneHalfWidth || 70,
+        deckColor: spec.deckColor || null,
+        deckGlow: spec.deckGlow || null,
         gates: spec.gates || [],
         monsters: [],
         star: null
@@ -4594,8 +4732,433 @@ const STORY_FLOOR_DEFS = {
         ],
         winOnClear: true,
         bossFloor: true
-    }
+    },
+    // ==================== 51~59층: 용암 챕터 ====================
+    // 얼음/서리 챕터처럼 이 챕터도 이전 챕터 몹과 안 섞고 자기 몹만 쓴다.
+    // 보스전은 없다(60층 몫). 다리 색을 붉게 칠해서(deckColor/deckGlow) 눈으로
+    // 봐도 챕터가 바뀐 걸 알 수 있게 했다 -- 안 적은 층은 지금까지처럼 갈색
+    // 그대로다.
+    // 51층: 챕터 시작. 용암 임프만 나온다.
+    51: makePathFloor({
+        path: [[0, 0], [0, -1000], [1000, -1000], [1000, -2000], [0, -2000], [0, -3000], [1000, -3000]],
+        laneHalfWidth: 120,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -700, exit: -1700, room: 0 },
+            { entrance: -1700, exit: -2900, room: 1 },
+            { entrance: -2900, exit: -4200, room: 2 },
+            { entrance: -4200, exit: -5600, room: 3 }
+        ],
+        monsters: [
+            { type: 'lava_imp', at: -950, off: -50, room: 0 },
+            { type: 'lava_imp', at: -1250, off: 50, room: 0 },
+            { type: 'lava_imp', at: -1550, off: -30, room: 0 },
+            { type: 'lava_imp', at: -1950, off: -55, room: 1 },
+            { type: 'lava_imp', at: -1950, off: 55, room: 1 },
+            { type: 'lava_imp', at: -2350, off: -30, room: 1 },
+            { type: 'lava_imp', at: -2700, off: 30, room: 1 },
+            { type: 'lava_imp', at: -3200, off: -55, room: 2 },
+            { type: 'lava_imp', at: -3200, off: 55, room: 2 },
+            { type: 'lava_imp', at: -3600, off: -30, room: 2 },
+            { type: 'lava_imp', at: -3900, off: 30, room: 2 },
+            { type: 'lava_imp', at: -4050, off: 0, room: 2 },
+            { type: 'lava_imp', at: -4500, off: -60, room: 3 },
+            { type: 'lava_imp', at: -4500, off: 0, room: 3 },
+            { type: 'lava_imp', at: -4500, off: 60, room: 3 },
+            { type: 'lava_imp', at: -5000, off: -40, room: 3 },
+            { type: 'lava_imp', at: -5000, off: 40, room: 3 },
+            { type: 'lava_imp', at: -5400, off: 0, room: 3 }
+        ],
+        star: { at: -5900 }
+    }),
+    // 52층: 마그마 하운드 등장. 눈보라 늑대보다 더 빨리 파고든다.
+    52: makePathFloor({
+        path: [[0, 0], [0, -1040], [-1040, -1040], [-1040, -2080], [0, -2080], [0, -3120], [-1040, -3120]],
+        laneHalfWidth: 123,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -728, exit: -1768, room: 0 },
+            { entrance: -1768, exit: -3016, room: 1 },
+            { entrance: -3016, exit: -4368, room: 2 },
+            { entrance: -4368, exit: -5824, room: 3 }
+        ],
+        monsters: [
+            { type: 'lava_imp', at: -1050, off: -45, room: 0 },
+            { type: 'magma_hound', at: -1350, off: 45, room: 0 },
+            { type: 'magma_hound', at: -1600, off: 0, room: 0 },
+            { type: 'lava_imp', at: -2100, off: -50, room: 1 },
+            { type: 'lava_imp', at: -2100, off: 50, room: 1 },
+            { type: 'magma_hound', at: -2450, off: -30, room: 1 },
+            { type: 'magma_hound', at: -2450, off: 30, room: 1 },
+            { type: 'magma_hound', at: -2800, off: 0, room: 1 },
+            { type: 'lava_imp', at: -3350, off: -55, room: 2 },
+            { type: 'lava_imp', at: -3350, off: 55, room: 2 },
+            { type: 'magma_hound', at: -3700, off: -35, room: 2 },
+            { type: 'magma_hound', at: -3700, off: 0, room: 2 },
+            { type: 'magma_hound', at: -3700, off: 35, room: 2 },
+            { type: 'magma_hound', at: -4100, off: 0, room: 2 },
+            { type: 'lava_imp', at: -4650, off: -60, room: 3 },
+            { type: 'lava_imp', at: -4650, off: 60, room: 3 },
+            { type: 'magma_hound', at: -5000, off: -40, room: 3 },
+            { type: 'magma_hound', at: -5000, off: 0, room: 3 },
+            { type: 'magma_hound', at: -5000, off: 40, room: 3 },
+            { type: 'magma_hound', at: -5400, off: -20, room: 3 },
+            { type: 'magma_hound', at: -5400, off: 20, room: 3 },
+            { type: 'lava_imp', at: -5700, off: 0, room: 3 }
+        ],
+        star: { at: -6136 }
+    }),
+    // 53층: 흑요석 골렘 등장. 서리 골렘처럼 쓰러지면 조각으로 갈라진다.
+    53: makePathFloor({
+        path: [[0, 0], [0, -1080], [1080, -1080], [1080, -2160], [0, -2160], [0, -3240], [1080, -3240]],
+        laneHalfWidth: 126,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -756, exit: -1836, room: 0 },
+            { entrance: -1836, exit: -3132, room: 1 },
+            { entrance: -3132, exit: -4536, room: 2 },
+            { entrance: -4536, exit: -6048, room: 3 }
+        ],
+        monsters: [
+            { type: 'magma_hound', at: -1100, off: -45, room: 0 },
+            { type: 'obsidian_golem', at: -1500, off: 0, room: 0 },
+            { type: 'lava_imp', at: -2200, off: -55, room: 1 },
+            { type: 'magma_hound', at: -2200, off: 55, room: 1 },
+            { type: 'obsidian_golem', at: -2600, off: -30, room: 1 },
+            { type: 'obsidian_golem', at: -2900, off: 30, room: 1 },
+            { type: 'lava_imp', at: -3500, off: -55, room: 2 },
+            { type: 'lava_imp', at: -3500, off: 55, room: 2 },
+            { type: 'magma_hound', at: -3900, off: -35, room: 2 },
+            { type: 'magma_hound', at: -3900, off: 35, room: 2 },
+            { type: 'obsidian_golem', at: -4300, off: 0, room: 2 },
+            { type: 'obsidian_golem', at: -4900, off: -50, room: 3 },
+            { type: 'obsidian_golem', at: -4900, off: 50, room: 3 },
+            { type: 'magma_hound', at: -5300, off: -35, room: 3 },
+            { type: 'magma_hound', at: -5300, off: 35, room: 3 },
+            { type: 'lava_imp', at: -5700, off: -20, room: 3 },
+            { type: 'lava_imp', at: -5700, off: 20, room: 3 },
+            { type: 'obsidian_golem', at: -6000, off: 0, room: 3 }
+        ],
+        star: { at: -6372 }
+    }),
+    // 54층: 불씨 사제 등장. 눈꽃 치유사보다 오라가 더 넓고 세다.
+    54: makePathFloor({
+        path: [[0, 0], [0, -1120], [-1120, -1120], [-1120, -2240], [0, -2240], [0, -3360], [-1120, -3360]],
+        laneHalfWidth: 129,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -784, exit: -1904, room: 0 },
+            { entrance: -1904, exit: -3248, room: 1 },
+            { entrance: -3248, exit: -4704, room: 2 },
+            { entrance: -4704, exit: -6272, room: 3 }
+        ],
+        monsters: [
+            { type: 'obsidian_golem', at: -1200, off: -40, room: 0 },
+            { type: 'ember_priest', at: -1600, off: 40, room: 0 },
+            { type: 'obsidian_golem', at: -2300, off: -45, room: 1 },
+            { type: 'obsidian_golem', at: -2300, off: 45, room: 1 },
+            { type: 'ember_priest', at: -2700, off: 0, room: 1 },
+            { type: 'magma_hound', at: -3000, off: -30, room: 1 },
+            { type: 'magma_hound', at: -3000, off: 30, room: 1 },
+            { type: 'obsidian_golem', at: -3700, off: -50, room: 2 },
+            { type: 'obsidian_golem', at: -3700, off: 50, room: 2 },
+            { type: 'ember_priest', at: -4100, off: -30, room: 2 },
+            { type: 'ember_priest', at: -4100, off: 30, room: 2 },
+            { type: 'magma_hound', at: -4450, off: 0, room: 2 },
+            { type: 'lava_imp', at: -4450, off: -55, room: 2 },
+            { type: 'obsidian_golem', at: -5100, off: -55, room: 3 },
+            { type: 'obsidian_golem', at: -5100, off: 55, room: 3 },
+            { type: 'ember_priest', at: -5500, off: -35, room: 3 },
+            { type: 'ember_priest', at: -5500, off: 35, room: 3 },
+            { type: 'magma_hound', at: -5900, off: -20, room: 3 },
+            { type: 'magma_hound', at: -5900, off: 20, room: 3 },
+            { type: 'lava_imp', at: -6150, off: 0, room: 3 }
+        ],
+        star: { at: -6608 }
+    }),
+    // 55층: 용암 기사 등장. 얼음 기사처럼 한 번은 반드시 버틴다.
+    55: makePathFloor({
+        path: [[0, 0], [0, -1160], [1160, -1160], [1160, -2320], [0, -2320], [0, -3480], [1160, -3480]],
+        laneHalfWidth: 132,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -812, exit: -1972, room: 0 },
+            { entrance: -1972, exit: -3364, room: 1 },
+            { entrance: -3364, exit: -4872, room: 2 },
+            { entrance: -4872, exit: -6496, room: 3 }
+        ],
+        monsters: [
+            { type: 'ember_priest', at: -1300, off: -40, room: 0 },
+            { type: 'molten_knight', at: -1700, off: 40, room: 0 },
+            { type: 'molten_knight', at: -2400, off: -45, room: 1 },
+            { type: 'molten_knight', at: -2400, off: 45, room: 1 },
+            { type: 'ember_priest', at: -2800, off: 0, room: 1 },
+            { type: 'obsidian_golem', at: -3100, off: -30, room: 1 },
+            { type: 'molten_knight', at: -3800, off: -50, room: 2 },
+            { type: 'molten_knight', at: -3800, off: 50, room: 2 },
+            { type: 'obsidian_golem', at: -4200, off: -35, room: 2 },
+            { type: 'obsidian_golem', at: -4200, off: 35, room: 2 },
+            { type: 'ember_priest', at: -4600, off: 0, room: 2 },
+            { type: 'lava_imp', at: -4600, off: -55, room: 2 },
+            { type: 'molten_knight', at: -5300, off: -55, room: 3 },
+            { type: 'molten_knight', at: -5300, off: 55, room: 3 },
+            { type: 'obsidian_golem', at: -5700, off: -35, room: 3 },
+            { type: 'obsidian_golem', at: -5700, off: 35, room: 3 },
+            { type: 'ember_priest', at: -6100, off: -20, room: 3 },
+            { type: 'ember_priest', at: -6100, off: 20, room: 3 },
+            { type: 'magma_hound', at: -6300, off: 0, room: 3 }
+        ],
+        star: { at: -6844 }
+    }),
+    // 56층: 화산 대포 등장. 지금까지 나온 포탑 중 빔이 가장 세고 잘 따라온다.
+    56: makePathFloor({
+        path: [[0, 0], [0, -1200], [-1200, -1200], [-1200, -2400], [0, -2400], [0, -3600], [-1200, -3600]],
+        laneHalfWidth: 135,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -840, exit: -2040, room: 0 },
+            { entrance: -2040, exit: -3480, room: 1 },
+            { entrance: -3480, exit: -5040, room: 2 },
+            { entrance: -5040, exit: -6720, room: 3 }
+        ],
+        monsters: [
+            { type: 'volcano_cannon', at: -1400, off: 0, room: 0 },
+            { type: 'molten_knight', at: -1800, off: 0, room: 0 },
+            { type: 'volcano_cannon', at: -2500, off: -50, room: 1 },
+            { type: 'volcano_cannon', at: -2500, off: 50, room: 1 },
+            { type: 'molten_knight', at: -2900, off: 0, room: 1 },
+            { type: 'ember_priest', at: -3200, off: -30, room: 1 },
+            { type: 'volcano_cannon', at: -3900, off: -55, room: 2 },
+            { type: 'volcano_cannon', at: -3900, off: 55, room: 2 },
+            { type: 'molten_knight', at: -4300, off: -35, room: 2 },
+            { type: 'molten_knight', at: -4300, off: 35, room: 2 },
+            { type: 'obsidian_golem', at: -4700, off: 0, room: 2 },
+            { type: 'ember_priest', at: -4700, off: -60, room: 2 },
+            { type: 'volcano_cannon', at: -5400, off: -55, room: 3 },
+            { type: 'volcano_cannon', at: -5400, off: 55, room: 3 },
+            { type: 'molten_knight', at: -5800, off: -40, room: 3 },
+            { type: 'molten_knight', at: -5800, off: 40, room: 3 },
+            { type: 'obsidian_golem', at: -6200, off: -20, room: 3 },
+            { type: 'obsidian_golem', at: -6200, off: 20, room: 3 },
+            { type: 'ember_priest', at: -6500, off: 0, room: 3 },
+            { type: 'lava_imp', at: -6500, off: -65, room: 3 }
+        ],
+        star: { at: -7080 }
+    }),
+    // 57층: 화산 군주 등장. 서리 여왕처럼 57~59층 내내 섞여 나오는 이 챕터의
+    // 정예다.
+    57: makePathFloor({
+        path: [[0, 0], [0, -1240], [1240, -1240], [1240, -2480], [0, -2480], [0, -3720], [1240, -3720]],
+        laneHalfWidth: 138,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -868, exit: -2108, room: 0 },
+            { entrance: -2108, exit: -3596, room: 1 },
+            { entrance: -3596, exit: -5208, room: 2 },
+            { entrance: -5208, exit: -6944, room: 3 }
+        ],
+        monsters: [
+            { type: 'volcano_lord', at: -1500, off: 0, room: 0 },
+            { type: 'lava_imp', at: -1900, off: -40, room: 0 },
+            { type: 'volcano_cannon', at: -2600, off: -50, room: 1 },
+            { type: 'volcano_cannon', at: -2600, off: 50, room: 1 },
+            { type: 'molten_knight', at: -3000, off: 0, room: 1 },
+            { type: 'magma_hound', at: -3300, off: -35, room: 1 },
+            { type: 'magma_hound', at: -3300, off: 35, room: 1 },
+            { type: 'obsidian_golem', at: -4000, off: -50, room: 2 },
+            { type: 'obsidian_golem', at: -4000, off: 50, room: 2 },
+            { type: 'ember_priest', at: -4400, off: -30, room: 2 },
+            { type: 'ember_priest', at: -4400, off: 30, room: 2 },
+            { type: 'volcano_cannon', at: -4800, off: 0, room: 2 },
+            { type: 'molten_knight', at: -4800, off: -60, room: 2 },
+            { type: 'molten_knight', at: -4800, off: 60, room: 2 },
+            { type: 'volcano_lord', at: -5700, off: 0, room: 3 },
+            { type: 'obsidian_golem', at: -6100, off: -45, room: 3 },
+            { type: 'obsidian_golem', at: -6100, off: 45, room: 3 },
+            { type: 'magma_hound', at: -6500, off: -30, room: 3 },
+            { type: 'magma_hound', at: -6500, off: 30, room: 3 },
+            { type: 'lava_imp', at: -6800, off: -15, room: 3 },
+            { type: 'lava_imp', at: -6800, off: 15, room: 3 }
+        ],
+        star: { at: -7316 }
+    }),
+    // 58층: 화산 군주가 두 번 나오는 종합전.
+    58: makePathFloor({
+        path: [[0, 0], [0, -1280], [-1280, -1280], [-1280, -2560], [0, -2560], [0, -3840], [-1280, -3840]],
+        laneHalfWidth: 141,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -896, exit: -2176, room: 0 },
+            { entrance: -2176, exit: -3712, room: 1 },
+            { entrance: -3712, exit: -5376, room: 2 },
+            { entrance: -5376, exit: -7168, room: 3 }
+        ],
+        monsters: [
+            { type: 'volcano_lord', at: -1600, off: 0, room: 0 },
+            { type: 'molten_knight', at: -2000, off: -40, room: 0 },
+            { type: 'magma_hound', at: -2000, off: 40, room: 0 },
+            { type: 'volcano_cannon', at: -2700, off: -50, room: 1 },
+            { type: 'volcano_cannon', at: -2700, off: 50, room: 1 },
+            { type: 'obsidian_golem', at: -3100, off: -35, room: 1 },
+            { type: 'obsidian_golem', at: -3100, off: 35, room: 1 },
+            { type: 'ember_priest', at: -3500, off: 0, room: 1 },
+            { type: 'lava_imp', at: -3500, off: -60, room: 1 },
+            { type: 'volcano_lord', at: -4200, off: 0, room: 2 },
+            { type: 'molten_knight', at: -4600, off: -50, room: 2 },
+            { type: 'molten_knight', at: -4600, off: 50, room: 2 },
+            { type: 'obsidian_golem', at: -5000, off: -30, room: 2 },
+            { type: 'obsidian_golem', at: -5000, off: 30, room: 2 },
+            { type: 'magma_hound', at: -5300, off: -15, room: 2 },
+            { type: 'magma_hound', at: -5300, off: 15, room: 2 },
+            { type: 'volcano_lord', at: -5900, off: 0, room: 3 },
+            { type: 'volcano_cannon', at: -6300, off: -55, room: 3 },
+            { type: 'volcano_cannon', at: -6300, off: 55, room: 3 },
+            { type: 'molten_knight', at: -6700, off: -40, room: 3 },
+            { type: 'molten_knight', at: -6700, off: 40, room: 3 },
+            { type: 'ember_priest', at: -7000, off: -20, room: 3 },
+            { type: 'ember_priest', at: -7000, off: 20, room: 3 },
+            { type: 'obsidian_golem', at: -7100, off: 0, room: 3 }
+        ],
+        star: { at: -7552 }
+    }),
+    // 59층: 60층 보스 직전 마지막 층. 화산 군주 셋이 마지막 방을 지킨다 --
+    // 49층의 마지막 방(서리 여왕 셋)이 그랬듯, 사실상 작은 보스전이다.
+    59: makePathFloor({
+        path: [[0, 0], [0, -1320], [1320, -1320], [1320, -2640], [0, -2640], [0, -3960], [1320, -3960]],
+        laneHalfWidth: 144,
+        deckColor: '#2b0f06',
+        deckGlow: 'rgba(255, 110, 40, 0.35)',
+        gates: [
+            { entrance: -924, exit: -2244, room: 0 },
+            { entrance: -2244, exit: -3828, room: 1 },
+            { entrance: -3828, exit: -5544, room: 2 },
+            { entrance: -5544, exit: -7392, room: 3 }
+        ],
+        monsters: [
+            { type: 'volcano_lord', at: -1600, off: 0, room: 0 },
+            { type: 'volcano_cannon', at: -2000, off: -45, room: 0 },
+            { type: 'volcano_cannon', at: -2000, off: 45, room: 0 },
+            { type: 'volcano_lord', at: -2900, off: 0, room: 1 },
+            { type: 'molten_knight', at: -3300, off: -45, room: 1 },
+            { type: 'molten_knight', at: -3300, off: 45, room: 1 },
+            { type: 'ember_priest', at: -3600, off: 0, room: 1 },
+            { type: 'magma_hound', at: -3600, off: -60, room: 1 },
+            { type: 'magma_hound', at: -3600, off: 60, room: 1 },
+            { type: 'volcano_lord', at: -4400, off: 0, room: 2 },
+            { type: 'obsidian_golem', at: -4800, off: -50, room: 2 },
+            { type: 'obsidian_golem', at: -4800, off: 50, room: 2 },
+            { type: 'molten_knight', at: -5200, off: -30, room: 2 },
+            { type: 'molten_knight', at: -5200, off: 30, room: 2 },
+            { type: 'volcano_cannon', at: -5400, off: -65, room: 2 },
+            { type: 'volcano_cannon', at: -5400, off: 65, room: 2 },
+            { type: 'volcano_lord', at: -6200, off: -50, room: 3 },
+            { type: 'volcano_lord', at: -6200, off: 50, room: 3 },
+            { type: 'obsidian_golem', at: -6600, off: -55, room: 3 },
+            { type: 'obsidian_golem', at: -6600, off: 55, room: 3 },
+            { type: 'molten_knight', at: -6900, off: -35, room: 3 },
+            { type: 'molten_knight', at: -6900, off: 35, room: 3 },
+            { type: 'ember_priest', at: -7100, off: -20, room: 3 },
+            { type: 'ember_priest', at: -7100, off: 20, room: 3 },
+            { type: 'magma_hound', at: -7250, off: -60, room: 3 },
+            { type: 'magma_hound', at: -7250, off: 60, room: 3 },
+            { type: 'lava_imp', at: -7300, off: 0, room: 3 }
+        ],
+        star: { at: -7788 }
+    })
 };
+
+// ==================== 레전드 스토리 ====================
+// 탑을 "위로" 올라가는 스토리 모드와 짝을 이루는, 지하로 "내려가는" 별도
+// 모드. 보통 스토리 층은 길 전체가 laneHalfWidth 하나로 고정인데, 여기는
+// 넓은 네모난 방에서 싸우고 좁은 다리로 방과 방 사이를 건너간다 -- path의
+// 각 점에 세 번째 값(half-width)을 얹어 구간마다 폭을 다르게 준다
+// (pathSegs 주석 참고). 화면은 배경/벽만 어둡게 그린다(darkTheme, main.js
+// storyRender 참고) -- 캐릭터·몬스터 색은 다른 층과 같다.
+//
+// 파티 규칙이 STORY_FLOOR_DEFS의 11층+와 다르다: 혼자면 3명을 데려가
+// 바꿔가며 싸우고(각성모드와 같은 파티 구조), 2인 멀티면 한 사람당 1명씩만
+// 데려간다(교체 없이, 1~10층처럼 캐릭터 하나). storyPartySizeFor(floor, solo)의
+// solo 인자가 이 둘을 가른다 -- 층 번호만 보던 기존 규칙과 이 부분만 다르다.
+const LEGEND_STORY_FLOOR_DEFS = {
+    // 지하 1층: 입구 스위치를 밟아야 문이 열린다 -> 방1(잡몹 4) -> 좁은 다리
+    // -> 방2(잡몹 6, 방1보다 세다) -> 갈림길. 한쪽은 별로 바로 이어지는
+    // 정규 루트, 다른 한쪽은 보물상자 하나만 있는 막다른 샛길이다.
+    legend1: makePathFloor({
+        // 배경/벽만 검정 -- 캐릭터·몬스터 색은 다른 층과 같다(deckColor/deckGlow
+        // 하나로 용암 챕터와 같은 메커니즘을 재사용한다).
+        deckColor: '#0a0a0a',
+        deckGlow: 'rgba(255, 255, 255, 0.10)',
+        path: [
+            [0, 0],
+            [-300, 0, 240],    // 여기부터 방1 (넓게)
+            [-300, -500, 70],  // 여기부터 다리 (좁게)
+            [-300, -900, 240], // 여기부터 방2 (넓게)
+            [-700, -900]       // 갈림길 시작점
+        ],
+        forks: [
+            [[-700, -900], [-700, -1250]], // 정규 루트: 별로 바로 이어진다
+            [[-700, -900], [-1000, -900]]  // 샛길: 막다른 곳에 보물상자
+        ],
+        gates: [
+            // 몬스터가 아니라 스위치로 여는 문 -- switches의 'entry'를 밟기
+            // 전엔 방1로 들어갈 수 없다.
+            { manual: true, entrance: -100, exit: -100, room: 'entry' },
+            { entrance: -300, exit: -800, room: 0 },
+            { entrance: -1200, exit: -1600, room: 1 }
+        ],
+        switches: [
+            { id: 'entry', at: -80, off: 0 }
+        ],
+        monsters: [
+            // 방1: 케이크 조각 넷.
+            { type: 'cake_slice', at: -450, off: -150, room: 0 },
+            { type: 'cake_slice', at: -450, off: 150, room: 0 },
+            { type: 'cake_slice', at: -650, off: -150, room: 0 },
+            { type: 'cake_slice', at: -650, off: 150, room: 0 },
+            // 방2: 케이크 조각 셋 + 초콜릿 궁수 셋. 방1보다 조금 세다.
+            { type: 'cake_slice', at: -1300, off: -160, room: 1 },
+            { type: 'cake_slice', at: -1300, off: 0, room: 1 },
+            { type: 'cake_slice', at: -1300, off: 160, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1480, off: -100, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1480, off: 100, room: 1 },
+            { type: 'chocolate_cake_slice', at: -1550, off: 0, room: 1 }
+        ],
+        // 갈림길 너머라 along만으로는 어느 갈래인지 못 짚는다 -- x,y로 직접
+        // 적는다(resolvePathPoint 주석 참고).
+        chests: [
+            { id: 'legend1_chest1', x: -1000, y: -900 }
+        ],
+        star: { x: -700, y: -1250 }
+    })
+};
+const LEGEND_PARTY_SIZE = 3;
+function isLegendFloor(floor) {
+    return Object.prototype.hasOwnProperty.call(LEGEND_STORY_FLOOR_DEFS, floor);
+}
+// 층 클리어(별) 보상. 아직 지하 1층 하나뿐이라 표 하나로 충분하고, 늘어나면
+// CLEAR_REWARDS처럼 층별로 나누면 된다.
+const LEGEND_CLEAR_REWARDS = {
+    legend1: { coins: 500, diamonds: 15, material: 8 }
+};
+function legendClearReward(floor) {
+    return LEGEND_CLEAR_REWARDS[floor] || null;
+}
+// 보물상자 보상. chests[].id로 찾는다 -- 한 판에 여러 상자가 생겨도 되게
+// 층 구분 없이 하나의 표로 둔다.
+const LEGEND_CHEST_REWARDS = {
+    legend1_chest1: { coins: 300, diamonds: 8, material: 5 }
+};
+function legendChestReward(chestId) {
+    return LEGEND_CHEST_REWARDS[chestId] || null;
+}
 
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
 // pulls give a soul stone, and the remainder is a cookie whose grade is drawn
@@ -4695,6 +5258,18 @@ const CLEAR_REWARDS = {
     story48: { material: 139, materialRare: 80, potion: 139, potionRare: 49, coins: 14700, diamonds: 106, ticketNormal: 5 },
     // 49층은 챕터 마지막(서리 여왕 셋)이라 다른 층보다 조금 더 굵다.
     story49: { material: 145, materialRare: 85, potion: 145, potionRare: 52, coins: 15300, diamonds: 110, ticketNormal: 5 },
+    // 51~59층(용암 챕터)은 50층(서리 여제) 보스전을 넘긴 뒤라 뽑기 티켓이
+    // 한 장 더 늘어 6장씩 준다. 59층은 60층 보스 직전 마지막 층이라 다른
+    // 층보다 조금 더 굵다.
+    story51: { material: 149, materialRare: 87, potion: 149, potionRare: 53, coins: 15600, diamonds: 112, ticketNormal: 6 },
+    story52: { material: 152, materialRare: 89, potion: 152, potionRare: 54, coins: 15900, diamonds: 114, ticketNormal: 6 },
+    story53: { material: 155, materialRare: 91, potion: 155, potionRare: 55, coins: 16200, diamonds: 116, ticketNormal: 6 },
+    story54: { material: 158, materialRare: 93, potion: 158, potionRare: 56, coins: 16500, diamonds: 118, ticketNormal: 6 },
+    story55: { material: 161, materialRare: 95, potion: 161, potionRare: 57, coins: 16800, diamonds: 120, ticketNormal: 6 },
+    story56: { material: 164, materialRare: 97, potion: 164, potionRare: 58, coins: 17100, diamonds: 122, ticketNormal: 6 },
+    story57: { material: 167, materialRare: 99, potion: 167, potionRare: 59, coins: 17400, diamonds: 124, ticketNormal: 6 },
+    story58: { material: 170, materialRare: 101, potion: 170, potionRare: 60, coins: 17700, diamonds: 126, ticketNormal: 6 },
+    story59: { material: 178, materialRare: 106, potion: 178, potionRare: 63, coins: 18300, diamonds: 130, ticketNormal: 6 },
     // 게스트 레이드. 악마 뽑기 티켓은 오직 여기서만 나온다.
     guest1: { materialRare: 15, potionRare: 12, coins: 4000, diamonds: 60, ticketDemon: 3 },
     guest1_phase1: { materialRare: 5, potionRare: 4, coins: 1500, diamonds: 20, ticketDemon: 1 },
@@ -4757,6 +5332,17 @@ const CLEAR_DROPS = {
     story47: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
     story48: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
     story49: ['cream_plate', 'frost_boots', 'storm_greaves', 'gale_boots'],
+    // 51~59층(용암 챕터)도 같은 방침: 지금 있는 장비들 중 좋은 쪽이 계속
+    // 나온다. 새 장비는 유누가 만들어 주면 여기 이름만 바꿔 넣으면 된다.
+    story51: ['cream_plate', 'frost_boots', 'ice_spear'],
+    story52: ['cream_greaves', 'frost_boots', 'spirit_armor'],
+    story53: ['cream_plate', 'storm_greaves', 'ice_spear'],
+    story54: ['frost_boots', 'cream_greaves', 'gale_boots'],
+    story55: ['cream_plate', 'spirit_armor', 'storm_greaves'],
+    story56: ['cream_greaves', 'frost_boots', 'mint_blade'],
+    story57: ['cream_plate', 'cream_greaves', 'gale_boots'],
+    story58: ['frost_boots', 'spirit_armor', 'storm_greaves', 'ice_spear'],
+    story59: ['cream_plate', 'cream_greaves', 'frost_boots', 'spirit_armor'],
     boss1: ['golem_blade', 'golem_plate', 'golem_greaves'],
     boss2: ['shihara_spear', 'shadow_helm', 'shadow_boots', 'red_lightning_cap']
     // story20(가면광대)은 CLEAR_DROPS에 따로 안 적는다 -- clearDropsFor()의
