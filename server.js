@@ -146,6 +146,18 @@ function shieldTeam(room, roomId, amount) {
     }
 }
 
+// shieldTeam은 덮어쓴다(궁극기용 -- 한 번에 큰 값으로 갈아 끼우는 게 맞다).
+// 암흑바다맛처럼 기본 공격이 적중할 때마다 조금씩 주는 보호막은 덮어쓰면
+// 안 된다 -- 궁극기로 150을 씌운 바로 다음 공격이 3으로 깎아 버리게 된다.
+// 그래서 이건 따로 더한다.
+function addShieldTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = (p.shieldHp || 0) + amount;
+        io.to(roomId).emit('playerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
 function publicPlayers(room) {
     const out = {};
     for (const [id, p] of Object.entries(room.players)) {
@@ -1881,6 +1893,11 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
         const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
         healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
     }
+    // 암흑바다맛: 기본 공격이 적중할 때마다 팀 전체에게 보호막을 더해 준다
+    // (덮어쓰지 않는다 -- addShieldTeam 주석 참고).
+    if (character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
+        addShieldTeam(room, roomId, character.attackShieldOnUse);
+    }
 
     // Burn: a couple of small extra ticks after the initial hit.
     if (character.attackBurnDamage) {
@@ -2022,6 +2039,16 @@ function shieldStoryTeam(room, roomId, amount) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
         p.shieldHp = amount;
+        io.to(roomId).emit('storyPlayerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
+// shieldStoryTeam은 덮어쓴다(궁극기용). 공격 적중마다 주는 보호막은 더한다
+// -- addShieldTeam과 같은 이유(server.js 주석 참고).
+function addShieldStoryTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = (p.shieldHp || 0) + amount;
         io.to(roomId).emit('storyPlayerShielded', { id, shieldHp: p.shieldHp });
     }
 }
@@ -3182,6 +3209,9 @@ function tickStoryRoom(roomId) {
                         && Date.now() < owner.attackHealBoostUntil;
                     healStoryPlayer(room, roomId, boosted ? oc.ultimateHealPerAttack : oc.attackHealOnUse);
                 }
+                if (oc.attackShieldOnUse && Math.random() < (oc.attackShieldChance ?? 1)) {
+                    addShieldStoryTeam(room, roomId, oc.attackShieldOnUse);
+                }
             }
             return true;
         }
@@ -3432,6 +3462,16 @@ function shieldGuestTeam(room, roomId, amount) {
     for (const [id, p] of Object.entries(room.players)) {
         if (!p.alive) continue;
         p.shieldHp = amount;
+        io.to(roomId).emit('guestPlayerShielded', { id, shieldHp: p.shieldHp });
+    }
+}
+
+// shieldGuestTeam은 덮어쓴다(궁극기용). 공격 적중마다 주는 보호막은 더한다
+// -- addShieldTeam과 같은 이유(server.js 주석 참고).
+function addShieldGuestTeam(room, roomId, amount) {
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.alive) continue;
+        p.shieldHp = (p.shieldHp || 0) + amount;
         io.to(roomId).emit('guestPlayerShielded', { id, shieldHp: p.shieldHp });
     }
 }
@@ -4258,6 +4298,9 @@ function tickGuestRoom(roomId) {
                 const boosted = oc.ultimateHealPerAttack != null && owner.attackHealBoostUntil
                     && Date.now() < owner.attackHealBoostUntil;
                 healGuestTeam(room, roomId, boosted ? oc.ultimateHealPerAttack : oc.attackHealOnUse);
+            }
+            if (oc.attackShieldOnUse && Math.random() < (oc.attackShieldChance ?? 1)) {
+                addShieldGuestTeam(room, roomId, oc.attackShieldOnUse);
             }
         }
         return true;
@@ -5396,6 +5439,9 @@ io.on('connection', (socket) => {
             const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
+        if (anyHit && character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
+            addShieldStoryTeam(room, roomId, character.attackShieldOnUse);
+        }
     });
 
     socket.on('storyPlayerSkill', (payload) => {
@@ -5647,6 +5693,20 @@ io.on('connection', (socket) => {
             }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp }));
+        }
+        // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
+        // 몬스터를 그 자리에서 기절시킨다. 피해도 표식도 없다.
+        else if (character.skillType === 'water_drag') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const spot = clampToLane(floorDefFor(room.floor), t.x, t.y);
+            io.to(roomId).emit('storySkillMark', { id: socket.id, x: spot.x, y: spot.y, radius: character.skillRadius });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(spot.x - m.x, spot.y - m.y) > character.skillRadius + mR(m)) continue;
+                m.stunnedUntil = now + character.skillStunMs;
+                io.to(roomId).emit('monsterStunned', { id: mid });
+            }
         }
         // 바다펄맛 밀물: 특수스킬 자리에 있지만 실제로는 궁극기다.
         else if (character.skillType === 'tide_cycle') {
@@ -5984,6 +6044,35 @@ io.on('connection', (socket) => {
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healStoryPlayer(room, roomId, character.ultimateHealAmount);
         }
+        // 암흑바다맛 궁극기: 전방으로 빠르게 돌진하고(조준 없음, 피해 없음),
+        // 팀 전체에게 보호막과 회복을 준다. 본능해제 4강을 찍으면 도착한 자리에
+        // 불 지대가 생겨(magma_zone과 같은 훅) 초당 피해를 준다.
+        else if (character.ultimateType === 'dash_guard') {
+            const floorDef = floorDefFor(room.floor);
+            const land = clampToLane(floorDef,
+                p.x + Math.cos(p.facing) * character.ultimateRange,
+                p.y + Math.sin(p.facing) * character.ultimateRange);
+            p.x = land.x; p.y = land.y;
+            io.to(roomId).emit('storyPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+            healStoryPlayer(room, roomId, character.ultimateHealAmount);
+            if (character.ultimateZoneDamagePerTick) {
+                io.to(roomId).emit('storyMagmaZonePlaced', {
+                    id: socket.id, x: p.x, y: p.y, radius: character.ultimateRadius,
+                    durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
+                });
+                room.activeBuffs.push(Object.assign({
+                    type: 'magma_zone',
+                    casterId: socket.id,
+                    x: p.x, y: p.y,
+                    radius: character.ultimateRadius,
+                    damage: character.ultimateZoneDamagePerTick,
+                    tickMs: character.ultimateZoneTickMs,
+                    endAt: now + character.ultimateZoneDurationMs,
+                    lastTickAt: now
+                }, zoneMarkFields(character)));
+            }
+        }
         // 바다 수호자맛 궁극기: 막기. 팀 전체에게 즉시 보호막을 씌우고, 초당
         // 회복 버프도 얹는다 -- 버프 자체는 team_heal_over_time과 완전히
         // 같은 걸 재사용한다(틱 처리가 이미 모드별로 다 있다).
@@ -6146,6 +6235,18 @@ io.on('connection', (socket) => {
             }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp }));
+        }
+        // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안에
+        // 보스가 있으면 그 자리에서 기절시킨다. 피해도 표식도 없다.
+        else if (character.skillType === 'water_drag') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const spot = clampToArena(t.x, t.y, ARENA_RADIUS);
+            io.to(roomId).emit('skillMark', { id: socket.id, x: spot.x, y: spot.y, radius: character.skillRadius });
+            if (Math.hypot(spot.x, spot.y) <= character.skillRadius + BOSS_RADIUS) {
+                room.bossStunnedUntil = now + character.skillStunMs;
+                io.to(roomId).emit('bossStunned', { until: room.bossStunnedUntil });
+            }
         }
         // 바다펄맛 밀물. 보스는 경기장 한가운데에 박혀 있으므로, 찍은 자리가
         // 보스에 닿았는지만 본다.
@@ -6560,6 +6661,31 @@ io.on('connection', (socket) => {
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healTeam(room, roomId, character.ultimateHealAmount);
         }
+        // 암흑바다맛 궁극기: 위 스토리 모드 분기 주석 참고.
+        else if (character.ultimateType === 'dash_guard') {
+            const land = clampToArena(p.x + Math.cos(p.facing) * character.ultimateRange,
+                p.y + Math.sin(p.facing) * character.ultimateRange, ARENA_RADIUS - PLAYER_RADIUS);
+            p.x = land.x; p.y = land.y;
+            io.to(roomId).emit('playerTeleported', { id: socket.id, x: p.x, y: p.y });
+            shieldTeam(room, roomId, character.ultimateShieldAmount);
+            healTeam(room, roomId, character.ultimateHealAmount);
+            if (character.ultimateZoneDamagePerTick) {
+                io.to(roomId).emit('magmaZonePlaced', {
+                    id: socket.id, x: p.x, y: p.y, radius: character.ultimateRadius,
+                    durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
+                });
+                room.activeBuffs.push(Object.assign({
+                    type: 'magma_zone',
+                    casterId: socket.id,
+                    x: p.x, y: p.y,
+                    radius: character.ultimateRadius,
+                    damage: character.ultimateZoneDamagePerTick,
+                    tickMs: character.ultimateZoneTickMs,
+                    endAt: now + character.ultimateZoneDurationMs,
+                    lastTickAt: now
+                }, zoneMarkFields(character)));
+            }
+        }
         // 바다 수호자맛 궁극기: 막기. 위 스토리 모드 분기 주석 참고.
         else if (character.ultimateType === 'team_hot_shield') {
             shieldTeam(room, roomId, character.ultimateShieldAmount);
@@ -6827,6 +6953,9 @@ io.on('connection', (socket) => {
             const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
+        if (character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
+            addShieldGuestTeam(room, roomId, character.attackShieldOnUse);
+        }
     });
 
     socket.on('guestPlayerSkill', (payload) => {
@@ -7059,6 +7188,24 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
             });
         }
+        // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
+        // 부하를 그 자리에서 기절시킨다. 게스트 레이드 보스는 raid의 보스와
+        // 달리 기절 매커니즘이 없어 보스에게는 걸리지 않는다.
+        else if (character.skillType === 'water_drag') {
+            const t = targetPoint(payload);
+            if (!t) return;
+            const spot = {
+                x: Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, t.x)),
+                y: Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, t.y))
+            };
+            io.to(roomId).emit('guestSkillMark', { id: socket.id, x: spot.x, y: spot.y, radius: character.skillRadius });
+            for (const [mid, m] of Object.entries(room.monsters)) {
+                if (!m.alive) continue;
+                if (Math.hypot(spot.x - m.x, spot.y - m.y) > character.skillRadius + mR(m)) continue;
+                m.stunnedUntil = now + character.skillStunMs;
+                io.to(roomId).emit('monsterStunned', { id: mid });
+            }
+        }
         // 전기줄맛: 상체 <-> 하체 변신. 합체 중엔 못 바꾼다.
         else if (character.skillType === 'body_swap') {
             if (p.fused) return;
@@ -7288,6 +7435,30 @@ io.on('connection', (socket) => {
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
             // 본능해제 4강(보드맛): 방어막에 회복도 얹는다.
             if (character.ultimateHealAmount) healGuestTeam(room, roomId, character.ultimateHealAmount);
+        }
+        // 암흑바다맛 궁극기: 위 스토리 모드 분기 주석 참고.
+        else if (character.ultimateType === 'dash_guard') {
+            p.x = Math.max(-GUEST_ARENA_HALF_W, Math.min(GUEST_ARENA_HALF_W, p.x + Math.cos(p.facing) * character.ultimateRange));
+            p.y = Math.max(-GUEST_ARENA_HALF_H, Math.min(GUEST_ARENA_HALF_H, p.y + Math.sin(p.facing) * character.ultimateRange));
+            io.to(roomId).emit('guestPlayerTeleported', { id: socket.id, x: p.x, y: p.y });
+            shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            healGuestTeam(room, roomId, character.ultimateHealAmount);
+            if (character.ultimateZoneDamagePerTick) {
+                io.to(roomId).emit('guestMagmaZonePlaced', {
+                    id: socket.id, x: p.x, y: p.y, radius: character.ultimateRadius,
+                    durationMs: character.ultimateZoneDurationMs, look: zoneLookOf(character)
+                });
+                room.activeBuffs.push(Object.assign({
+                    type: 'magma_zone',
+                    casterId: socket.id,
+                    x: p.x, y: p.y,
+                    radius: character.ultimateRadius,
+                    damage: character.ultimateZoneDamagePerTick,
+                    tickMs: character.ultimateZoneTickMs,
+                    endAt: now + character.ultimateZoneDurationMs,
+                    lastTickAt: now
+                }, zoneMarkFields(character)));
+            }
         }
         // 바다 수호자맛 궁극기: 막기. 위 스토리 모드 분기 주석 참고.
         else if (character.ultimateType === 'team_hot_shield') {

@@ -1023,6 +1023,45 @@ const CHARACTERS = {
         ultimateTickMs: 1000,
         ultimateDurationMs: 5000,
         ultimateCooldownMs: 30000
+    },
+    // 유누 신청작. 비스트 등급의 어둠 속성 탱커. 검정+짙은 파랑 몸에 창을
+    // 들고 다니며, 때릴 때마다 팀에게 작은 보호막을 얹어 주고, 물속으로
+    // 끌고 들어가는 기절기와 전방 돌진 궁극기로 자리를 잡는다.
+    darksea: {
+        name: '암흑바다맛 쿠키',
+        shortName: '암흑바다', // shown on the lobby's character-select button
+        color: '#0d0d12',
+        colorLeft: '#0d0d12', // 검정
+        colorRight: '#1b4f72', // 짙은 파랑
+        weaponShape: 'spear',
+        weaponColor: '#1b4f72', // 짙은 파랑 창
+        grade: '비스트',
+        element: '어둠',
+        role: '탱커',
+        health: 200,
+        speed: 2,
+        attackType: 'melee_kick', // 창으로 후려친다
+        attackRange: 110,
+        attackWidth: 44,
+        attackDamage: 6,
+        attackCooldown: 500,
+        // 패시브: 기본 공격이 적중할 때마다 팀 전체에게 보호막을 조금씩
+        // 더해 준다. 덮어쓰지 않는다 -- 궁극기가 준 큰 보호막을 다음 공격
+        // 한 번에 깎아 먹지 않도록 addShieldTeam 계열 훅을 쓴다(server.js).
+        attackShieldOnUse: 3,
+        // 특수스킬 "물속으로 데려가기": 직접 지정한 좁은 반경 안에 있는 적을
+        // 물속으로 끌고 들어가 기절시킨다. 피해도 표식도 없다.
+        skillType: 'water_drag',
+        skillRadius: 35,
+        skillStunMs: 5000,
+        skillCooldown: 10000,
+        // 궁극기: 조준 없이 지금 보는 방향으로 빠르게 돌진하고(피해 없음),
+        // 팀 전체에게 보호막과 회복을 준다.
+        ultimateType: 'dash_guard',
+        ultimateRange: 350,
+        ultimateShieldAmount: 150,
+        ultimateHealAmount: 80,
+        ultimateCooldownMs: 30000
     }
 };
 
@@ -6826,6 +6865,27 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackHealOnUse: 3 },
             desc: '기본 공격이 적중할 때마다 팀 전체를 3만큼 회복시킵니다.'
         }
+    },
+    // 암흑바다맛 쿠키: dash_guard 궁극기(회복량, 4강부터는 불 지대까지)와
+    // 기본 공격의 보호막을 강화한다.
+    darksea: {
+        3: {
+            effect: { ultimateHealAmount: 100 },
+            desc: '궁극기 회복량이 80에서 100으로 늘어납니다.'
+        },
+        4: {
+            // 돌진 궁극기가 도착한 자리에 5초짜리 불 지대가 생겨 초당 3의
+            // 피해를 준다(magma_zone과 같은 훅을 서버에서 재사용).
+            effect: {
+                ultimateZoneDamagePerTick: 3, ultimateRadius: 90,
+                ultimateZoneTickMs: 1000, ultimateZoneDurationMs: 5000
+            },
+            desc: '궁극기로 돌진한 자리에 5초 동안 불 지대가 생겨, 그 안의 적에게 1초마다 3의 피해를 줍니다.'
+        },
+        5: {
+            effect: { attackShieldOnUse: 5 },
+            desc: '기본 공격이 적중할 때마다 팀 전체에게 씌우는 보호막이 3에서 5로 늘어납니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
@@ -6897,7 +6957,8 @@ const STOCK_BASE_PRICE = 100; // 다이아 기준 1주 시작가
 const STOCK_EVENTS = [
     { element: '빛', type: 'new_character', pct: 0.10, note: '쿠키맛 쿠키 추가' },
     { element: '빛', type: 'new_character', pct: 0.05, note: '버블티맛 쿠키 추가' },
-    { element: '바람', type: 'new_character', pct: 0.10, note: '바람궁수맛 쿠키 추가' }
+    { element: '바람', type: 'new_character', pct: 0.10, note: '바람궁수맛 쿠키 추가' },
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '암흑바다맛 쿠키 추가' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

@@ -914,6 +914,9 @@ function passiveText(stats) {
     if (stats.attackHealOnUse && stats.attackHealChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체를 ${stats.attackHealOnUse}만큼 회복시킵니다.`);
     }
+    if (stats.attackShieldOnUse && stats.attackShieldChance === undefined) {
+        parts.push(`기본 공격이 적중할 때마다 팀 전체에게 보호막을 ${stats.attackShieldOnUse}만큼 더해 줍니다(덮어쓰지 않고 쌓입니다).`);
+    }
     if (stats.lowHpAt) {
         parts.push(`체력이 ${stats.lowHpAt} 이하로 떨어지면 몸을 사려,`
             + ` 기본 공격 피해가 ${stats.attackDamage} → ${stats.lowHpAttackDamage}로 줄어드는 대신`
@@ -1056,6 +1059,8 @@ function describeAbility(stats, kind) {
                 return `조준 없이 즉시 발동합니다. 반경 ${stats.skillRange}px 내의 적을 얼려 ${sec(stats.skillFreezeMs)}초 동안 아무 행동도 못 하게 하고, 적중 여부와 상관없이 자신의 체력을 ${stats.skillSelfHeal}만큼 채웁니다.${cd}`;
             case 'sea_hide':
                 return `조준 없이 즉시 바다로 숨어듭니다. ${sec(stats.skillDurationMs)}초 동안 아무 공격도 받지 않고 자신도 공격할 수 없으며, 그동안 체력을 ${stats.skillHealAmount}만큼 채웁니다.${cd}`;
+            case 'water_drag':
+                return `직접 지정한 위치를 물속으로 끌고 들어갑니다. 반경 ${stats.skillRadius}px 안에 적이 있으면 ${sec(stats.skillStunMs)}초 동안 기절시킵니다. 피해는 없습니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -1104,6 +1109,13 @@ function describeAbility(stats, kind) {
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}만큼의 피해를 막아주는 보호막을 씌웁니다. 보호막이 받는 피해를 모두 흡수하면 사라집니다.${cd}`;
             case 'team_hot_shield':
                 return `팀원 모두에게 ${stats.ultimateShieldAmount}짜리 보호막을 즉시 씌우고, ${sec(stats.ultimateDurationMs)}초 동안 ${sec(stats.ultimateTickMs)}초마다 ${stats.ultimateHealPerTick}만큼 팀 전체를 회복시킵니다.${cd}`;
+            case 'dash_guard': {
+                const zoneText = stats.ultimateZoneDamagePerTick
+                    ? ` 도착한 자리에는 ${sec(stats.ultimateZoneDurationMs)}초 동안 불 지대가 생겨, 그 안의 적에게 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 줍니다.`
+                    : '';
+                return `조준 없이 지금 보는 방향으로 최대 ${stats.ultimateRange}px까지 빠르게 돌진합니다(피해 없음).`
+                    + ` 팀 전체에게 ${stats.ultimateShieldAmount}짜리 보호막을 씌우고 체력을 ${stats.ultimateHealAmount}만큼 회복시킵니다.${zoneText}${cd}`;
+            }
             case 'undying_soul': {
                 const summon = stats.ultimateSummon;
                 const minions = summon
@@ -6590,7 +6602,7 @@ function isTargetedUltimate(type) {
 // 바다펄맛 밀물은 1단계만 자리를 안 찍는다. 2단계부터는 찍어서 쓴다.
 function isTargetedSkill(type, o) {
     if (type === 'tide_cycle') return tideStageNoOf(o) > 1;
-    return type === 'burrow_mark' || type === 'mark_burst' || type === 'blink_heal';
+    return type === 'burrow_mark' || type === 'mark_burst' || type === 'blink_heal' || type === 'water_drag';
 }
 // Where a placed skill lands with no mouse (mobile): just ahead of the player.
 function mobileSkillTarget(x, y, facing, stats) {
