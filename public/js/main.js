@@ -1349,7 +1349,9 @@ const SKILL_ICONS = {
     targeted_line_aoe: '✨',
     sea_hide: '🌊',
     team_hot_shield: '🛡️',
-    nature_awaken: '🍃'
+    nature_awaken: '🍃',
+    water_drag: '🫧',
+    dash_guard: '🏃'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -1357,7 +1359,8 @@ const SKILL_ICONS = {
 // one string. Keyed the same as SKILL_ICONS; only entries that need a badge
 // appear here.
 const SKILL_ICON_BADGES = {
-    self_guard_surge: '🔥'
+    self_guard_surge: '🔥',
+    dash_guard: '🛡'
 };
 function skillIconHtml(key, fallback) {
     const base = SKILL_ICONS[key] || fallback;
