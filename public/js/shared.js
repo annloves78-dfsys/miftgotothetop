@@ -1045,10 +1045,10 @@ const CHARACTERS = {
         attackWidth: 44,
         attackDamage: 6,
         attackCooldown: 500,
-        // 패시브: 기본 공격이 적중할 때마다 팀 전체에게 보호막을 조금씩
-        // 더해 준다. 덮어쓰지 않는다 -- 궁극기가 준 큰 보호막을 다음 공격
+        // 패시브: 기본 공격이 적중할 때마다 팀 전체에게 보호막을 더해
+        // 준다. 덮어쓰지 않는다 -- 궁극기가 준 큰 보호막을 다음 공격
         // 한 번에 깎아 먹지 않도록 addShieldTeam 계열 훅을 쓴다(server.js).
-        attackShieldOnUse: 3,
+        attackShieldOnUse: 10,
         // 특수스킬 "물속으로 데려가기": 직접 지정한 좁은 반경 안에 있는 적을
         // 물속으로 끌고 들어가 기절시킨다. 피해도 표식도 없다.
         skillType: 'water_drag',
@@ -6883,8 +6883,8 @@ const INSTINCT_CHAR_LEVELS = {
             desc: '궁극기로 돌진한 자리에 5초 동안 불 지대가 생겨, 그 안의 적에게 1초마다 3의 피해를 줍니다.'
         },
         5: {
-            effect: { attackShieldOnUse: 5 },
-            desc: '기본 공격이 적중할 때마다 팀 전체에게 씌우는 보호막이 3에서 5로 늘어납니다.'
+            effect: { attackShieldOnUse: 12 },
+            desc: '기본 공격이 적중할 때마다 팀 전체에게 씌우는 보호막이 10에서 12로 늘어납니다.'
         }
     }
 };
