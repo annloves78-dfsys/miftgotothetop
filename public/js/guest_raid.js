@@ -75,6 +75,9 @@ let guestQuakeUntil = 0;
 // guestState.players는 매 틱 통째로 갈아 끼워지므로, 피격/사망 연출 타이머는
 // id로 따로 붙잡아 두는 곁방(side table)에 저장한다.
 let guestPlayerFx = {};
+// guestMonsters도 guestTick마다 통째로 갈아 끼워지므로 (mergeStoryMonsters
+// 같은 병합이 없다) 공격 이펙트 타이머는 여기 따로 붙잡아 둔다.
+let guestMonsterFx = {};
 
 // Mirror of the server's per-slot timers: each of the four cookies carries its
 // own skill/ultimate cooldown and its own buff windows, so using one cookie's
@@ -402,7 +405,13 @@ socket.on('guestTick', (data) => {
 // ---------------- 2차 레이드 ----------------
 socket.on('guestMinionsSummoned', ({ monsters }) => { Object.assign(guestMonsters, monsters); });
 socket.on('guestMonsterDamaged', ({ id, hp }) => { if (guestMonsters[id]) guestMonsters[id].hp = hp; });
-socket.on('guestMonsterDefeated', ({ id }) => { delete guestMonsters[id]; });
+socket.on('guestMonsterDefeated', ({ id }) => { delete guestMonsters[id]; delete guestMonsterFx[id]; });
+// 예열이 끝나고 실제로 후려치는 순간 (guestMonsters 자체는 매 틱 갈아 끼워져서
+// guestMonsterFx에 따로 찍어 둔다).
+socket.on('guestMonsterAttack', ({ id }) => {
+    const fx = guestMonsterFx[id] || (guestMonsterFx[id] = {});
+    fx.attackFlashAt = performance.now();
+});
 socket.on('guestBossLaser', (d) => { guestBossLaser = { ...d }; });
 socket.on('guestBossLaserAim', ({ angle }) => { if (guestBossLaser) guestBossLaser.angle = angle; });
 socket.on('guestBossLaserEnd', () => { guestBossLaser = null; });
@@ -466,7 +475,7 @@ socket.on('guestPhase2Started', (data) => {
     }
     guestTelegraphs = []; guestHitFlashes = []; guestStuckSpears = [];
     guestMagmaZones = []; guestFireLineZones = []; guestImpacts = []; guestFallZones = [];
-    guestMonsters = {}; guestProjectiles = {};
+    guestMonsters = {}; guestMonsterFx = {}; guestProjectiles = {};
     guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     if (me) syncGuestMobileIcons(me.charType);
@@ -631,7 +640,7 @@ socket.on('guestResult', ({ result }) => {
     guestCollapseOverlay.classList.add('hidden');
     guestDiscardOverlay.classList.add('hidden');
     guestDiscardChoicesEl.classList.remove('locked');
-    guestMonsters = {}; guestProjectiles = {}; guestFallZones = [];
+    guestMonsters = {}; guestMonsterFx = {}; guestProjectiles = {}; guestFallZones = [];
     guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
@@ -1135,7 +1144,7 @@ function guestRender(now) {
     }
 
     // Summoned adds and their arrows.
-    Object.values(guestMonsters).forEach(m => {
+    Object.entries(guestMonsters).forEach(([mid, m]) => {
         const mdef = SHARED.MONSTERS[m.type];
         if (!mdef) return;
         if (m.laser) {
@@ -1149,13 +1158,21 @@ function guestRender(now) {
             guestCtx.restore();
         }
         const R = SHARED.monsterRadiusOf(m.type);
+        // guestMonsters는 매 틱 통째로 갈아 끼워지므로 공격 이펙트는 guestMonsterFx에서.
+        const fx = guestMonsterFx[mid];
+        const atkPunch = fx ? monsterAttackPunch(fx.attackFlashAt, now) : 0;
+        guestCtx.save();
+        guestCtx.translate(m.x, m.y);
+        if (atkPunch > 0) guestCtx.scale(1 + 0.22 * atkPunch, 1 + 0.22 * atkPunch);
         guestCtx.beginPath();
-        guestCtx.arc(m.x, m.y, R, 0, Math.PI * 2);
+        guestCtx.arc(0, 0, R, 0, Math.PI * 2);
         guestCtx.fillStyle = mdef.color;
         guestCtx.fill();
         guestCtx.lineWidth = 2;
         guestCtx.strokeStyle = m.state === 'telegraph' ? '#e74c3c' : '#2c3e50';
         guestCtx.stroke();
+        drawMonsterAttackFlash(guestCtx, R, atkPunch);
+        guestCtx.restore();
         const bw = 26;
         guestCtx.fillStyle = '#c0392b';
         guestCtx.fillRect(m.x - bw / 2, m.y - R - 9, bw, 4);

@@ -4674,6 +4674,11 @@ socket.on('storyProjectileGone', ({ id, hit, x, y }) => {
 socket.on('monsterTelegraph', ({ id }) => {
     if (storyMonsters[id]) storyMonsters[id].state = 'telegraph';
 });
+// 예열이 끝나고 실제로 후려치는 순간. mergeStoryMonsters가 이전 필드를 그대로
+// 들고 넘어가므로(prev 스프레드), attackFlashAt은 다음 틱에도 안 지워진다.
+socket.on('monsterAttack', ({ id }) => {
+    if (storyMonsters[id]) storyMonsters[id].attackFlashAt = performance.now();
+});
 
 // ---- 20층 보스(가면광대) 전용 이벤트 ----
 // 화면 표시는 storyMonsters[id].trick에 다 몰아넣고, until(performance.now()
@@ -5623,6 +5628,9 @@ function storyRender(now) {
         const mRad = SHARED.monsterRadiusOf(m.type);
         storyCtx.save();
         storyCtx.translate(m.x, m.y);
+        // 예열이 끝나고 실제로 후려친 순간: 몸이 짧게 부풀었다 가라앉는다.
+        const atkPunch = monsterAttackPunch(m.attackFlashAt, now);
+        if (atkPunch > 0) storyCtx.scale(1 + 0.22 * atkPunch, 1 + 0.22 * atkPunch);
         if (def.trickBoss) drawClownTrickOverlay(storyCtx, m, now);
         if (m.state === 'telegraph' && !def.trickBoss) {
             storyCtx.beginPath();
@@ -5699,6 +5707,7 @@ function storyRender(now) {
                 storyCtx.stroke();
             }
         }
+        drawMonsterAttackFlash(storyCtx, mRad, atkPunch);
         storyCtx.restore();
 
         // 덩치가 크면 머리 위 체력 바도 같이 길어진다.

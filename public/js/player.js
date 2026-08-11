@@ -477,6 +477,26 @@ function drawDeathCollapse(ctx, R, stats, deathStartAt, now) {
     }
 }
 
+// ---- 몬스터 공격 이펙트 ----
+// 예열(telegraph)이 끝나고 실제로 후려치는 순간. 서버가 monsterAttack/
+// guestMonsterAttack 이벤트로 그 순간을 알려주면 attackFlashAt만 찍어 두고,
+// 그리는 쪽은 이 짧은 창 동안 몸을 부풀렸다 가라앉히고 붉게 번쩍인다 --
+// 예열 중 뜨는 빨간 테(경고)와는 별개로, "지금 맞았다/후렸다"를 알려주는 용도.
+const MONSTER_ATTACK_FLASH_MS = 260;
+function monsterAttackPunch(flashAt, now) {
+    if (!flashAt || now - flashAt >= MONSTER_ATTACK_FLASH_MS) return 0;
+    const t = (now - flashAt) / MONSTER_ATTACK_FLASH_MS;
+    return t < 0.35 ? t / 0.35 : Math.max(0, 1 - (t - 0.35) / 0.65);
+}
+function drawMonsterAttackFlash(ctx, R, p) {
+    if (p <= 0) return;
+    ctx.beginPath();
+    ctx.arc(0, 0, R + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 80, 50, ${0.85 * p})`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+}
+
 // 번개악마맛은 모든 베기가 흡혈 베기라 언제나 붉게 그린다. 서버도 같다.
 function advanceSweepCount(o, stats) {
     if (stats.attackType !== 'vampire_slash') return;
