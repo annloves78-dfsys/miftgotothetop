@@ -2102,6 +2102,28 @@ const MONSTERS = {
         attackCooldown: 1500,
         telegraphMs: 380
     },
+    // ---- 레전드 지하 보스 (임시) ----
+    // 지하 2층 보스. 레드 드레곤맛 쿠키가 "아무도 자길 안 써준다"는 분노로
+    // 폭주한 모습 -- 원래 캐릭터(CHARACTERS.reddragon, 탱커/불 속성/방패)의
+    // 색을 그대로 쓴다. 이벤트 보스(물/불/번개/바람의 수호자)와 같은 방식의
+    // placeholder: 지금은 일반 근접 AI(tickMonsterSet)만 돌고, 아레나에 놓을
+    // 구조물과 진짜 공격 패턴은 아직 미정이라 나중에 갈아 끼운다.
+    reddragon_rampage: {
+        name: '폭주한 레드 드레곤',
+        color: '#e74c3c',
+        colorLeft: '#e74c3c',
+        colorRight: '#ffffff',
+        health: 1500,
+        speed: 2,
+        aggroRange: 1000,
+        preferredDistance: 70,
+        attackRange: 130,
+        attackDamage: 10,
+        attackCooldown: 1300,
+        telegraphMs: 400,
+        bossBar: true,
+        radius: 36
+    },
     // ---- 4~9층에서 처음 나오는 것들 ----
     // 4층: 느리고 단단한 앞줄. 케이크 조각보다 두 배 가까이 질기다.
     jelly_blob: {
@@ -5254,7 +5276,25 @@ const LEGEND_STORY_FLOOR_DEFS = {
             { id: 'legend1_chest1', x: -1000, y: -900 }
         ],
         star: { x: -700, y: -1250 }
-    })
+    }),
+    // 지하 2층: 첫 지하 보스전. 지하 1층은 잡몹만 있는 맛보기였고, 이제부터
+    // 지하는 원칙적으로 층마다 보스 하나씩이다. 10층/20층 보스전과 같은
+    // 모양(짧고 넓은 외길, 잡몹 없음, winOnClear) -- 넓어야 보스 패턴이
+    // 움직일 공간이 나온다. 보스는 MONSTERS.reddragon_rampage(임시, 위 주석
+    // 참고). 아레나 안에 놓을 구조물과 실제 전투 패턴은 아직 미정이다.
+    legend2: {
+        levelType: 'bridge',
+        levelLength: 1000,
+        laneHalfWidth: 260,
+        deckColor: '#0a0a0a',
+        deckGlow: 'rgba(231, 76, 60, 0.12)', // 암전 + 분노의 붉은 기
+        gates: [],
+        monsters: [
+            { type: 'reddragon_rampage', x: -750, y: 0, room: 0 }
+        ],
+        winOnClear: true,
+        bossFloor: true
+    }
 };
 const LEGEND_PARTY_SIZE = 3;
 // 혼자 갈 때(3명) 자리마다 데려갈 수 있는 최대 등급. 1번째는 게스트까지
@@ -5272,7 +5312,7 @@ function legendPartySlotAllowsGrade(slot, grade) {
 // 새 층(legend2, legend3, ...)을 추가할 때마다 이 숫자부터 올릴 것. 탑은
 // 위로 올라가지만 이쪽은 아래로 내려가므로, 층 목록은 위(1층)에서
 // 아래(더 깊은 층)로 자연스러운 순서 그대로 보여주면 된다(뒤집지 않는다).
-const LEGEND_TOTAL_FLOORS = 1;
+const LEGEND_TOTAL_FLOORS = 2;
 function legendFloorKey(n) {
     return `legend${n}`;
 }
@@ -5282,7 +5322,9 @@ function isLegendFloor(floor) {
 // 층 클리어(별) 보상. 아직 지하 1층 하나뿐이라 표 하나로 충분하고, 늘어나면
 // CLEAR_REWARDS처럼 층별로 나누면 된다.
 const LEGEND_CLEAR_REWARDS = {
-    legend1: { coins: 500, diamonds: 15, material: 8 }
+    legend1: { coins: 500, diamonds: 15, material: 8 },
+    // 첫 지하 보스전이라 1층보다 후하게 -- 진짜 패턴이 정해지면 다시 손볼 것.
+    legend2: { coins: 900, diamonds: 25, material: 12 }
 };
 function legendClearReward(floor) {
     return LEGEND_CLEAR_REWARDS[floor] || null;

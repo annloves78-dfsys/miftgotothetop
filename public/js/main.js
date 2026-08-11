@@ -3086,7 +3086,9 @@ function renderLegendFloorChips() {
         chip.className = 'awaken-level-chip'
             + (n === selectedLegendFloor ? ' selected' : '')
             + (unlocked ? '' : ' locked');
-        chip.textContent = unlocked ? `지하 ${n}층` : `🔒 지하 ${n}층`;
+        // 지하는 원칙적으로 층마다 보스 하나(1층은 잡몹만 있는 맛보기 예외).
+        const label = SHARED.isTowerBossFloor(SHARED.legendFloorKey(n)) ? `지하 ${n}층 보스` : `지하 ${n}층`;
+        chip.textContent = unlocked ? label : `🔒 ${label}`;
         chip.disabled = !unlocked;
         if (unlocked) {
             chip.addEventListener('click', () => {
@@ -3206,14 +3208,20 @@ function showLegendMsg(text, good) {
     legendMsgEl.classList.toggle('good', !!good);
 }
 
+// 층마다 다른 안내 문구. floorDefFor는 데이터만 주니 사람이 읽을 설명은
+// 여기 따로 적는다 -- 새 지하층을 추가하면 여기도 같이 채울 것.
+const LEGEND_FLOOR_INFO_HTML = {
+    legend1: `<li>입구 스위치를 밟아야 문이 열립니다</li>
+              <li>잡몹 방 2개를 지나면 갈림길 -- 한쪽은 별로, 한쪽은 막다른 보물상자</li>`,
+    legend2: `<li>잡몹 없이 보스와 곧바로 맞붙는 보스전입니다</li>`
+};
 function renderLegendDetail() {
     const floorKey = SHARED.legendFloorKey(selectedLegendFloor);
     const reward = SHARED.legendClearReward(floorKey) || {};
     legendFloorNameEl.textContent = `레전드 스토리 · 지하 ${selectedLegendFloor}층`;
     legendFloorInfoEl.innerHTML = SHARED.floorDefFor(floorKey)
         ? `<ul class="awaken-stat-list">
-            <li>입구 스위치를 밟아야 문이 열립니다</li>
-            <li>잡몹 방 2개를 지나면 갈림길 -- 한쪽은 별로, 한쪽은 막다른 보물상자</li>
+            ${LEGEND_FLOOR_INFO_HTML[floorKey] || '<li>보스전입니다</li>'}
         </ul>
         <div class="reward-chips">${rewardChipsHtml(reward)}</div>`
         : `<div>아직 만들어지지 않은 층입니다.</div>`;
