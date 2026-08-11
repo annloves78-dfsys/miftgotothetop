@@ -1525,9 +1525,20 @@ function tickPlayerProjectiles(roomId, room, dtMs, resolveHit, goneEv, steer, up
 // can never drift apart.
 // 각성모드 보스는 레벨에 따라 받는 피해가 줄어든다 (4·10레벨의 90%).
 // 몬스터 표에 적힌 값이므로 어떤 몬스터에든 붙일 수 있다.
+// monsterSkill/monsterUltimate가 켜져 있는 동안에는 그 damageTakenMult도
+// 곱한다 -- tickMonsterSkillUltimate가 스스로 버프를 켜고 끄는 타이머.
 function monsterDamageTaken(m) {
     const def = m && MONSTERS[m.type];
-    return (def && def.damageTaken) || 1;
+    let mult = (def && def.damageTaken) || 1;
+    if (!m || !def) return mult;
+    const now = Date.now();
+    if (def.monsterSkill && m.skillActiveUntil && now < m.skillActiveUntil) {
+        mult *= def.monsterSkill.damageTakenMult != null ? def.monsterSkill.damageTakenMult : 1;
+    }
+    if (def.monsterUltimate && m.ultimateActiveUntil && now < m.ultimateActiveUntil) {
+        mult *= def.monsterUltimate.damageTakenMult != null ? def.monsterUltimate.damageTakenMult : 1;
+    }
+    return mult;
 }
 // 케이크 보스처럼 때릴 때마다 자라는 몬스터. growOnAttack이 없으면 아무 일도
 // 없으므로 다른 몬스터는 지금까지와 똑같이 움직인다.
@@ -1540,11 +1551,21 @@ function enrageMult(m, def, key) {
 }
 // 케이크는 0.5씩 자라므로 여기서 반올림하지 않는다 -- 실제로 때릴 때
 // 한 번만 반올림된다.
+// 궁극기가 켜져 있는 동안엔 그 값이 공격력/이동속도를 통째로 갈아치운다
+// (성장/격노와는 달리 더하는 게 아니라 대체 -- reddragon_rampage 참고).
 function monsterAttackDamage(m, def) {
+    if (m && def.monsterUltimate && m.ultimateActiveUntil && Date.now() < m.ultimateActiveUntil
+        && def.monsterUltimate.attackDamage != null) {
+        return def.monsterUltimate.attackDamage;
+    }
     return ((def.attackDamage || 0) + ((m && m.growAttack) || 0))
         * enrageMult(m, def, 'attackMult');
 }
 function monsterSpeed(m, def) {
+    if (m && def.monsterUltimate && m.ultimateActiveUntil && Date.now() < m.ultimateActiveUntil
+        && def.monsterUltimate.speed != null) {
+        return def.monsterUltimate.speed;
+    }
     return ((def.speed || 0) + ((m && m.growSpeed) || 0)) * enrageMult(m, def, 'speedMult');
 }
 // 한 대 때릴 때마다 공격력·속도가 오르고 스스로 조금 회복한다.
@@ -1560,6 +1581,39 @@ function growMonsterOnAttack(roomId, mid, m, def) {
     io.to(roomId).emit('monsterGrew', {
         id: mid, attack: monsterAttackDamage(m, def), speed: monsterSpeed(m, def), hp: m.hp
     });
+}
+
+// 스스로 켜는 스킬/궁극기: 몬스터 표에 monsterSkill/monsterUltimate가 있으면
+// 쿨타임마다 자동으로 켠다(대상 지정 없이 그냥 자기 자신에게 거는 버프라
+// idle/telegraph 같은 공격 상태와 무관하게 매 틱 확인한다). 켜져 있는 동안의
+// 실제 효과(받는 피해 배율/공격력/이동속도 대체)는 monsterDamageTaken /
+// monsterAttackDamage / monsterSpeed가 스스로 확인한다 -- 여기서는 타이머만
+// 관리하고 켜지는 순간의 회복/보호막만 준다.
+function tickMonsterSkillUltimate(roomId, mid, m, def, now) {
+    if (def.monsterSkill) {
+        if (m.skillReadyAt === undefined) m.skillReadyAt = now + def.monsterSkill.cooldownMs;
+        const active = m.skillActiveUntil && now < m.skillActiveUntil;
+        if (!active && now >= m.skillReadyAt) {
+            const s = def.monsterSkill;
+            m.skillActiveUntil = now + s.durationMs;
+            m.skillReadyAt = now + s.cooldownMs;
+            if (s.healOnCast) m.hp = Math.min(m.maxHp, m.hp + s.healOnCast);
+            if (s.shieldOnCast) m.shieldHp = (m.shieldHp || 0) + s.shieldOnCast;
+            io.to(roomId).emit('monsterSkillUsed', { id: mid, durationMs: s.durationMs, hp: m.hp, shieldHp: m.shieldHp || 0 });
+        }
+    }
+    if (def.monsterUltimate) {
+        if (m.ultimateReadyAt === undefined) m.ultimateReadyAt = now + def.monsterUltimate.cooldownMs;
+        const active = m.ultimateActiveUntil && now < m.ultimateActiveUntil;
+        if (!active && now >= m.ultimateReadyAt) {
+            const u = def.monsterUltimate;
+            m.ultimateActiveUntil = now + u.durationMs;
+            m.ultimateReadyAt = now + u.cooldownMs;
+            if (u.healOnCast) m.hp = Math.min(m.maxHp, m.hp + u.healOnCast);
+            if (u.shieldOnCast) m.shieldHp = (m.shieldHp || 0) + u.shieldOnCast;
+            io.to(roomId).emit('monsterUltimateUsed', { id: mid, durationMs: u.durationMs, hp: m.hp, shieldHp: m.shieldHp || 0 });
+        }
+    }
 }
 
 // ---- 11층부터 나오는 장치들. 전부 몬스터 표에 한 줄만 적으면 붙는다. ----
@@ -2884,6 +2938,8 @@ function tickMonsterSet(ctx, alivePlayers, now) {
         }
         const def = MONSTERS[m.type];
         if (def.trickBoss) { tickClownBoss(ctx, m, mid, now); continue; }
+        // 자기 자신에게 거는 버프라 대상을 찾았는지와 무관하게 매 틱 확인한다.
+        if (def.monsterSkill || def.monsterUltimate) tickMonsterSkillUltimate(roomId, mid, m, def, now);
 
         let nearest = null, nearestDist = Infinity;
         for (const p of alivePlayers) {

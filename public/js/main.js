@@ -4583,6 +4583,22 @@ socket.on('monsterGuard', ({ id, hp, shieldHp, x, y }) => {
     [60, 120].forEach((r, i) => storyImpactEffects.push({ x, y, radius: r, until: now + 450 + i * 200 }));
     updateStoryBossBar();
 });
+// 몬스터가 스스로 켜는 스킬/궁극기(monsterSkill/monsterUltimate, 레드 드레곤
+// 폭주 등). 서버가 durationMs만 주므로 로컬 시계로 만료 시각을 잡는다.
+socket.on('monsterSkillUsed', ({ id, durationMs, hp, shieldHp }) => {
+    const m = storyMonsters[id];
+    if (!m) return;
+    m.skillActiveUntil = performance.now() + durationMs;
+    m.hp = hp; m.shieldHp = shieldHp;
+    updateStoryBossBar();
+});
+socket.on('monsterUltimateUsed', ({ id, durationMs, hp, shieldHp }) => {
+    const m = storyMonsters[id];
+    if (!m) return;
+    m.ultimateActiveUntil = performance.now() + durationMs;
+    m.hp = hp; m.shieldHp = shieldHp;
+    updateStoryBossBar();
+});
 // 보스가 다시 일어난다. 쓰러졌다고 지운 자리를 통째로 되돌리고, 그 자리에서
 // 크게 터뜨린다.
 socket.on('bossRevived', ({ id, x, y, monsters, left }) => {
@@ -5688,6 +5704,29 @@ function storyRender(now) {
             storyCtx.beginPath();
             storyCtx.arc(0, 0, mRad + 10, 0, Math.PI * 2);
             storyCtx.strokeStyle = 'rgba(231, 76, 60, 0.9)';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+        }
+        // 몬스터가 스스로 켜는 방어 스킬/궁극기(monsterSkill/monsterUltimate) --
+        // 켜져 있는 동안 받는 피해가 줄어드는 걸 눈으로도 알 수 있게.
+        if (m.skillActiveUntil && now < m.skillActiveUntil) {
+            const pulse = 3 + Math.sin(now / 150) * 2;
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, mRad + 12 + pulse, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(52, 152, 219, 0.85)';
+            storyCtx.lineWidth = 4;
+            storyCtx.stroke();
+        }
+        if (m.ultimateActiveUntil && now < m.ultimateActiveUntil) {
+            const pulse = 5 + Math.sin(now / 120) * 4;
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, mRad + 16 + pulse, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(230, 126, 34, 0.9)';
+            storyCtx.lineWidth = 5;
+            storyCtx.stroke();
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, mRad + 6, 0, Math.PI * 2);
+            storyCtx.strokeStyle = 'rgba(255, 87, 34, 0.7)';
             storyCtx.lineWidth = 3;
             storyCtx.stroke();
         }

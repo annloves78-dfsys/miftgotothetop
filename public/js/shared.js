@@ -2102,25 +2102,48 @@ const MONSTERS = {
         attackCooldown: 1500,
         telegraphMs: 380
     },
-    // ---- 레전드 지하 보스 (임시) ----
+    // ---- 레전드 지하 보스 ----
     // 지하 2층 보스. 레드 드레곤맛 쿠키가 "아무도 자길 안 써준다"는 분노로
     // 폭주한 모습 -- 원래 캐릭터(CHARACTERS.reddragon, 탱커/불 속성/방패)의
-    // 색을 그대로 쓴다. 이벤트 보스(물/불/번개/바람의 수호자)와 같은 방식의
-    // placeholder: 지금은 일반 근접 AI(tickMonsterSet)만 돌고, 아레나에 놓을
-    // 구조물과 진짜 공격 패턴은 아직 미정이라 나중에 갈아 끼운다.
+    // 색을 그대로 쓴다. 유누가 정한 실제 수치(2026-08-11):
+    // - 화가 나서 공격이 아주 빠르다(공속 0.2초 = attackCooldown 200ms).
+    // - 때릴 때마다 2씩 회복(growOnAttack -- 몬스터 엔진에 이미 있던 필드 재사용).
+    // - 특수스킬: 10초 쿨타임, 5초간 받는 피해 50%. 켤 때 체력 30 회복 + 보호막 50.
+    // - 궁극기: 30초 쿨타임, 10초간 이속3·공격력15·받는 피해 60%. 켤 때 체력
+    //   50 회복 + 보호막 100.
+    // monsterSkill/monsterUltimate는 이 보스를 위해 새로 만든 범용 필드라
+    // (tickMonsterSkillUltimate, server.js) 다른 몬스터도 그대로 가져다 쓸 수
+    // 있다. 아레나에 놓을 구조물은 아직 미정.
     reddragon_rampage: {
         name: '폭주한 레드 드레곤',
         color: '#e74c3c',
         colorLeft: '#e74c3c',
         colorRight: '#ffffff',
-        health: 1500,
+        health: 15000,
         speed: 2,
         aggroRange: 1000,
         preferredDistance: 70,
         attackRange: 130,
-        attackDamage: 10,
-        attackCooldown: 1300,
+        attackDamage: 7,
+        attackCooldown: 200,
         telegraphMs: 400,
+        growOnAttack: { heal: 2 },
+        monsterSkill: {
+            cooldownMs: 10000,
+            durationMs: 5000,
+            damageTakenMult: 0.5,
+            healOnCast: 30,
+            shieldOnCast: 50
+        },
+        monsterUltimate: {
+            cooldownMs: 30000,
+            durationMs: 10000,
+            damageTakenMult: 0.6,
+            speed: 3,
+            attackDamage: 15,
+            healOnCast: 50,
+            shieldOnCast: 100
+        },
         bossBar: true,
         radius: 36
     },
