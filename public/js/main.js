@@ -4677,7 +4677,18 @@ socket.on('monsterTelegraph', ({ id }) => {
 // 예열이 끝나고 실제로 후려치는 순간. mergeStoryMonsters가 이전 필드를 그대로
 // 들고 넘어가므로(prev 스프레드), attackFlashAt은 다음 틱에도 안 지워진다.
 socket.on('monsterAttack', ({ id }) => {
-    if (storyMonsters[id]) storyMonsters[id].attackFlashAt = performance.now();
+    const m = storyMonsters[id];
+    if (!m) return;
+    m.attackFlashAt = performance.now();
+    // 근접 몹이 베는 방향: 그 순간 제일 가까운 플레이어 쪽을 향해 벤다.
+    let best = null, bestD = Infinity;
+    if (storyPlayer && storyPlayer.alive) { best = storyPlayer; bestD = Math.hypot(storyPlayer.x - m.x, storyPlayer.y - m.y); }
+    Object.values(storyPartners).forEach(pl => {
+        if (!pl.alive) return;
+        const d = Math.hypot(pl.x - m.x, pl.y - m.y);
+        if (d < bestD) { bestD = d; best = pl; }
+    });
+    if (best) m.attackFacing = Math.atan2(best.y - m.y, best.x - m.x);
 });
 
 // ---- 20층 보스(가면광대) 전용 이벤트 ----
@@ -5313,6 +5324,31 @@ function storyGateSealed(gate) {
     return storyAnyMonsterAliveInRoom(gate.room);
 }
 
+// 몬스터를 다 잡을 때까지 막혀 있는 문. 그냥 반투명 파란 네모만 있으면
+// 렌더링 버그처럼 보이길래, 빗금(막혀 있다는 신호)과 밝은 테두리를 더했다.
+// (w, h)는 ctx가 이미 문 중심으로 translate/rotate된 로컬 좌표계 기준.
+function drawSealedGateBar(ctx, w, h, alpha) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-w / 2, -h / 2, w, h);
+    ctx.clip();
+    ctx.fillStyle = `rgba(52, 152, 219, ${alpha})`;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
+    ctx.lineWidth = 3;
+    const step = 14;
+    for (let x = -h - w; x < w + h; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(-w / 2 + x, -h / 2);
+        ctx.lineTo(-w / 2 + x + h, h / 2);
+        ctx.stroke();
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(133, 202, 240, 0.95)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+}
+
 function drawStarPath(ctx, radius) {
     const inner = radius * 0.45;
     ctx.beginPath();
@@ -5509,28 +5545,25 @@ function storyRender(now) {
                     if (winding) {
                         // 길이 휘어 있으니 그 자리의 길 방향을 구해서 가로로 세운다.
                         // 방/다리마다 폭이 다르므로 그 자리의 실제 폭을 쓴다.
+                        // (예전엔 pointOnPath를 along, along-1 두 번 불러서 방향을
+                        // 뺐는데, 모퉁이 바로 앞뒤 1 이내에서는 두 점이 서로 다른
+                        // 구간에 걸려 문이 엉뚱한 각도로 꺾여 보이는 버그가 있었다.)
                         const a = SHARED.pointOnPath(storyFloorDef, at, 0);
-                        const b = SHARED.pointOnPath(storyFloorDef, at - 1, 0);
+                        const tangent = SHARED.pathTangentAt(storyFloorDef, at);
                         const gateHalfW = SHARED.laneHalfWidthAt(storyFloorDef, a.x, a.y);
                         storyCtx.save();
                         storyCtx.translate(a.x, a.y);
-                        storyCtx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
-                        storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
-                        storyCtx.fillRect(-6, -gateHalfW, 12, gateHalfW * 2);
-                        storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
-                        storyCtx.lineWidth = 2;
-                        storyCtx.strokeRect(-6, -gateHalfW, 12, gateHalfW * 2);
+                        storyCtx.rotate(Math.atan2(tangent.uy, tangent.ux));
+                        drawSealedGateBar(storyCtx, 12, gateHalfW * 2, shieldAlpha);
                         storyCtx.restore();
                         return;
                     }
                     // The shield spans the lane, so it lies across the axis the
                     // bridge runs along.
-                    const bar = vertical ? [-halfW, at - 6, halfW * 2, 12] : [at - 6, -halfW, 12, halfW * 2];
-                    storyCtx.fillStyle = `rgba(52, 152, 219, ${shieldAlpha})`;
-                    storyCtx.fillRect(...bar);
-                    storyCtx.strokeStyle = 'rgba(133, 202, 240, 0.9)';
-                    storyCtx.lineWidth = 2;
-                    storyCtx.strokeRect(...bar);
+                    storyCtx.save();
+                    storyCtx.translate(vertical ? 0 : at, vertical ? at : 0);
+                    drawSealedGateBar(storyCtx, vertical ? halfW * 2 : 12, vertical ? 12 : halfW * 2, shieldAlpha);
+                    storyCtx.restore();
                 });
             });
         }
@@ -5631,6 +5664,17 @@ function storyRender(now) {
         // 예열이 끝나고 실제로 후려친 순간: 몸이 짧게 부풀었다 가라앉는다.
         const atkPunch = monsterAttackPunch(m.attackFlashAt, now);
         if (atkPunch > 0) storyCtx.scale(1 + 0.22 * atkPunch, 1 + 0.22 * atkPunch);
+        // 근접 몹(레이저도 화살도 아닌 몹)은 후려치는 순간 베는 부채꼴을 보여준다.
+        // 레이저/화살 몹은 각자 빔/화살로 이미 "무엇을 쐈는지"가 보이니 제외.
+        if (!def.laser && !def.projectileSpeed) {
+            const swingT = monsterAttackProgress(m.attackFlashAt, now);
+            if (swingT !== null) {
+                storyCtx.save();
+                storyCtx.rotate(m.attackFacing || 0);
+                drawMonsterSwing(storyCtx, mRad, def.attackRange, swingT);
+                storyCtx.restore();
+            }
+        }
         if (def.trickBoss) drawClownTrickOverlay(storyCtx, m, now);
         if (m.state === 'telegraph' && !def.trickBoss) {
             storyCtx.beginPath();

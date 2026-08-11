@@ -411,6 +411,18 @@ socket.on('guestMonsterDefeated', ({ id }) => { delete guestMonsters[id]; delete
 socket.on('guestMonsterAttack', ({ id }) => {
     const fx = guestMonsterFx[id] || (guestMonsterFx[id] = {});
     fx.attackFlashAt = performance.now();
+    // 근접 몹이 베는 방향: 그 순간 제일 가까운 플레이어 쪽을 향해 벤다.
+    const m = guestMonsters[id];
+    if (m && guestState) {
+        let bestD = Infinity;
+        Object.entries(guestState.players).forEach(([pid, p]) => {
+            if (!p.alive) return;
+            const px = pid === socket.id && guestLocal ? guestLocal.x : p.x;
+            const py = pid === socket.id && guestLocal ? guestLocal.y : p.y;
+            const d = Math.hypot(px - m.x, py - m.y);
+            if (d < bestD) { bestD = d; fx.attackFacing = Math.atan2(py - m.y, px - m.x); }
+        });
+    }
 });
 socket.on('guestBossLaser', (d) => { guestBossLaser = { ...d }; });
 socket.on('guestBossLaserAim', ({ angle }) => { if (guestBossLaser) guestBossLaser.angle = angle; });
@@ -1164,6 +1176,16 @@ function guestRender(now) {
         guestCtx.save();
         guestCtx.translate(m.x, m.y);
         if (atkPunch > 0) guestCtx.scale(1 + 0.22 * atkPunch, 1 + 0.22 * atkPunch);
+        // 근접 몹(레이저/화살 아닌 몹)은 후려치는 순간 베는 부채꼴을 보여준다.
+        if (!mdef.laser && !mdef.projectileSpeed && fx) {
+            const swingT = monsterAttackProgress(fx.attackFlashAt, now);
+            if (swingT !== null) {
+                guestCtx.save();
+                guestCtx.rotate(fx.attackFacing || 0);
+                drawMonsterSwing(guestCtx, R, mdef.attackRange, swingT);
+                guestCtx.restore();
+            }
+        }
         guestCtx.beginPath();
         guestCtx.arc(0, 0, R, 0, Math.PI * 2);
         guestCtx.fillStyle = mdef.color;

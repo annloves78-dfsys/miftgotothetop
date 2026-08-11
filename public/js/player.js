@@ -483,10 +483,21 @@ function drawDeathCollapse(ctx, R, stats, deathStartAt, now) {
 // 그리는 쪽은 이 짧은 창 동안 몸을 부풀렸다 가라앉히고 붉게 번쩍인다 --
 // 예열 중 뜨는 빨간 테(경고)와는 별개로, "지금 맞았다/후렸다"를 알려주는 용도.
 const MONSTER_ATTACK_FLASH_MS = 260;
+function monsterAttackProgress(flashAt, now) {
+    if (!flashAt || now - flashAt >= MONSTER_ATTACK_FLASH_MS) return null;
+    return (now - flashAt) / MONSTER_ATTACK_FLASH_MS;
+}
 function monsterAttackPunch(flashAt, now) {
-    if (!flashAt || now - flashAt >= MONSTER_ATTACK_FLASH_MS) return 0;
-    const t = (now - flashAt) / MONSTER_ATTACK_FLASH_MS;
+    const t = monsterAttackProgress(flashAt, now);
+    if (t === null) return 0;
     return t < 0.35 ? t / 0.35 : Math.max(0, 1 - (t - 0.35) / 0.65);
+}
+// 근접 몹(레이저도, 화살도 아닌 몹)이 후려치는 순간 몸 밖으로 베는 부채꼴을
+// 그려서 "칼을 휘두른다"는 느낌을 준다. drawSweepSlash(player.js 상단)를
+// vampire=true로 재사용해 붉은 톤으로 -- 플레이어의 보라색 베기와 구분되게.
+function drawMonsterSwing(ctx, R, attackRange, t) {
+    const range = Math.max(30, Math.min(70, attackRange * 0.5));
+    drawSweepSlash(ctx, R, range, R * 2.2, t, true);
 }
 function drawMonsterAttackFlash(ctx, R, p) {
     if (p <= 0) return;
