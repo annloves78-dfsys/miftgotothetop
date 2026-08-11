@@ -4382,6 +4382,9 @@ function mergeStoryMonsters(next) {
 // 같이 들어온 사람. 내 것은 여기 안 들어온다 (내 쿠키는 storyPlayer가 주인).
 // 서버 틱(50ms)마다 통째로 갈아 끼우고, 그 사이는 그냥 마지막 자리에 그린다.
 let storyPartners = {};
+// 파트너는 storyPartners 자체가 매 틱 통째로 갈아 끼워져서 그 위에 피격/사망
+// 연출용 타이머를 못 붙인다 -- id로 따로 붙잡아 두는 곁방(side table).
+let storyPartnerFx = {};
 // 번개지옥맛 궁극기가 부른 부하들. 서버 틱마다 통째로 갈아 끼운다.
 let storySummons = {};
 let storyMouseX = null;
@@ -4406,6 +4409,7 @@ let storyQuakeUntil = 0; // camera shakes until this timestamp (earthquake ultim
 socket.on('storyFloorStarted', (data) => {
     activeStoryFloor = data.floor; // a floor number, or an event stage id
     storyPartners = {};
+    storyPartnerFx = {};
     if (data.players) {
         Object.entries(data.players).forEach(([id, pl]) => {
             if (id !== socket.id) storyPartners[id] = pl;
@@ -4888,6 +4892,7 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     stopStoryLoop();
     // 한 판이 끝났으면 타워 버튼도 처음 상태로 (다시 짝을 찾을 수 있게).
     storyPartners = {};
+    storyPartnerFx = {};
     storySummons = {};
     awakenFightParty = null;
     renderAwakenSwapBar();
@@ -4944,6 +4949,7 @@ storyLeaveBtn.addEventListener('click', () => {
     stopStoryLoop();
     socket.emit('leaveRaid');
     storyPartners = {};
+    storyPartnerFx = {};
     resetTowerActions();
     if (eventStageById(activeStoryFloor)) {
         renderEventScreen();
@@ -5780,15 +5786,20 @@ function storyRender(now) {
 
     // 파트너는 내 쿠키보다 먼저 그린다 -- 겹쳤을 때 내가 위에 오는 편이
     // 자기 쿠키를 놓치지 않는다.
-    Object.values(storyPartners).forEach(pl => {
+    Object.entries(storyPartners).forEach(([pid, pl]) => {
         const pStats = SHARED.CHARACTERS[pl.charType] || SHARED.CHARACTERS.kicker;
         const R = SHARED.PLAYER_RADIUS;
+        // storyPartners 자체가 매 틱 통째로 갈아 끼워지므로, 피격/사망 타이머는
+        // pl이 아니라 id로 따로 붙잡아 둔 storyPartnerFx에 저장한다.
+        let fx = storyPartnerFx[pid];
+        if (!fx) fx = storyPartnerFx[pid] = { _lastHp: pl.hp, _wasAlive: pl.alive };
+        updateHitAndDeathState(fx, pl.hp, pl.alive, now, DEATH_ANIM_MS);
+        const shake = hitShakeOffset(fx, now);
         storyCtx.save();
-        storyCtx.translate(pl.x, pl.y);
+        storyCtx.translate(pl.x + shake.x, pl.y + shake.y);
         // 바다 수호자맛 sea_hide: 파트너 쪽은 storyTick이 매번 새로 보내주는
         // untouchableUntil(서버 Date.now() 기준)로 판단한다.
         const plHidden = pl.alive && !!pl.untouchableUntil && Date.now() < pl.untouchableUntil;
-        storyCtx.globalAlpha = pl.alive ? (plHidden ? 0.35 : 1) : 0.4;
         if (refreshLowHpAura(pStats, pl)) drawLowHpAura(storyCtx, R, now);
         if (plHidden) {
             const ripple = 6 + Math.sin(now / 120) * 4;
@@ -5798,12 +5809,20 @@ function storyRender(now) {
             storyCtx.lineWidth = 5;
             storyCtx.stroke();
         }
-        drawCookieBody(storyCtx, R, pStats, pl.alive);
-        storyCtx.beginPath();
-        storyCtx.arc(0, 0, R, 0, Math.PI * 2);
-        storyCtx.lineWidth = 2;
-        storyCtx.strokeStyle = '#3498db'; // 파란 테두리 = 파트너
-        storyCtx.stroke();
+        if (!pl.alive) {
+            storyCtx.globalAlpha = 1;
+            drawDeathCollapse(storyCtx, R, pStats, fx.deathStartAt, now);
+        } else {
+            storyCtx.globalAlpha = plHidden ? 0.35 : 1;
+            drawCookieBody(storyCtx, R, pStats, true);
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R, 0, Math.PI * 2);
+            storyCtx.lineWidth = 2;
+            storyCtx.strokeStyle = '#3498db'; // 파란 테두리 = 파트너
+            storyCtx.stroke();
+        }
+        storyCtx.globalAlpha = 1;
+        drawHitFlash(storyCtx, R, fx, now);
         storyCtx.save();
         storyCtx.rotate(pl.facing || 0);
         drawCharacterWeapon(storyCtx, R, pStats, pl.alive);
@@ -5826,8 +5845,12 @@ function storyRender(now) {
     if (storyPlayer) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
         const R = SHARED.PLAYER_RADIUS;
+        updateHitAndDeathState(storyPlayer, storyPlayer.hp, storyPlayer.alive, now, DEATH_ANIM_MS);
+        const storyMotion = now < (storyPlayer.attackEffectUntil || 0)
+            ? attackMotion(1 - ((storyPlayer.attackEffectUntil || 0) - now) / 180) : null;
+        const storyShake = hitShakeOffset(storyPlayer, now);
         storyCtx.save();
-        storyCtx.translate(storyPlayer.x, storyPlayer.y);
+        storyCtx.translate(storyPlayer.x + storyShake.x, storyPlayer.y + storyShake.y);
 
         if (now < (storyPlayer.attackEffectUntil || 0) && stats.attackType === 'vampire_slash') {
             const sh = sweepShape(stats, storyPlayer.attackVampire);
@@ -5901,17 +5924,30 @@ function storyRender(now) {
         // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
         if (refreshLowHpAura(stats, storyPlayer)) drawLowHpAura(storyCtx, R, now);
 
-        storyCtx.globalAlpha = now < (storyPlayer.untouchableUntil || 0) ? 0.35 : 1;
-        drawCookieBody(storyCtx, R, stats, storyPlayer.alive);
-        storyCtx.globalAlpha = 1;
-        storyCtx.beginPath();
-        storyCtx.arc(0, 0, R, 0, Math.PI * 2);
-        storyCtx.strokeStyle = '#f1c40f';
-        storyCtx.lineWidth = 3;
-        storyCtx.stroke();
+        const storyLungeDx = storyMotion ? Math.cos(storyPlayer.facing || 0) * storyMotion.lunge : 0;
+        const storyLungeDy = storyMotion ? Math.sin(storyPlayer.facing || 0) * storyMotion.lunge : 0;
         storyCtx.save();
-        storyCtx.rotate(storyPlayer.facing || 0);
+        storyCtx.translate(storyLungeDx, storyLungeDy);
+        if (storyMotion) storyCtx.scale(storyMotion.punch, storyMotion.punch);
+
+        if (!storyPlayer.alive) {
+            storyCtx.globalAlpha = 1;
+            drawDeathCollapse(storyCtx, R, stats, storyPlayer.deathStartAt, now);
+        } else {
+            storyCtx.globalAlpha = now < (storyPlayer.untouchableUntil || 0) ? 0.35 : 1;
+            drawCookieBody(storyCtx, R, stats, true);
+            storyCtx.beginPath();
+            storyCtx.arc(0, 0, R, 0, Math.PI * 2);
+            storyCtx.strokeStyle = '#f1c40f';
+            storyCtx.lineWidth = 3;
+            storyCtx.stroke();
+        }
+        storyCtx.globalAlpha = 1;
+        drawHitFlash(storyCtx, R, storyPlayer, now);
+        storyCtx.save();
+        storyCtx.rotate((storyPlayer.facing || 0) + (storyMotion ? storyMotion.swing : 0));
         drawCharacterWeapon(storyCtx, R, stats, storyPlayer.alive);
+        storyCtx.restore();
         storyCtx.restore();
         storyCtx.restore();
 

@@ -395,6 +395,88 @@ function drawReviveAura(c, R, stats, t) {
     c.fill();
 }
 
+// ---- 공격 모션 ----
+// 공격 이펙트 창은 어떤 공격 타입이든 항상 180ms(triggerAttackEffect 참고).
+// t: 그 창 안에서의 진행률 0~1. 판정 타이밍과는 무관한 눈요기용 곡선으로,
+// 준비(0~0.3) -> 임팩트(0.3 근처에서 최대) -> 제자리(0.3~1)로 돌아온다.
+const ATTACK_LUNGE_PX = 6;
+const ATTACK_SWING_RAD = 0.45;
+function attackMotion(t) {
+    const tt = Math.max(0, Math.min(1, t));
+    const p = tt < 0.3 ? tt / 0.3 : Math.max(0, 1 - (tt - 0.3) / 0.7);
+    return {
+        lunge: ATTACK_LUNGE_PX * p, // 몸이 바라보는 방향으로 살짝 튀어나가는 거리
+        swing: -ATTACK_SWING_RAD * 0.35 + ATTACK_SWING_RAD * p, // 무기가 휘둘리는 각도
+        punch: 1 + 0.1 * p, // 임팩트 순간 살짝 커지는 펀치감
+    };
+}
+
+// ---- 피격 모션: 흰 섬광 + 짧은 떨림 ----
+const HIT_EFFECT_MS = 240;
+function triggerHitEffectOn(o) {
+    o.hitEffectUntil = performance.now() + HIT_EFFECT_MS;
+    o.hitShakeSeed = Math.random() * Math.PI * 2;
+}
+function hitShakeOffset(o, now) {
+    if (!o.hitEffectUntil || now >= o.hitEffectUntil) return { x: 0, y: 0 };
+    const t = 1 - (o.hitEffectUntil - now) / HIT_EFFECT_MS;
+    const decay = Math.max(0, 1 - t);
+    return { x: Math.sin(t * 50 + (o.hitShakeSeed || 0)) * 4 * decay, y: 0 };
+}
+function drawHitFlash(ctx, R, o, now) {
+    if (!o.hitEffectUntil || now >= o.hitEffectUntil) return;
+    const t = 1 - (o.hitEffectUntil - now) / HIT_EFFECT_MS;
+    const alpha = Math.max(0, 0.6 * (1 - t / 0.5));
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 60, 60, ${alpha})`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+}
+// hp가 (회복이 아니라) 줄었을 때만 한 번 피격 이펙트를 켜고, alive가 막 꺼진
+// 순간을 잡아 사망 애니메이션 시작 시각을 찍는다. 소켓 핸들러를 일일이
+// 따라다니지 않아도 되게 매 프레임 draw()에서 직접 이전 값과 비교한다.
+// o: 타이머를 저장할 대상(플레이어 인스턴스거나, 매 틱 갈아 끼워지는 서버
+// 객체와는 별도로 붙잡아 둔 fx 곁방일 수 있어서 hp/alive를 따로 받는다).
+function updateHitAndDeathState(o, hp, alive, now, deathAnimMs) {
+    if (o._lastHp === undefined) o._lastHp = hp;
+    if (alive && hp < o._lastHp) triggerHitEffectOn(o);
+    o._lastHp = hp;
+    if (!alive && o._wasAlive !== false) {
+        o.deathStartAt = now;
+        o.deathEffectUntil = now + deathAnimMs;
+    }
+    o._wasAlive = alive;
+}
+
+// ---- 사망 모션 ----
+// 위에서 내려다보는 시점이라 3D로 "쓰러진다"는 표현이 안 통한다 -- 대신
+// 납작하게 짜부라지며 먼지 고리가 한 번 퍼지는 걸로 "쓰러졌다"를 보여준다.
+// 애니메이션이 끝난 뒤(t=1)에도 같은 함수로 계속 그리면 납작해진 채로
+// 멈춘 정적 포즈가 되므로, 죽어있는 동안은 항상 이 함수를 쓰면 된다.
+const DEATH_ANIM_MS = 420;
+function drawDeathCollapse(ctx, R, stats, deathStartAt, now) {
+    const t = Math.min(1, Math.max(0, (now - (deathStartAt || 0)) / DEATH_ANIM_MS));
+    const ease = 1 - Math.pow(1 - t, 3);
+    ctx.save();
+    ctx.scale(1 + 0.16 * ease, 1 - 0.6 * ease);
+    ctx.globalAlpha = 1 - 0.5 * ease;
+    drawCookieBody(ctx, R, stats, false);
+    ctx.restore();
+    if (t < 1) {
+        ctx.beginPath();
+        ctx.arc(0, 0, R + ease * 20, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(127, 140, 141, ${0.55 * (1 - ease)})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+}
+
 // 번개악마맛은 모든 베기가 흡혈 베기라 언제나 붉게 그린다. 서버도 같다.
 function advanceSweepCount(o, stats) {
     if (stats.attackType !== 'vampire_slash') return;
@@ -492,6 +574,12 @@ class Player {
         this.natureBoostUntil = 0; // performance.now() timestamp; 바람궁수맛 궁극기 2단계 이동속도
         this.natureAwakenLevel = 0; // 0/1/2 = 다음에 쓸 궁극기가 1/2/3단계 (로컬 예측용; 서버가 진짜 값)
         this.untouchableUntil = 0; // performance.now() timestamp; 바다 수호자맛 sea_hide -- 이 동안 아무도 못 때리고 자기도 못 때린다
+
+        this.hitEffectUntil = 0; // 피격 섬광/떨림; updateHitAndDeathState가 hp 하락을 감지해서 켠다
+        this.deathStartAt = 0; // 사망 애니메이션(drawDeathCollapse) 시작 시각
+        this.deathEffectUntil = 0;
+        this._lastHp = this.hp;
+        this._wasAlive = true;
     }
 
     get stats() {
@@ -629,8 +717,11 @@ class Player {
     draw(ctx, now) {
         const R = SHARED.PLAYER_RADIUS;
         const facingAngle = this.facing;
+        updateHitAndDeathState(this, this.hp, this.alive, now, DEATH_ANIM_MS);
+        const motion = now < this.attackEffectUntil ? attackMotion(1 - (this.attackEffectUntil - now) / 180) : null;
+        const shake = hitShakeOffset(this, now);
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(this.x + shake.x, this.y + shake.y);
 
         if (now < this.attackEffectUntil && this.stats.attackType === 'vampire_slash') {
             const sh = sweepShape(this.stats, this.attackVampire);
@@ -710,16 +801,28 @@ class Player {
         // 바다펄맛 패시브가 켜져 있으면 파란 물결이 돈다.
         if (refreshLowHpAura(this.stats, this)) drawLowHpAura(ctx, R, now);
 
-        const hidden = this.alive && now < this.untouchableUntil;
-        ctx.globalAlpha = this.alive ? (hidden ? 0.35 : 1) : 0.5;
-        drawCookieBody(ctx, R, this.stats, this.alive);
-        // Outline needs its own path now that the body is two filled halves.
-        ctx.beginPath();
-        ctx.arc(0, 0, R, 0, Math.PI * 2);
-        ctx.lineWidth = this.isLocal ? 4 : 2;
-        ctx.strokeStyle = this.isLocal ? '#f1c40f' : '#2c3e50';
-        ctx.stroke();
+        const lungeDx = motion ? Math.cos(facingAngle) * motion.lunge : 0;
+        const lungeDy = motion ? Math.sin(facingAngle) * motion.lunge : 0;
+        ctx.save();
+        ctx.translate(lungeDx, lungeDy);
+        if (motion) ctx.scale(motion.punch, motion.punch);
+
+        if (!this.alive) {
+            ctx.globalAlpha = 1;
+            drawDeathCollapse(ctx, R, this.stats, this.deathStartAt, now);
+        } else {
+            const hidden = now < this.untouchableUntil;
+            ctx.globalAlpha = hidden ? 0.35 : 1;
+            drawCookieBody(ctx, R, this.stats, true);
+            // Outline needs its own path now that the body is two filled halves.
+            ctx.beginPath();
+            ctx.arc(0, 0, R, 0, Math.PI * 2);
+            ctx.lineWidth = this.isLocal ? 4 : 2;
+            ctx.strokeStyle = this.isLocal ? '#f1c40f' : '#2c3e50';
+            ctx.stroke();
+        }
         ctx.globalAlpha = 1;
+        drawHitFlash(ctx, R, this, now);
 
         // Facing indicator — small triangle pointing the way kicks land.
         ctx.rotate(facingAngle);
@@ -730,8 +833,12 @@ class Player {
         ctx.closePath();
         ctx.fillStyle = this.alive ? '#f1c40f' : '#7f8c8d';
         ctx.fill();
+        ctx.save();
+        ctx.rotate(motion ? motion.swing : 0);
         drawCharacterWeapon(ctx, R, this.stats, this.alive);
+        ctx.restore();
 
+        ctx.restore();
         ctx.restore();
 
         // HP bar above the player, in world space

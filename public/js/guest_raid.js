@@ -72,6 +72,9 @@ let guestDebuffUntil = 0;    // 흑화: our damage is dulled until then
 let guestLastMoveEmit = 0;
 let guestLocal = null;      // local prediction of my own cookie
 let guestQuakeUntil = 0;
+// guestState.players는 매 틱 통째로 갈아 끼워지므로, 피격/사망 연출 타이머는
+// id로 따로 붙잡아 두는 곁방(side table)에 저장한다.
+let guestPlayerFx = {};
 
 // Mirror of the server's per-slot timers: each of the four cookies carries its
 // own skill/ultimate cooldown and its own buff windows, so using one cookie's
@@ -349,6 +352,7 @@ function updateGuestHpBars() {
 }
 
 socket.on('guestStarted', (data) => {
+    guestPlayerFx = {};
     guestState = {
         bossHp: data.bossHp, bossMaxHp: data.bossMaxHp,
         bossX: data.bossX, bossY: data.bossY, bossFacing: Math.PI / 2,
@@ -1220,8 +1224,16 @@ function guestRender(now) {
         const facing = mine && guestLocal ? guestLocal.facing : p.facing;
         const stats = SHARED.CHARACTERS[p.charType] || SHARED.CHARACTERS.kicker;
         const R = SHARED.PLAYER_RADIUS;
+        // guestState.players는 매 틱 통째로 갈아 끼워지므로, 피격/사망 타이머는
+        // id로 따로 붙잡아 둔 guestPlayerFx에 저장한다.
+        let fx = guestPlayerFx[id];
+        if (!fx) fx = guestPlayerFx[id] = { _lastHp: p.hp, _wasAlive: p.alive };
+        updateHitAndDeathState(fx, p.hp, p.alive, now, DEATH_ANIM_MS);
+        const shake = hitShakeOffset(fx, now);
+        const motion = mine && guestLocal && now < guestLocal.attackEffectUntil
+            ? attackMotion(1 - (guestLocal.attackEffectUntil - now) / 180) : null;
         guestCtx.save();
-        guestCtx.translate(px, py);
+        guestCtx.translate(px + shake.x, py + shake.y);
 
         if (mine && guestLocal && now < guestLocal.attackEffectUntil
             && stats.attackType === 'vampire_slash') {
@@ -1263,14 +1275,26 @@ function guestRender(now) {
             guestCtx.stroke();
         }
 
-        guestCtx.globalAlpha = p.alive ? (hidden ? 0.35 : 1) : 0.45;
-        drawCookieBody(guestCtx, R, stats, p.alive);
-        guestCtx.beginPath();
-        guestCtx.arc(0, 0, R, 0, Math.PI * 2);
-        guestCtx.lineWidth = mine ? 4 : 2;
-        guestCtx.strokeStyle = mine ? '#f1c40f' : '#2c3e50';
-        guestCtx.stroke();
+        const lungeDx = motion ? Math.cos(facing) * motion.lunge : 0;
+        const lungeDy = motion ? Math.sin(facing) * motion.lunge : 0;
+        guestCtx.save();
+        guestCtx.translate(lungeDx, lungeDy);
+        if (motion) guestCtx.scale(motion.punch, motion.punch);
+
+        if (!p.alive) {
+            guestCtx.globalAlpha = 1;
+            drawDeathCollapse(guestCtx, R, stats, fx.deathStartAt, now);
+        } else {
+            guestCtx.globalAlpha = hidden ? 0.35 : 1;
+            drawCookieBody(guestCtx, R, stats, true);
+            guestCtx.beginPath();
+            guestCtx.arc(0, 0, R, 0, Math.PI * 2);
+            guestCtx.lineWidth = mine ? 4 : 2;
+            guestCtx.strokeStyle = mine ? '#f1c40f' : '#2c3e50';
+            guestCtx.stroke();
+        }
         guestCtx.globalAlpha = 1;
+        drawHitFlash(guestCtx, R, fx, now);
 
         guestCtx.rotate(facing);
         guestCtx.beginPath();
@@ -1280,7 +1304,11 @@ function guestRender(now) {
         guestCtx.closePath();
         guestCtx.fillStyle = p.alive ? '#f1c40f' : '#7f8c8d';
         guestCtx.fill();
+        guestCtx.save();
+        guestCtx.rotate(motion ? motion.swing : 0);
         drawCharacterWeapon(guestCtx, R, stats, p.alive);
+        guestCtx.restore();
+        guestCtx.restore();
         guestCtx.restore();
 
         const barW = 40, barH = 5;
