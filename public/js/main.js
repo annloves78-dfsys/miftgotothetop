@@ -4986,16 +4986,25 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     showScreen('result');
 });
 
+// story-fight-screen(캔버스/HUD)은 스토리 타워와 레전드 스토리가 같이
+// 쓴다 -- activeStoryFloor로 어느 쪽에서 왔는지 갈라서 제자리로 돌려보내야
+// 한다 (예전엔 여기서 무조건 스토리 타워로 보내서, 레전드 층에서 나가기를
+// 눌러도 스토리 타워로 튀는 버그가 있었다).
 storyLeaveBtn.addEventListener('click', () => {
     stopStoryLoop();
     socket.emit('leaveRaid');
     storyPartners = {};
     storyPartnerFx = {};
-    resetTowerActions();
     if (eventStageById(activeStoryFloor)) {
+        resetTowerActions();
         renderEventScreen();
         showScreen('event');
+    } else if (SHARED.isLegendFloor(activeStoryFloor)) {
+        resetLegendActions();
+        renderLegendDetail();
+        showScreen('legendDetail');
     } else {
+        resetTowerActions();
         renderTower();
         showScreen('storyTower');
     }
@@ -6567,6 +6576,9 @@ resultBackBtn.addEventListener('click', () => {
     } else if (resultReturnScreen === 'legendDetail') {
         renderLegendDetail();
         showScreen('legendDetail');
+    } else if (resultReturnScreen === 'guestDetail') {
+        renderGuestDetail();
+        showScreen('guestDetail');
     } else if (resultReturnScreen === 'modeSelect') {
         showScreen('modeSelect');
     } else {

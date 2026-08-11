@@ -676,6 +676,11 @@ socket.on('guestResult', ({ result }) => {
         }
     }
     resetGuestActions();
+    // result-screen은 여러 모드가 같이 쓰는 화면이라, 뒤로가기 버튼이 어디로
+    // 갈지는 resultReturnScreen에 달려 있다 -- 안 채우면 이전에 다른 모드가
+    // 남겨 둔 값(예: 스토리 타워)으로 잘못 튄다.
+    resultReturnScreen = 'guestDetail';
+    resultBackBtn.textContent = '게스트 레이드로';
     showScreen('result');
 });
 
