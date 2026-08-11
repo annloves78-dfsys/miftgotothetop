@@ -3213,7 +3213,8 @@ function showLegendMsg(text, good) {
 const LEGEND_FLOOR_INFO_HTML = {
     legend1: `<li>입구 스위치를 밟아야 문이 열립니다</li>
               <li>잡몹 방 2개를 지나면 갈림길 -- 한쪽은 별로, 한쪽은 막다른 보물상자</li>`,
-    legend2: `<li>잡몹 없이 보스와 곧바로 맞붙는 보스전입니다</li>`
+    legend2: `<li>잡몹 없이 보스와 곧바로 맞붙는 보스전입니다</li>
+              <li>층 이벤트: 레드 드레곤맛 쿠키를 빼면 전원 공격력 60%·체력 70%로 약해지고, 레드 드레곤맛 쿠키는 오히려 공격력 200%·체력 250%가 됩니다</li>`
 };
 function renderLegendDetail() {
     const floorKey = SHARED.legendFloorKey(selectedLegendFloor);

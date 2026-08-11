@@ -5303,8 +5303,14 @@ const LEGEND_STORY_FLOOR_DEFS = {
     // 지하 2층: 첫 지하 보스전. 지하 1층은 잡몹만 있는 맛보기였고, 이제부터
     // 지하는 원칙적으로 층마다 보스 하나씩이다. 10층/20층 보스전과 같은
     // 모양(짧고 넓은 외길, 잡몹 없음, winOnClear) -- 넓어야 보스 패턴이
-    // 움직일 공간이 나온다. 보스는 MONSTERS.reddragon_rampage(임시, 위 주석
-    // 참고). 아레나 안에 놓을 구조물과 실제 전투 패턴은 아직 미정이다.
+    // 움직일 공간이 나온다. 보스는 MONSTERS.reddragon_rampage(위 주석 참고).
+    // 아레나 안에 놓을 구조물은 아직 미정이다.
+    //
+    // 층 이벤트(charEventMultiplier, joinStoryFloor에서 적용, server.js
+    // applyFloorCharEvent): "아무도 안 써준다"는 레드 드레곤의 분노가 층
+    // 전체를 짓눌러서, 레드 드레곤맛 쿠키 말고는 다들 약해진다 -- 공격력
+    // 60%·체력 70%. 레드 드레곤맛 쿠키만 데려오면 오히려 공격력 200%·체력
+    // 250%로 확 강해진다. overrides에 없는 캐릭터는 전부 default를 쓴다.
     legend2: {
         levelType: 'bridge',
         levelLength: 1000,
@@ -5315,6 +5321,12 @@ const LEGEND_STORY_FLOOR_DEFS = {
         monsters: [
             { type: 'reddragon_rampage', x: -750, y: 0, room: 0 }
         ],
+        charEventMultiplier: {
+            default: { health: 0.7, attackDamage: 0.6 },
+            overrides: {
+                reddragon: { health: 2.5, attackDamage: 2.0 }
+            }
+        },
         winOnClear: true,
         bossFloor: true
     }

@@ -232,6 +232,22 @@ function charFrom(charType, equip, instinctLevel) {
     const withGear = characterWithGear(resolved, (equip && typeof equip === 'object') ? equip : null);
     return characterWithInstinct(withGear, instinctLevel, resolved);
 }
+// 층 이벤트: floorDef.charEventMultiplier가 있으면 그 층에 들어오는 캐릭터의
+// 공격력/체력에 곱한다 (지하 2층: 레드 드레곤 폭주에 눌려 다들 약해지고,
+// 레드 드레곤맛 쿠키만 오히려 강해지는 이벤트). charFrom은 각성 장비가 없을
+// 때 CHARACTERS의 원본 참조를 그대로 돌려줄 수 있어서, 여기서 항상 새
+// 객체를 만들어 원본을 건드리지 않는다.
+function applyFloorCharEvent(character, charType, floorDef) {
+    const ev = floorDef && floorDef.charEventMultiplier;
+    if (!ev) return character;
+    const mult = (ev.overrides && ev.overrides[charType]) || ev.default;
+    if (!mult) return character;
+    return {
+        ...character,
+        health: mult.health != null ? character.health * mult.health : character.health,
+        attackDamage: mult.attackDamage != null ? character.attackDamage * mult.attackDamage : character.attackDamage
+    };
+}
 function gearFrom(charType, equip) {
     if (!CHARACTERS[charType] || !equip || typeof equip !== 'object') return null;
     return awakenGearFor(charType, equip);
@@ -5282,7 +5298,8 @@ io.on('connection', (socket) => {
     socket.on('joinStoryFloor', ({ floor, charType, equip, solo, party, equipParty, instinct, instinctParty }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
-        const character = charFrom(charType, equip, instinct);
+        const resolvedCharType = CHARACTERS[charType] ? charType : 'kicker';
+        const character = applyFloorCharEvent(charFrom(charType, equip, instinct), resolvedCharType, floorDef);
         const bonus = bonusFrom(equip, charType, instinct);
 
         // 멀티면 먼저 기다리는 방을 찾고, 없으면 새로 판다.
@@ -5309,7 +5326,7 @@ io.on('connection', (socket) => {
             const equips = Array.isArray(equipParty) ? equipParty : [];
             const instincts = Array.isArray(instinctParty) ? instinctParty : [];
             const bonuses = chosen.map((id, i) => bonusFrom(equips[i], id, instincts[i]));
-            const characters = chosen.map((id, i) => charFrom(id, equips[i], instincts[i]));
+            const characters = chosen.map((id, i) => applyFloorCharEvent(charFrom(id, equips[i], instincts[i]), id, floorDef));
             const gears = chosen.map((id, i) => gearFrom(id, equips[i]));
             const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
             room.players[socket.id] = {
