@@ -502,6 +502,11 @@ html, body {
 
 .shop-item-buy-btn:hover { background: #3d5975; }
 
+.shop-content.shop-content-gt {
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
 .gt-layout {
     display: flex;
     align-items: flex-start;

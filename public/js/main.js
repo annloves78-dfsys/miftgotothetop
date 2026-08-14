@@ -2439,6 +2439,7 @@ function renderGtStatusHtml() {
 
 function renderGtCharacterPicker() {
     const pkg = gtPendingPackage;
+    shopContent.classList.remove('shop-content-gt');
     shopContent.classList.add('shop-content-list');
     const candidates = Object.entries(SHARED.CHARACTERS).filter(([id]) => !gameData.unlockedCharacters.includes(id));
     shopContent.innerHTML = `
@@ -2455,6 +2456,7 @@ function renderGtCharacterPicker() {
 function renderGtTab() {
     if (gtPendingPackage) { renderGtCharacterPicker(); return; }
     shopContent.classList.remove('shop-content-list');
+    shopContent.classList.add('shop-content-gt');
     const packages = GT_PACKAGES.filter(pkg => pkg.vendor === gtSelectedVendor);
     shopContent.innerHTML = `
         <div class="gt-layout">
@@ -2499,6 +2501,7 @@ function buyShopItem(key) {
 
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
+    if (key !== 'gt') shopContent.classList.remove('shop-content-gt');
     if (key === 'iap') { renderIapTab(); return; }
     if (key === 'gt') { gtPendingPackage = null; renderGtTab(); return; }
     const goods = SHOP_ITEMS.filter(it => it.category === key);
