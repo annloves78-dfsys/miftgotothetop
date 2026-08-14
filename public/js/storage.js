@@ -48,7 +48,10 @@ const defaultData = {
     stocks: {},
     admin: false, // 관리자 전용; see admin_gate.js
     // 관리자 전용의 힘 중 "꺼 둔" 것들. 여기 없는 것은 켜진 것으로 본다.
-    adminOff: {}
+    adminOff: {},
+    // GT 구독 (상점). { packageId, characterId, expiresAt, floorBonus, legendUnlock } | null.
+    // 활성 여부는 저장하지 않고 expiresAt만으로 매번 판정한다 (main.js의 gtBenefits()).
+    gt: null
 };
 
 // `{ ...defaultData }` is a shallow copy, so the nested objects/arrays would be

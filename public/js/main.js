@@ -753,7 +753,20 @@ function currencyText(key) {
 }
 
 function isCharacterUnlocked(id) {
-    return adminPowerOn('characters') || gameData.unlockedCharacters.includes(id);
+    return adminPowerOn('characters') || gameData.unlockedCharacters.includes(id) || gtBenefits().characterId === id;
+}
+
+// GT 구독 (상점 GT 탭). 활성 플래그를 따로 두지 않고 expiresAt만으로 매번
+// 판정한다 -- 만료 처리를 깜빡할 여지가 없도록.
+function gtBenefits() {
+    const gt = gameData.gt;
+    if (!gt || !gt.expiresAt || Date.now() >= gt.expiresAt) return { floorBonus: 0, legendUnlock: false, characterId: null };
+    return { floorBonus: gt.floorBonus || 0, legendUnlock: !!gt.legendUnlock, characterId: gt.characterId || null };
+}
+function gtDaysRemaining() {
+    const gt = gameData.gt;
+    if (!gt || !gt.expiresAt) return 0;
+    return Math.max(0, Math.ceil((gt.expiresAt - Date.now()) / 86400000));
 }
 
 function renderAdminCurrencies() {
@@ -2248,7 +2261,8 @@ const shopContent = document.getElementById('shop-content');
 const shopCatButtons = {
     currency: document.getElementById('shop-cat-currency'),
     iap: document.getElementById('shop-cat-iap'),
-    item: document.getElementById('shop-cat-item')
+    item: document.getElementById('shop-cat-item'),
+    gt: document.getElementById('shop-cat-gt')
 };
 const SHOP_CATEGORIES = {
     currency: '아직 판매 중인 재화가 없습니다.',
@@ -2362,6 +2376,85 @@ const SHOP_ITEMS = [
     { key: 'randomLegendaryGear', cost: 1000, costCurrency: 'diamonds', category: 'currency', grantsTo: 'items' }
 ];
 
+// ---- GT (다이아로 사는 30일 구독. 지정한 미보유 캐릭터 1명을 기간 동안 쓸 수
+// 있게 해주고, 등급별로 스토리 타워를 몇 층 더 미리 열어주거나 레전드 스토리를
+// 통째로 열어준다.) ----
+const GT_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const GT_PACKAGES = [
+    {
+        id: 'gtBasic', name: 'GT 베이직', cost: 800, floorBonus: 5, legendUnlock: false,
+        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 5층 더 미리 진행할 수 있습니다.'
+    },
+    {
+        id: 'gtPremium', name: 'GT 프리미엄', cost: 1500, floorBonus: 10, legendUnlock: true,
+        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 10층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
+    },
+    {
+        id: 'gtUltra', name: 'GT 얼티밋', cost: 2500, floorBonus: 20, legendUnlock: true,
+        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 20층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
+    }
+];
+// null이면 목록 화면, GT_PACKAGES의 한 항목이면 "캐릭터 선택" 화면.
+let gtPendingPackage = null;
+
+function gtPackageBenefitLines(pkg) {
+    const lines = [`캐릭터 1명 30일 사용`, `스토리 타워 +${pkg.floorBonus}층 자동 해금`];
+    if (pkg.legendUnlock) lines.push('레전드 스토리 전체 해금');
+    return lines;
+}
+
+function buyGtPackage(pkg, characterId) {
+    if (currencyAmount('diamonds') < pkg.cost) return { ok: false, msg: '다이아가 부족합니다.' };
+    if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -pkg.cost });
+    gameData.gt = {
+        packageId: pkg.id,
+        characterId,
+        expiresAt: Date.now() + GT_DURATION_MS,
+        floorBonus: pkg.floorBonus,
+        legendUnlock: pkg.legendUnlock
+    };
+    saveGameData(gameData);
+    return { ok: true, msg: `${pkg.name} 구매 완료! ${SHARED.CHARACTERS[characterId].name}을(를) 30일간 사용할 수 있습니다.` };
+}
+
+function renderGtStatusHtml() {
+    const gt = gameData.gt;
+    const days = gtDaysRemaining();
+    if (!gt || days <= 0) return '';
+    const pkg = GT_PACKAGES.find(p => p.id === gt.packageId);
+    const charName = SHARED.CHARACTERS[gt.characterId]?.name || gt.characterId;
+    return `<div class="shop-item-card gt-status-card">
+        <span class="shop-item-icon">⏳</span>
+        <span class="shop-item-name">${pkg ? pkg.name : 'GT'} 이용 중<div class="iap-item-desc">${charName} 사용 가능 · D-${days}</div></span>
+    </div>`;
+}
+
+function renderGtCharacterPicker() {
+    const pkg = gtPendingPackage;
+    shopContent.classList.add('shop-content-list');
+    const candidates = Object.entries(SHARED.CHARACTERS).filter(([id]) => !gameData.unlockedCharacters.includes(id));
+    shopContent.innerHTML = `
+        <p class="iap-bank-hint">${pkg.name} — 30일간 사용할 캐릭터를 선택하세요.</p>
+        <div class="gt-char-grid">${candidates.map(([id, stats]) => `
+            <div class="boss-card gt-char-pick" data-char="${id}">
+                <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
+                <div class="name">${stats.name}</div>
+            </div>`).join('') || '<p class="shop-empty">선택할 수 있는 미보유 캐릭터가 없습니다.</p>'}</div>
+        <button id="gt-picker-cancel" class="secondary-btn">취소</button>
+    `;
+}
+
+function renderGtTab() {
+    if (gtPendingPackage) { renderGtCharacterPicker(); return; }
+    shopContent.classList.add('shop-content-list');
+    shopContent.innerHTML = renderGtStatusHtml() + GT_PACKAGES.map(pkg => `
+        <div class="shop-item-card" data-gt="${pkg.id}">
+            <span class="shop-item-icon">🎟️</span>
+            <span class="shop-item-name">${pkg.name}<div class="iap-item-desc">${pkg.desc}</div></span>
+            <button class="shop-item-buy-btn gt-buy-btn">💎 ${pkg.cost}</button>
+        </div>`).join('') + '<p id="shop-item-msg" class="shop-item-msg hidden"></p>';
+}
+
 function shopGoodName(item) {
     return item.grantsTo === 'items' ? SHARED.ITEMS[item.key].name : (CURRENCY_LABELS[item.key] || item.key);
 }
@@ -2387,6 +2480,7 @@ function buyShopItem(key) {
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
     if (key === 'iap') { renderIapTab(); return; }
+    if (key === 'gt') { gtPendingPackage = null; renderGtTab(); return; }
     const goods = SHOP_ITEMS.filter(it => it.category === key);
     shopContent.classList.toggle('shop-content-list', goods.length > 0);
     if (goods.length) {
@@ -2410,6 +2504,36 @@ shopContent.addEventListener('click', (e) => {
     const iapBtn = e.target.closest('.iap-buy-btn');
     if (iapBtn) {
         submitIapPurchase(iapBtn.closest('.shop-item-card').dataset.key);
+        return;
+    }
+    if (e.target.closest('#gt-picker-cancel')) {
+        gtPendingPackage = null;
+        renderGtTab();
+        return;
+    }
+    const gtCharPick = e.target.closest('.gt-char-pick');
+    if (gtCharPick) {
+        const res = buyGtPackage(gtPendingPackage, gtCharPick.dataset.char);
+        gtPendingPackage = null;
+        renderGtTab();
+        const msgEl = document.getElementById('shop-item-msg');
+        if (msgEl) {
+            msgEl.textContent = res.msg;
+            msgEl.classList.remove('hidden');
+            msgEl.classList.toggle('good', res.ok);
+        }
+        return;
+    }
+    const gtBuyBtn = e.target.closest('.gt-buy-btn');
+    if (gtBuyBtn) {
+        const pkg = GT_PACKAGES.find(p => p.id === gtBuyBtn.closest('.shop-item-card').dataset.gt);
+        if (currencyAmount('diamonds') < pkg.cost) {
+            const msgEl = document.getElementById('shop-item-msg');
+            if (msgEl) { msgEl.textContent = '다이아가 부족합니다.'; msgEl.classList.remove('hidden'); msgEl.classList.remove('good'); }
+            return;
+        }
+        gtPendingPackage = pkg;
+        renderGtTab();
         return;
     }
     const btn = e.target.closest('.shop-item-buy-btn');
@@ -3102,6 +3226,7 @@ function resumeLegendFloor() {
 function isLegendFloorUnlocked(n) {
     if (adminPowerOn('stages')) return true;
     if (n === 1) return true;
+    if (gtBenefits().legendUnlock) return true;
     return gameData.clearedLegendFloors.includes(SHARED.legendFloorKey(n - 1));
 }
 function renderLegendFloorChips() {
@@ -4151,7 +4276,15 @@ towerPartyEl.addEventListener('click', (e) => {
 function isFloorUnlocked(floor) {
     if (adminPowerOn('stages')) return true; // 관리자 전용: every difficulty is open
     if (floor === 1) return true;
-    return gameData.clearedStoryFloors.includes(floor - 1);
+    if (gameData.clearedStoryFloors.includes(floor - 1)) return true;
+    const bonus = gtBenefits().floorBonus;
+    return bonus > 0 && floor <= baseUnlockedMaxFloor() + bonus;
+}
+// GT 보너스가 여는 스토리 층 계산용. 실제 진행도(clearedStoryFloors) 위에
+// "+N층"을 얹는 방식이라, GT가 만료돼도 이미 깬 진행도 자체는 그대로 남는다.
+function baseUnlockedMaxFloor() {
+    const cleared = gameData.clearedStoryFloors.filter(f => typeof f === 'number');
+    return cleared.length ? Math.max(...cleared) + 1 : 1;
 }
 
 function renderTower() {
