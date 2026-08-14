@@ -502,6 +502,51 @@ html, body {
 
 .shop-item-buy-btn:hover { background: #3d5975; }
 
+.gt-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    width: 100%;
+}
+
+.gt-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.gt-vendor-rail {
+    flex-shrink: 0;
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.gt-vendor-btn {
+    padding: 14px 6px;
+    border-radius: 10px;
+    border: 1px solid #34495e;
+    background: #22303f;
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.gt-vendor-btn:hover { background: #2c3e50; }
+
+.gt-vendor-btn.selected {
+    border-color: #f1c40f;
+    color: #f1c40f;
+    background: #34495e;
+}
+
 .gt-char-grid {
     display: flex;
     flex-wrap: wrap;

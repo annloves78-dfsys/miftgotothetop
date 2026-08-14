@@ -2380,22 +2380,29 @@ const SHOP_ITEMS = [
 // 있게 해주고, 등급별로 스토리 타워를 몇 층 더 미리 열어주거나 레전드 스토리를
 // 통째로 열어준다.) ----
 const GT_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+// GT는 판매처(벤더)별로 상품이 따로 있다. 지금은 mh 하나뿐이지만, 나중에
+// 다른 판매처가 추가되면 GT_VENDORS에 항목을 더하고 각 상품에 그 vendor id를
+// 붙이면 된다.
+const GT_VENDORS = [
+    { id: 'mh', name: 'MH' }
+];
 const GT_PACKAGES = [
     {
-        id: 'gtBasic', name: 'GT 베이직', cost: 800, floorBonus: 5, legendUnlock: false,
+        id: 'gtBasic', vendor: 'mh', name: 'GT 베이직', cost: 800, floorBonus: 5, legendUnlock: false,
         desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 5층 더 미리 진행할 수 있습니다.'
     },
     {
-        id: 'gtPremium', name: 'GT 프리미엄', cost: 1500, floorBonus: 10, legendUnlock: true,
+        id: 'gtPremium', vendor: 'mh', name: 'GT 프리미엄', cost: 1500, floorBonus: 10, legendUnlock: true,
         desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 10층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
     },
     {
-        id: 'gtUltra', name: 'GT 얼티밋', cost: 2500, floorBonus: 20, legendUnlock: true,
+        id: 'gtUltra', vendor: 'mh', name: 'GT 얼티밋', cost: 2500, floorBonus: 20, legendUnlock: true,
         desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 20층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
     }
 ];
 // null이면 목록 화면, GT_PACKAGES의 한 항목이면 "캐릭터 선택" 화면.
 let gtPendingPackage = null;
+let gtSelectedVendor = GT_VENDORS[0].id;
 
 function gtPackageBenefitLines(pkg) {
     const lines = [`캐릭터 1명 30일 사용`, `스토리 타워 +${pkg.floorBonus}층 자동 해금`];
@@ -2446,13 +2453,25 @@ function renderGtCharacterPicker() {
 
 function renderGtTab() {
     if (gtPendingPackage) { renderGtCharacterPicker(); return; }
-    shopContent.classList.add('shop-content-list');
-    shopContent.innerHTML = renderGtStatusHtml() + GT_PACKAGES.map(pkg => `
-        <div class="shop-item-card" data-gt="${pkg.id}">
-            <span class="shop-item-icon">🎟️</span>
-            <span class="shop-item-name">${pkg.name}<div class="iap-item-desc">${pkg.desc}</div></span>
-            <button class="shop-item-buy-btn gt-buy-btn">💎 ${pkg.cost}</button>
-        </div>`).join('') + '<p id="shop-item-msg" class="shop-item-msg hidden"></p>';
+    shopContent.classList.remove('shop-content-list');
+    const packages = GT_PACKAGES.filter(pkg => pkg.vendor === gtSelectedVendor);
+    shopContent.innerHTML = `
+        <div class="gt-layout">
+            <div class="gt-main">
+                ${renderGtStatusHtml()}
+                ${packages.map(pkg => `
+                    <div class="shop-item-card" data-gt="${pkg.id}">
+                        <span class="shop-item-icon">🎟️</span>
+                        <span class="shop-item-name">${pkg.name}<div class="iap-item-desc">${pkg.desc}</div></span>
+                        <button class="shop-item-buy-btn gt-buy-btn">💎 ${pkg.cost}</button>
+                    </div>`).join('')}
+                <p id="shop-item-msg" class="shop-item-msg hidden"></p>
+            </div>
+            <div class="gt-vendor-rail">${GT_VENDORS.map(v => `
+                <button class="gt-vendor-btn${v.id === gtSelectedVendor ? ' selected' : ''}" data-vendor="${v.id}">${v.name}</button>`).join('')}
+            </div>
+        </div>
+    `;
 }
 
 function shopGoodName(item) {
@@ -2508,6 +2527,12 @@ shopContent.addEventListener('click', (e) => {
     }
     if (e.target.closest('#gt-picker-cancel')) {
         gtPendingPackage = null;
+        renderGtTab();
+        return;
+    }
+    const vendorBtn = e.target.closest('.gt-vendor-btn');
+    if (vendorBtn) {
+        gtSelectedVendor = vendorBtn.dataset.vendor;
         renderGtTab();
         return;
     }
