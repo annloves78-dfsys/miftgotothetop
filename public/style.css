@@ -507,6 +507,14 @@ html, body {
     justify-content: flex-start;
 }
 
+/* GT 탭은 상품 수가 적어서 다른 탭과 같은 고정 74vh 박스를 쓰면 아래로 빈
+   공간이 크게 남는다 -- 내용물 높이만큼만 박스가 차지하도록 오버라이드. */
+.shop-layout.shop-layout-gt {
+    height: auto;
+    max-height: 74vh;
+    align-items: flex-start;
+}
+
 .gt-layout {
     display: flex;
     align-items: flex-start;

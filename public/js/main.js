@@ -2258,6 +2258,7 @@ charDetailSelectBtn.addEventListener('click', () => {
 const shopBtn = document.getElementById('shop-btn');
 const backFromShopBtn = document.getElementById('back-from-shop-btn');
 const shopContent = document.getElementById('shop-content');
+const shopLayoutEl = shopContent.closest('.shop-layout');
 const shopCatButtons = {
     currency: document.getElementById('shop-cat-currency'),
     iap: document.getElementById('shop-cat-iap'),
@@ -2441,6 +2442,7 @@ function renderGtCharacterPicker() {
     const pkg = gtPendingPackage;
     shopContent.classList.remove('shop-content-gt');
     shopContent.classList.add('shop-content-list');
+    shopLayoutEl.classList.add('shop-layout-gt');
     const candidates = Object.entries(SHARED.CHARACTERS).filter(([id]) => !gameData.unlockedCharacters.includes(id));
     shopContent.innerHTML = `
         <p class="iap-bank-hint">${pkg.name} — 30일간 사용할 캐릭터를 선택하세요.</p>
@@ -2457,6 +2459,7 @@ function renderGtTab() {
     if (gtPendingPackage) { renderGtCharacterPicker(); return; }
     shopContent.classList.remove('shop-content-list');
     shopContent.classList.add('shop-content-gt');
+    shopLayoutEl.classList.add('shop-layout-gt');
     const packages = GT_PACKAGES.filter(pkg => pkg.vendor === gtSelectedVendor);
     shopContent.innerHTML = `
         <div class="gt-layout">
@@ -2501,7 +2504,7 @@ function buyShopItem(key) {
 
 function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
-    if (key !== 'gt') shopContent.classList.remove('shop-content-gt');
+    if (key !== 'gt') { shopContent.classList.remove('shop-content-gt'); shopLayoutEl.classList.remove('shop-layout-gt'); }
     if (key === 'iap') { renderIapTab(); return; }
     if (key === 'gt') { gtPendingPackage = null; renderGtTab(); return; }
     const goods = SHOP_ITEMS.filter(it => it.category === key);
