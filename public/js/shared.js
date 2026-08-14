@@ -7105,7 +7105,8 @@ const STOCK_EVENTS = [
     { element: '빛', type: 'new_character', pct: 0.10, note: '쿠키맛 쿠키 추가' },
     { element: '빛', type: 'new_character', pct: 0.05, note: '버블티맛 쿠키 추가' },
     { element: '바람', type: 'new_character', pct: 0.10, note: '바람궁수맛 쿠키 추가' },
-    { element: '어둠', type: 'new_character', pct: 0.10, note: '암흑바다맛 쿠키 추가' }
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '암흑바다맛 쿠키 추가' },
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '매직블록맛 쿠키 추가' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

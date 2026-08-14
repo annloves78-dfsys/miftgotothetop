@@ -917,6 +917,12 @@ function passiveText(stats) {
     if (stats.attackShieldOnUse && stats.attackShieldChance === undefined) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체에게 보호막을 ${stats.attackShieldOnUse}만큼 더해 줍니다(덮어쓰지 않고 쌓입니다).`);
     }
+    if (stats.focusPassive) {
+        const fp = stats.focusPassive;
+        parts.push(`공격도 받지도 않은 채 ${sec(fp.idleMs)}초가 지나면 집중 상태가 되어 이동 속도가 ${fp.speedBonus} 빨라집니다.`
+            + ` 공격을 받으면 즉시 풀립니다. 집중 상태에서 근접 공격을 받으면 ${fp.dodgeDistance}px 뒤로 물러나 피합니다`
+            + ` (재사용 대기시간 ${sec(fp.dodgeCooldownMs)}초).`);
+    }
     if (stats.lowHpAt) {
         parts.push(`체력이 ${stats.lowHpAt} 이하로 떨어지면 몸을 사려,`
             + ` 기본 공격 피해가 ${stats.attackDamage} → ${stats.lowHpAttackDamage}로 줄어드는 대신`
@@ -976,9 +982,13 @@ function describeAbility(stats, kind) {
         }
         if (stats.attackType === 'throw_projectile') {
             const noun = stats.attackProjectileNoun
-                || (stats.element === '불' ? '불꽃' : stats.element === '빛' ? '버블티 펄' : '물방울');
-            return `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
+                || (stats.element === '불' ? '불꽃' : stats.element === '빛' ? '버블티 펄' : stats.element === '어둠' ? '어둠의 구슬' : '물방울');
+            let text = `${noun}(${stats.attackProjectileRadius * 2}px)을 전방으로 던져 최대 ${stats.attackRange}px까지 날리고, 맞은 적에게 ${stats.attackDamage}의 피해를 줍니다.`
                 + ` 실제로 날아가기 때문에 빗나갈 수도 있습니다. (재사용 대기시간 ${sec(stats.attackCooldown)}초)`;
+            if (stats.attackSlowMult) {
+                text += ` 맞은 적은 ${sec(stats.attackSlowDurationMs)}초 동안 이동 속도가 ${Math.round(stats.attackSlowMult * 100)}%로 느려집니다.`;
+            }
+            return text;
         }
         if (stats.attackType === 'homing_burst') {
             return `빛의 구슬 ${stats.attackProjectileCount}개를 부채꼴로 ${stats.attackProjectileStaggerMs / 1000}초 간격으로 하나씩 쏩니다. 구슬은 저마다 가장 가까운 적을 스스로 쫓아가며, 맞으면 1개당 ${stats.attackDamage}의 피해를 줍니다.`
@@ -1061,6 +1071,9 @@ function describeAbility(stats, kind) {
                 return `조준 없이 즉시 바다로 숨어듭니다. ${sec(stats.skillDurationMs)}초 동안 아무 공격도 받지 않고 자신도 공격할 수 없으며, 그동안 체력을 ${stats.skillHealAmount}만큼 채웁니다.${cd}`;
             case 'water_drag':
                 return `직접 지정한 위치를 물속으로 끌고 들어갑니다. 반경 ${stats.skillRadius}px 안에 적이 있으면 ${sec(stats.skillStunMs)}초 동안 기절시킵니다. 피해는 없습니다.${cd}`;
+            case 'self_mark_burst':
+                return `조준 없이 즉시 자기 중심 반경 ${stats.skillRadius}px에 터뜨립니다. 범위 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다`
+                    + ` (표식이 있는 동안 같은 속성 공격은 피해가 ${stats.skillMarkMultiplier}배). 피해는 없습니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -1080,8 +1093,20 @@ function describeAbility(stats, kind) {
                 return `원하는 지점을 지정해 반경 ${stats.ultimateRadius}px 내의 적에게 ${stats.ultimateDamage}의 피해를 줍니다.${cd}`;
             case 'attack_heal_boost':
                 return `${sec(stats.ultimateDurationMs)}초 동안 기본 공격이 적중할 때마다 팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복시킵니다.${cd}`;
-            case 'awakening':
-                return `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateSpeedMultiplier}배가 되고, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다. 체력을 ${stats.ultimateSelfHeal}만큼 즉시 회복합니다.${cd}`;
+            case 'awakening': {
+                // 매직블록맛처럼 배수 대신 그냥 더하는 캐릭터도 있다(ultimateSpeedBonus).
+                const speedText = stats.ultimateSpeedBonus != null
+                    ? `이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고`
+                    : `이동 속도가 ${stats.ultimateSpeedMultiplier}배가 되고`;
+                let text = `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 ${speedText}, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다.`;
+                if (stats.ultimateAttackMarkUses) {
+                    text += ` 그동안 기본 공격이 적중할 때마다 ${stats.element} 속성 표식을 ${stats.ultimateAttackMarkUses}번 남깁니다.`;
+                }
+                if (stats.ultimateSelfHeal) {
+                    text += ` 체력을 ${stats.ultimateSelfHeal}만큼 즉시 회복합니다.`;
+                }
+                return text + cd;
+            }
             case 'magma_zone':
                 return `지정한 위치에 마그마를 떨어뜨려 반경 ${stats.ultimateRadius}px에 화염 표식을 남깁니다. ${sec(stats.ultimateZoneDurationMs)}초 동안 ${sec(stats.ultimateZoneTickMs)}초마다 ${stats.ultimateZoneDamagePerTick}의 피해를 줍니다.${cd}`;
             case 'dumpling_zone':
@@ -1351,7 +1376,8 @@ const SKILL_ICONS = {
     team_hot_shield: '🛡️',
     nature_awaken: '🍃',
     water_drag: '🫧',
-    dash_guard: '🏃'
+    dash_guard: '🏃',
+    self_mark_burst: '🌑'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
