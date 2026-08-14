@@ -2377,10 +2377,8 @@ const SHOP_ITEMS = [
     { key: 'randomLegendaryGear', cost: 1000, costCurrency: 'diamonds', category: 'currency', grantsTo: 'items' }
 ];
 
-// ---- GT (다이아로 사는 30일 구독. 지정한 미보유 캐릭터 1명을 기간 동안 쓸 수
-// 있게 해주고, 등급별로 스토리 타워를 몇 층 더 미리 열어주거나 레전드 스토리를
-// 통째로 열어준다.) ----
-const GT_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+// ---- GT (다이아로 사는 기간제 구독. 지정한 미보유 캐릭터 1명을 기간 동안 쓸
+// 수 있게 해준다. 판매처(벤더)별로 상품/가격 정책이 다르다.) ----
 // GT는 판매처(벤더)별로 상품이 따로 있다. 지금은 mh 하나뿐이지만, 나중에
 // 다른 판매처가 추가되면 GT_VENDORS에 항목을 더하고 각 상품에 그 vendor id를
 // 붙이면 된다.
@@ -2388,29 +2386,21 @@ const GT_VENDORS = [
     { id: 'mh', name: 'MH' },
     { id: 'sl', name: 'SL' } // 아직 판매하는 상품 없음 -- 나중에 채워질 자리
 ];
+// mh는 저가 정책 -- 캐릭터는 비스트 등급까지만(게스트 등급 제외) 고를 수 있고,
+// 기간 차이로만 상품을 가른다(베이직 1주일 / 울트라 1개월).
 const GT_PACKAGES = [
     {
-        id: 'gtBasic', vendor: 'mh', name: 'GT 베이직', cost: 800, floorBonus: 5, legendUnlock: false,
-        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 5층 더 미리 진행할 수 있습니다.'
+        id: 'gtBasic', vendor: 'mh', name: 'GT 베이직', cost: 500, durationDays: 7, maxGrade: '비스트',
+        desc: '비스트 등급 이하 원하는 캐릭터 1명을 1주일간 사용할 수 있습니다.'
     },
     {
-        id: 'gtPremium', vendor: 'mh', name: 'GT 프리미엄', cost: 1500, floorBonus: 10, legendUnlock: true,
-        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 10층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
-    },
-    {
-        id: 'gtUltra', vendor: 'mh', name: 'GT 얼티밋', cost: 2500, floorBonus: 20, legendUnlock: true,
-        desc: '30일간 원하는 캐릭터 1명을 사용할 수 있고, 스토리 타워를 20층 더 미리 진행하며 레전드 스토리(지하)가 전부 열립니다.'
+        id: 'gtUltra', vendor: 'mh', name: 'GT 울트라', cost: 1300, durationDays: 30, maxGrade: '비스트',
+        desc: '비스트 등급 이하 원하는 캐릭터 1명을 한 달간 사용할 수 있습니다.'
     }
 ];
 // null이면 목록 화면, GT_PACKAGES의 한 항목이면 "캐릭터 선택" 화면.
 let gtPendingPackage = null;
 let gtSelectedVendor = GT_VENDORS[0].id;
-
-function gtPackageBenefitLines(pkg) {
-    const lines = [`캐릭터 1명 30일 사용`, `스토리 타워 +${pkg.floorBonus}층 자동 해금`];
-    if (pkg.legendUnlock) lines.push('레전드 스토리 전체 해금');
-    return lines;
-}
 
 function buyGtPackage(pkg, characterId) {
     if (currencyAmount('diamonds') < pkg.cost) return { ok: false, msg: '다이아가 부족합니다.' };
@@ -2418,12 +2408,10 @@ function buyGtPackage(pkg, characterId) {
     gameData.gt = {
         packageId: pkg.id,
         characterId,
-        expiresAt: Date.now() + GT_DURATION_MS,
-        floorBonus: pkg.floorBonus,
-        legendUnlock: pkg.legendUnlock
+        expiresAt: Date.now() + pkg.durationDays * 24 * 60 * 60 * 1000
     };
     saveGameData(gameData);
-    return { ok: true, msg: `${pkg.name} 구매 완료! ${SHARED.CHARACTERS[characterId].name}을(를) 30일간 사용할 수 있습니다.` };
+    return { ok: true, msg: `${pkg.name} 구매 완료! ${SHARED.CHARACTERS[characterId].name}을(를) ${pkg.durationDays}일간 사용할 수 있습니다.` };
 }
 
 function renderGtStatusHtml() {
@@ -2443,9 +2431,12 @@ function renderGtCharacterPicker() {
     shopContent.classList.remove('shop-content-gt');
     shopContent.classList.add('shop-content-list');
     shopLayoutEl.classList.add('shop-layout-gt');
-    const candidates = Object.entries(SHARED.CHARACTERS).filter(([id]) => !gameData.unlockedCharacters.includes(id));
+    const candidates = Object.entries(SHARED.CHARACTERS).filter(([id, stats]) =>
+        !gameData.unlockedCharacters.includes(id) &&
+        (!pkg.maxGrade || SHARED.GRADE_ORDER.indexOf(stats.grade) <= SHARED.GRADE_ORDER.indexOf(pkg.maxGrade)));
+    const gradeHint = pkg.maxGrade ? ` (${pkg.maxGrade} 등급까지)` : '';
     shopContent.innerHTML = `
-        <p class="iap-bank-hint">${pkg.name} — 30일간 사용할 캐릭터를 선택하세요.</p>
+        <p class="iap-bank-hint">${pkg.name} — ${pkg.durationDays}일간 사용할 캐릭터를 선택하세요${gradeHint}.</p>
         <div class="gt-char-grid">${candidates.map(([id, stats]) => `
             <div class="boss-card gt-char-pick" data-char="${id}">
                 <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
