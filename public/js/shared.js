@@ -1062,6 +1062,61 @@ const CHARACTERS = {
         ultimateShieldAmount: 150,
         ultimateHealAmount: 80,
         ultimateCooldownMs: 30000
+    },
+    // 에이션트 등급 다크 스트라이커. 간지나는데 착한 캐릭터라는 컨셉(유누,
+    // 2026-08-11) -- 원거리로 아주 빠르게 연사하고, 3초만 가만있으면 예민하게
+    // 집중해서 적 공격을 피해내는 쿠키.
+    magicblock: {
+        name: '매직블록맛 쿠키',
+        shortName: '매직블록',
+        color: '#8e44ad',
+        colorLeft: '#e67e22', // 주황
+        colorRight: '#8e44ad', // 보라
+        weaponShape: 'orb',
+        weaponColor: '#8e44ad',
+        grade: '에이션트',
+        element: '어둠',
+        role: '스트라이커',
+        health: 150,
+        speed: 2,
+        // 원거리, 아주 빠른 연사(공속 200ms). 명중하면 0.3초간 대상 이속을
+        // 60%로 늦춘다(attackSlowMult/attackSlowDurationMs -- 몬스터 엔진의
+        // monsterSpeed가 읽는다, server.js landStoryHitOnMonster 참고).
+        attackType: 'throw_projectile',
+        attackRange: 500,
+        attackProjectileSpeed: 800,
+        attackProjectileRadius: 8,
+        attackDamage: 5,
+        attackCooldown: 200,
+        attackSlowMult: 0.6,
+        attackSlowDurationMs: 300,
+        // 패시브 "집중": 3초간 공격도 안 받지도 않으면 집중모드(이속+0.3).
+        // 맞으면 즉시 풀린다(lastHitAt이 idleMs 기준을 다시 늘린다). 집중모드
+        // 중에는 근접 몹의 공격이 명중하는 순간 20px 자동으로 물러나 피한다
+        // (5초 쿨타임, tickMonsterSet의 tryFocusDodge만 해당 -- 보스 패턴/
+        // 레이저처럼 다른 경로로 들어오는 공격은 대상이 아니다).
+        focusPassive: { idleMs: 3000, speedBonus: 0.3, dodgeDistance: 20, dodgeCooldownMs: 5000 },
+        // 스킬: 지점을 찍지 않고 자기 중심 반경 80px에 바로 터뜨려 자기
+        // 속성(어둠) 표식 20개(1.3배)를 남긴다. keepsOwnMarks가 없어서
+        // 본인 공격도 그 표식을 그대로 먹는다.
+        skillType: 'self_mark_burst',
+        skillRadius: 80,
+        skillMarkUses: 20,
+        skillMarkMultiplier: 1.3,
+        attackMarkMultiplier: 1.3,
+        skillCooldown: 10000,
+        // 궁극기: 11초간 각성(몸이 흰색으로, ultimateColorOverride) -- 공격할
+        // 때마다 표식 5개(ultimateAttackMarkUses, attackMarkChargesOf가 각성
+        // 중에만 확인), 공격력 7로 대체, 받는 피해 50%, 이속 그냥 +0.5(배수가
+        // 아니라 덧셈 -- moveSpeedFor의 ultimateSpeedBonus 분기).
+        ultimateType: 'awakening',
+        ultimateDurationMs: 11000,
+        ultimateCooldownMs: 30000,
+        ultimateSpeedBonus: 0.5,
+        ultimateAttackDamage: 7,
+        ultimateDamageMultiplier: 0.5,
+        ultimateAttackMarkUses: 5,
+        ultimateColorOverride: { colorLeft: '#ffffff', colorRight: '#ffffff' }
     }
 };
 

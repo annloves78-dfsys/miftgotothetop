@@ -757,6 +757,7 @@ function applyDamageToPlayer(roomId, playerId, dmg, extra) {
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
+    p.lastHitAt = Date.now(); // 매직블록맛 패시브(focusModeActive)가 읽는다
     const character = charOf(p);
     // Every caller of this is boss damage, so the boss's own lightning_strike
     // damage debuff applies here rather than at each pattern's call site.
@@ -1278,7 +1279,8 @@ function storyMonsterCtx(roomId, room) {
         ev: {
             telegraph: 'monsterTelegraph', attack: 'monsterAttack',
             defeated: 'monsterDefeated', exploded: 'monsterExploded',
-            projectileFired: 'storyProjectileFired', projectileGone: 'storyProjectileGone'
+            projectileFired: 'storyProjectileFired', projectileGone: 'storyProjectileGone',
+            dodge: 'storyPlayerFocusDodge'
         }
     };
 }
@@ -1582,7 +1584,10 @@ function monsterSpeed(m, def) {
         && def.monsterUltimate.speed != null) {
         return def.monsterUltimate.speed;
     }
-    return ((def.speed || 0) + ((m && m.growSpeed) || 0)) * enrageMult(m, def, 'speedMult');
+    const base = ((def.speed || 0) + ((m && m.growSpeed) || 0)) * enrageMult(m, def, 'speedMult');
+    // 매직블록맛 기본공격에 맞아 슬로우 걸린 동안(landStoryHitOnMonster 참고).
+    if (m && m.slowUntil && Date.now() < m.slowUntil) return base * m.slowMultiplier;
+    return base;
 }
 // 한 대 때릴 때마다 공격력·속도가 오르고 스스로 조금 회복한다.
 function growMonsterOnAttack(roomId, mid, m, def) {
@@ -1881,6 +1886,12 @@ function landStoryHitOnMonster(roomId, room, mid, m, attackerId, character, base
             lastTickAt: now,
             endAt: now + character.attackBurnIntervalMs * character.attackBurnTicks + 200
         });
+    }
+
+    // 매직블록맛 기본공격: 맞은 몹을 짧게 슬로우(monsterSpeed가 읽는다).
+    if (character.attackSlowMult) {
+        m.slowUntil = now + character.attackSlowDurationMs;
+        m.slowMultiplier = character.attackSlowMult;
     }
 
     // Shove the target back (the raid boss doesn't have this -- it's fixed in
@@ -2465,6 +2476,7 @@ function applyDamageToStoryPlayer(roomId, playerId, dmg, sourceElementMark) {
     if (!room) return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
+    p.lastHitAt = Date.now(); // 매직블록맛 패시브(focusModeActive)가 읽는다
     const character = charOf(p);
     dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), sourceElementMark));
     if (p.shieldHp > 0) {
@@ -2612,7 +2624,12 @@ function ultimateMarkOpts(character) {
 // awakenedForm이 attackMarkUses를 0으로 덮어써서 더 이상 남기지 않는다.
 // 본능해제 5강(청사과맛): instinctAttackMarkChance가 있으면 매번이 아니라 그
 // 확률만큼만 표식을 남긴다 (없는 캐릭터는 지금까지처럼 항상 남긴다).
+// 매직블록맛 궁극기: 각성 중엔 공격할 때마다 자기 속성 표식을 남긴다
+// (평소엔 안 남김). ultimateAttackMarkUses가 있는 캐릭터에서만 확인한다.
 function attackMarkChargesOf(character, p) {
+    if (character.ultimateAttackMarkUses && p && p.awakenUntil && Date.now() < p.awakenUntil) {
+        return character.ultimateAttackMarkUses;
+    }
     const charges = stat(character, p, 'attackMarkUses') || 0;
     if (!charges) return 0;
     if (character.instinctAttackMarkChance != null && Math.random() >= character.instinctAttackMarkChance) return 0;
@@ -2936,6 +2953,36 @@ function tickClownBoss(ctx, m, mid, now) {
     }
 }
 
+// 매직블록맛 패시브: 공격도 안 받지도 않고 idleMs(3초)가 지나면 집중모드다.
+// 맞은 시각(lastHitAt)도 기준에 들어가서 -- 맞으면 그 순간부터 다시 idleMs를
+// 기다려야 한다("맞으면 집중모드가 풀린다"와 같은 효과).
+function focusModeActive(character, p, now) {
+    const fp = character && character.focusPassive;
+    if (!fp || !p) return false;
+    const since = Math.max(p.lastAttackTime || 0, p.lastHitAt || 0);
+    return now - since >= fp.idleMs;
+}
+
+// 집중모드 중 근접 몹의 공격이 막 명중하려는 순간(텔레그래프가 끝난 그
+// 자리, tickMonsterSet 안)에만 확인한다 -- 자폭/화살/레이저/보스 패턴처럼
+// 다른 경로로 들어오는 공격은 대상이 아니다. 성공하면 대상을 몹 반대
+// 방향으로 밀어내고 이번 공격 자체를 무효로 만든다(피해 호출을 안 함).
+function tryFocusDodge(ctx, target, character, m, now) {
+    const fp = character && character.focusPassive;
+    if (!fp || !fp.dodgeDistance) return false;
+    if (!focusModeActive(character, target, now)) return false;
+    if (target.focusDodgeReadyAt && now < target.focusDodgeReadyAt) return false;
+    target.focusDodgeReadyAt = now + fp.dodgeCooldownMs;
+    const dx = target.x - m.x, dy = target.y - m.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    target.x += (dx / dist) * fp.dodgeDistance;
+    target.y += (dy / dist) * fp.dodgeDistance;
+    if (ctx.clamp) ctx.clamp(target);
+    const pid = Object.keys(ctx.room.players).find(id => ctx.room.players[id] === target);
+    if (pid) io.to(ctx.roomId).emit(ctx.ev.dodge, { id: pid, x: target.x, y: target.y });
+    return true;
+}
+
 // One tick of every monster in a room: kiting, telegraphs, beams and arrows.
 // Shared by story floors and the guest raid's summoned adds -- see storyMonsterCtx.
 function tickMonsterSet(ctx, alivePlayers, now) {
@@ -3046,6 +3093,9 @@ function tickMonsterSet(ctx, alivePlayers, now) {
                     io.to(roomId).emit(ctx.ev.attack, { id: mid });
                     spawnMonsterProjectile(ctx, mid, m, def, nearest.x, nearest.y);
                 } else if (d <= def.attackRange) {
+                    if (tryFocusDodge(ctx, nearest, charOf(nearest), m, now)) {
+                        continue; // 매직블록맛 집중모드: 회피 성공, 이번 공격은 불발
+                    }
                     io.to(roomId).emit(ctx.ev.attack, { id: mid });
                     ctx.damageTarget(nearest, monsterAttackDamage(m, def) * outgoingDamageMultiplier(m, now), m.elementMark);
                     if (!rooms[roomId]) return;
@@ -3579,6 +3629,7 @@ function applyDamageToGuestPlayer(roomId, playerId, dmg) {
     if (!room || room.state !== 'fighting') return;
     const p = room.players[playerId];
     if (!p || !p.alive) return;
+    p.lastHitAt = Date.now(); // 매직블록맛 패시브(focusModeActive)가 읽는다
     const character = charOf(p);
     dmg = Math.round(dmg * damageReductionMultiplier(character, p, Date.now(), null));
     if (p.shieldHp > 0) {
@@ -3922,7 +3973,8 @@ function guestMonsterCtx(roomId, room) {
         ev: {
             telegraph: 'guestMonsterTelegraph', attack: 'guestMonsterAttack',
             defeated: 'guestMonsterDefeated', exploded: 'guestMonsterExploded',
-            projectileFired: 'guestProjectileFired', projectileGone: 'guestProjectileGone'
+            projectileFired: 'guestProjectileFired', projectileGone: 'guestProjectileGone',
+            dodge: 'guestPlayerFocusDodge'
         }
     };
 }
@@ -5767,6 +5819,15 @@ io.on('connection', (socket) => {
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp }));
         }
+        // 매직블록맛 스킬: 지점을 찍지 않고 자기 중심으로 바로 터뜨린다.
+        else if (character.skillType === 'self_mark_burst') {
+            io.to(roomId).emit('storySkillMark', {
+                id: socket.id, x: p.x, y: p.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markMonstersInCircle(roomId, room, p.x, p.y,
+                character.skillRadius, character.element, skillMarkOpts(character));
+        }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
         // 몬스터를 그 자리에서 기절시킨다. 피해도 표식도 없다.
         else if (character.skillType === 'water_drag') {
@@ -6308,6 +6369,15 @@ io.on('connection', (socket) => {
             }
             healSelfBySkill(character, p, () =>
                 io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp }));
+        }
+        // 매직블록맛 스킬: 지점을 찍지 않고 자기 중심으로 바로 터뜨린다.
+        else if (character.skillType === 'self_mark_burst') {
+            io.to(roomId).emit('skillMark', {
+                id: socket.id, x: p.x, y: p.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markBossInCircle(roomId, room, p.x, p.y, character.skillRadius,
+                character.element, skillMarkOpts(character), 'bossMarked');
         }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안에
         // 보스가 있으면 그 자리에서 기절시킨다. 피해도 표식도 없다.
@@ -7260,6 +7330,17 @@ io.on('connection', (socket) => {
                 p.partyHp[p.active] = p.hp;
                 io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
             });
+        }
+        // 매직블록맛 스킬: 지점을 찍지 않고 자기 중심으로 바로 터뜨린다.
+        else if (character.skillType === 'self_mark_burst') {
+            io.to(roomId).emit('guestSkillMark', {
+                id: socket.id, x: p.x, y: p.y,
+                radius: character.skillRadius, element: character.element
+            });
+            markMonstersInCircle(roomId, room, p.x, p.y,
+                character.skillRadius, character.element, skillMarkOpts(character));
+            markBossInCircle(roomId, room, p.x, p.y, character.skillRadius,
+                character.element, skillMarkOpts(character), 'guestBossMarked');
         }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
         // 부하를 그 자리에서 기절시킨다. 게스트 레이드 보스는 raid의 보스와

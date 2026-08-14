@@ -629,6 +629,10 @@ socket.on('guestDropGone', ({ id, hit, x, y }) => {
 socket.on('guestPlayerTeleported', ({ id, x, y }) => {
     if (guestLocal && id === socket.id) { guestLocal.x = x; guestLocal.y = y; }
 });
+// 매직블록맛 패시브: 집중모드 중 근접 공격을 자동으로 피해서 뒤로 밀린 자리.
+socket.on('guestPlayerFocusDodge', ({ id, x, y }) => {
+    if (guestLocal && id === socket.id) { guestLocal.x = x; guestLocal.y = y; }
+});
 socket.on('guestEarthquake', () => { guestQuakeUntil = performance.now() + QUAKE_DURATION_MS; });
 
 // 바다펄맛 밀물 (게스트 레이드).
@@ -896,6 +900,16 @@ function updateGuestCooldownDisplay(now) {
     if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
         guestMySkillCdEl.textContent = `${tideStageNoOf(guestLocal)}단계`;
     }
+    // 매직블록맛 패시브: 스킬 쿨타임 칸에 집중모드 상태를 보여준다.
+    if (stats.focusPassive) {
+        if (focusModeActive(stats, now, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime)) {
+            guestMySkillCdEl.textContent = '사용중';
+        } else {
+            const since = Math.max(guestLocal.lastAttackClientTime || 0, guestLocal.lastHitClientTime || 0);
+            const focusRemain = Math.max(0, stats.focusPassive.idleMs - (now - since)) / 1000;
+            guestMySkillCdEl.textContent = `${focusRemain.toFixed(1)}s`;
+        }
+    }
     if (stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
         guestMyUltimateCdEl.textContent = `${natureAwakenStageNoOf(guestLocal)}단계`;
     }
@@ -907,7 +921,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
@@ -1273,6 +1287,9 @@ function guestRender(now) {
         let fx = guestPlayerFx[id];
         if (!fx) fx = guestPlayerFx[id] = { _lastHp: p.hp, _wasAlive: p.alive };
         updateHitAndDeathState(fx, p.hp, p.alive, now, DEATH_ANIM_MS);
+        // 매직블록맛 패시브(focusModeActive)는 guestLocal 쪽 시각을 읽으므로,
+        // fx(위 이유로 별도 보관)에 찍힌 걸 내 로컬 예측 객체로도 옮겨 둔다.
+        if (mine && guestLocal) guestLocal.lastHitClientTime = fx.lastHitClientTime;
         const shake = hitShakeOffset(fx, now);
         const motion = mine && guestLocal && now < guestLocal.attackEffectUntil
             ? attackMotion(1 - (guestLocal.attackEffectUntil - now) / 180) : null;
@@ -1330,7 +1347,11 @@ function guestRender(now) {
             drawDeathCollapse(guestCtx, R, stats, fx.deathStartAt, now);
         } else {
             guestCtx.globalAlpha = hidden ? 0.35 : 1;
-            drawCookieBody(guestCtx, R, stats, true);
+            // 각성 여부는 내 쿠키만 로컬로 안다(guestLocal) -- 파트너 쪽은 서버가
+            // awakenUntil을 안 보내줘서 색은 그대로 두고 효과는 서버가 알아서 적용한다.
+            const awakened = mine && guestLocal && stats.ultimateType === 'awakening' && now < (guestLocal.awakenUntil || 0);
+            const bodyStats = visualStatsFor(stats, awakened);
+            drawCookieBody(guestCtx, R, bodyStats, true);
             guestCtx.beginPath();
             guestCtx.arc(0, 0, R, 0, Math.PI * 2);
             guestCtx.lineWidth = mine ? 4 : 2;

@@ -4559,6 +4559,12 @@ socket.on('storyPlayerPulled', ({ id, x, y }) => {
     storyPlayer.y = y;
     storyImpactEffects.push({ x, y, radius: 50, until: performance.now() + 300 });
 });
+// 매직블록맛 패시브: 집중모드 중 근접 공격을 자동으로 피해서 뒤로 밀린 자리.
+socket.on('storyPlayerFocusDodge', ({ id, x, y }) => {
+    if (id !== socket.id || !storyPlayer) return;
+    storyPlayer.x = x;
+    storyPlayer.y = y;
+});
 // 보스가 부하를 부르면 몬스터 목록이 통째로 갈아 끼워진다.
 socket.on('bossMinions', ({ monsters }) => {
     mergeStoryMonsters(monsters);
@@ -5265,6 +5271,17 @@ function updateStoryCooldownDisplay(now) {
         // 바다펄맛은 궁극기 칸이 비어 있다.
         storyMyUltimateCdEl.textContent = '없음';
     }
+    // 매직블록맛 패시브: 스킬 쿨타임 칸에 집중모드 상태를 보여준다 -- 켜져
+    // 있으면 "사용중", 아니면 켜지기까지 남은 시간(3초 카운트다운).
+    if (stats.focusPassive) {
+        if (focusModeActive(stats, now, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime)) {
+            storyMySkillCdEl.textContent = '사용중';
+        } else {
+            const since = Math.max(storyPlayer.lastAttackClientTime || 0, storyPlayer.lastHitClientTime || 0);
+            const focusRemain = Math.max(0, stats.focusPassive.idleMs - (now - since)) / 1000;
+            storyMySkillCdEl.textContent = `${focusRemain.toFixed(1)}s`;
+        }
+    }
     // 밀물은 다음에 몇 단계가 나가는지가 쿨타임만큼 중요하다.
     if (stats.skillType === 'tide_cycle' && skillRemain <= 0.05) {
         storyMySkillCdEl.textContent = `${tideStageNoOf(storyPlayer)}단계`;
@@ -5279,7 +5296,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime);
         let dx = 0, dy = 0;
         if (storyJoystickMoveVec) {
             dx = storyJoystickMoveVec.x * speed;
@@ -6045,7 +6062,8 @@ function storyRender(now) {
             drawDeathCollapse(storyCtx, R, stats, storyPlayer.deathStartAt, now);
         } else {
             storyCtx.globalAlpha = now < (storyPlayer.untouchableUntil || 0) ? 0.35 : 1;
-            drawCookieBody(storyCtx, R, stats, true);
+            const bodyStats = visualStatsFor(stats, stats.ultimateType === 'awakening' && now < (storyPlayer.awakenUntil || 0));
+            drawCookieBody(storyCtx, R, bodyStats, true);
             storyCtx.beginPath();
             storyCtx.arc(0, 0, R, 0, Math.PI * 2);
             storyCtx.strokeStyle = '#f1c40f';
@@ -6632,6 +6650,16 @@ function updateCooldownDisplay(now) {
     }
     if (me.stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
         myUltimateCdEl.textContent = `${natureAwakenStageNoOf(me)}단계`;
+    }
+    // 매직블록맛 패시브: 스킬 쿨타임 칸에 집중모드 상태를 보여준다.
+    if (me.stats.focusPassive) {
+        if (focusModeActive(me.stats, now, me.lastAttackClientTime, me.lastHitClientTime)) {
+            mySkillCdEl.textContent = '사용중';
+        } else {
+            const since = Math.max(me.lastAttackClientTime || 0, me.lastHitClientTime || 0);
+            const focusRemain = Math.max(0, me.stats.focusPassive.idleMs - (now - since)) / 1000;
+            mySkillCdEl.textContent = `${focusRemain.toFixed(1)}s`;
+        }
     }
     syncMobileCooldowns(skillRemain, ultRemain, false, !me.stats.ultimateType);
 }

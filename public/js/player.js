@@ -414,8 +414,10 @@ function attackMotion(t) {
 // ---- 피격 모션: 흰 섬광 + 짧은 떨림 ----
 const HIT_EFFECT_MS = 240;
 function triggerHitEffectOn(o) {
-    o.hitEffectUntil = performance.now() + HIT_EFFECT_MS;
+    const now = performance.now();
+    o.hitEffectUntil = now + HIT_EFFECT_MS;
     o.hitShakeSeed = Math.random() * Math.PI * 2;
+    o.lastHitClientTime = now; // 매직블록맛 패시브(focusModeActive)가 읽는다
 }
 function hitShakeOffset(o, now) {
     if (!o.hitEffectUntil || now >= o.hitEffectUntil) return { x: 0, y: 0 };
@@ -542,7 +544,21 @@ function withEquipSpeed(base, equipSpeed) {
 // isJoystick: 모바일 조이스틱은 입력 특성상 실제 체감 이동속도가 키보드보다
 // 느리게 느껴지므로, 계산된 이동속도에 보정값을 더해 체감을 맞춘다.
 const JOYSTICK_SPEED_BONUS = 0.5;
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil) {
+// 매직블록맛 패시브: 공격도 안 받지도 않고 idleMs가 지나면 집중모드. 서버의
+// focusModeActive(server.js)와 같은 규칙을 클라이언트에서도 그대로 예측한다.
+// 매직블록맛 궁극기: 각성 중엔 몸 색이 흰색으로 바뀐다. ultimateColorOverride가
+// 있는 캐릭터에서만 확인한다 -- 다른 각성 캐릭터(레드 드레곤 등)는 그대로.
+function visualStatsFor(stats, awakened) {
+    if (!awakened || !stats.ultimateColorOverride) return stats;
+    return { ...stats, ...stats.ultimateColorOverride };
+}
+function focusModeActive(stats, now, lastAttackAt, lastHitAt) {
+    const fp = stats && stats.focusPassive;
+    if (!fp) return false;
+    const since = Math.max(lastAttackAt || 0, lastHitAt || 0);
+    return now - since >= fp.idleMs;
+}
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil, lastAttackAt, lastHitAt) {
     const bonus = isJoystick ? JOYSTICK_SPEED_BONUS : 0;
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
@@ -555,6 +571,8 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
         if (stats.ultimateType === 'great_slash') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
+        // 매직블록맛처럼 배수 대신 그냥 더하는 캐릭터도 있다.
+        if (stats.ultimateSpeedBonus != null) return stats.speed + stats.ultimateSpeedBonus + bonus;
         return stats.speed * stats.ultimateSpeedMultiplier + bonus;
     }
     // 본능해제 4강(오렌지레몬맛): awakening_rapid 궁극기가 켜져 있는 동안 이동속도를 더한다.
@@ -564,6 +582,9 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     // 바람궁수맛 궁극기 2단계: rapidStrikeUntil과 별도 타이머로, 그동안만 이동속도가 붙는다.
     if (stats.ultimateLevel2SpeedBonus && now < (natureBoostUntil || 0)) {
         return withEquipSpeed(stats.speed + stats.ultimateLevel2SpeedBonus, equipSpeed) + bonus;
+    }
+    if (focusModeActive(stats, now, lastAttackAt, lastHitAt)) {
+        return withEquipSpeed(stats.speed + stats.focusPassive.speedBonus, equipSpeed) + bonus;
     }
     return stats.speed + bonus;
 }
@@ -651,7 +672,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil, this.lastAttackClientTime, this.lastHitClientTime);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
@@ -751,6 +772,7 @@ class Player {
         updateHitAndDeathState(this, this.hp, this.alive, now, DEATH_ANIM_MS);
         const motion = now < this.attackEffectUntil ? attackMotion(1 - (this.attackEffectUntil - now) / 180) : null;
         const shake = hitShakeOffset(this, now);
+        const bodyStats = visualStatsFor(this.stats, this.stats.ultimateType === 'awakening' && now < this.awakenUntil);
         ctx.save();
         ctx.translate(this.x + shake.x, this.y + shake.y);
 
@@ -844,7 +866,7 @@ class Player {
         } else {
             const hidden = now < this.untouchableUntil;
             ctx.globalAlpha = hidden ? 0.35 : 1;
-            drawCookieBody(ctx, R, this.stats, true);
+            drawCookieBody(ctx, R, bodyStats, true);
             // Outline needs its own path now that the body is two filled halves.
             ctx.beginPath();
             ctx.arc(0, 0, R, 0, Math.PI * 2);
