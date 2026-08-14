@@ -2384,7 +2384,8 @@ const GT_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 // 다른 판매처가 추가되면 GT_VENDORS에 항목을 더하고 각 상품에 그 vendor id를
 // 붙이면 된다.
 const GT_VENDORS = [
-    { id: 'mh', name: 'MH' }
+    { id: 'mh', name: 'MH' },
+    { id: 'sl', name: 'SL' } // 아직 판매하는 상품 없음 -- 나중에 채워질 자리
 ];
 const GT_PACKAGES = [
     {
@@ -2459,12 +2460,12 @@ function renderGtTab() {
         <div class="gt-layout">
             <div class="gt-main">
                 ${renderGtStatusHtml()}
-                ${packages.map(pkg => `
+                ${packages.length ? packages.map(pkg => `
                     <div class="shop-item-card" data-gt="${pkg.id}">
                         <span class="shop-item-icon">🎟️</span>
                         <span class="shop-item-name">${pkg.name}<div class="iap-item-desc">${pkg.desc}</div></span>
                         <button class="shop-item-buy-btn gt-buy-btn">💎 ${pkg.cost}</button>
-                    </div>`).join('')}
+                    </div>`).join('') : '<p class="shop-empty">아직 판매 중인 상품이 없습니다.</p>'}
                 <p id="shop-item-msg" class="shop-item-msg hidden"></p>
             </div>
             <div class="gt-vendor-rail">${GT_VENDORS.map(v => `
