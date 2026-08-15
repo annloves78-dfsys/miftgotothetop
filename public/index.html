@@ -285,10 +285,10 @@
         <h2>모드 선택</h2>
         <div class="mode-list">
             <div class="mode-list-left">
-                <div id="growth-dungeon-mode-card" class="mode-card mode-card-small locked">
+                <div id="growth-dungeon-mode-card" class="mode-card mode-card-small">
                     <div class="icon">🌱</div>
                     <div class="name">성장 던전</div>
-                    <div class="sub">준비중</div>
+                    <div id="growth-dungeon-mode-sub" class="sub hidden"></div>
                 </div>
                 <div id="awaken-mode-card" class="mode-card mode-card-small">
                     <div class="icon">✨</div>
@@ -433,6 +433,52 @@
             </div>
         </div>
         <button id="back-from-legend-detail-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 성장 던전: 다이아 1회 결제로 던전을 하나씩 여는 자리. 지금은 EXP
+         던전 하나만 실제로 있고 나머지 둘은 잠김/준비중 카드로만 보여준다. -->
+    <div id="growth-dungeon-screen" class="screen hidden">
+        <h2>성장 던전</h2>
+        <div class="mode-list">
+            <div id="exp-dungeon-card" class="mode-card">
+                <div class="icon">🍰</div>
+                <div class="name">EXP 던전</div>
+                <div id="exp-dungeon-card-sub" class="sub hidden"></div>
+            </div>
+            <div class="mode-card locked">
+                <div class="icon">🐹</div>
+                <div class="name">행스터 아지트</div>
+                <div class="sub">준비중</div>
+            </div>
+            <div class="mode-card locked">
+                <div class="icon">⛏️</div>
+                <div class="name">돌파석 채광장</div>
+                <div class="sub">준비중</div>
+            </div>
+        </div>
+        <button id="back-from-growth-dungeon-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- EXP 던전: 케이크 보스 1~10단계. 솔로 전용이라 각성모드/레전드 스토리의
+         혼자/같이 토글이나 파티 칸 없이 캐릭터 하나만 고른다. -->
+    <div id="exp-dungeon-screen" class="screen hidden">
+        <div class="awaken-layout">
+            <div class="awaken-levels">
+                <div class="awaken-col-title">단계</div>
+                <div id="exp-dungeon-stage-chips" class="awaken-level-chips"></div>
+            </div>
+            <div class="awaken-party-col">
+                <div class="awaken-col-title">캐릭터</div>
+                <div id="exp-dungeon-char-slot" class="awaken-party"></div>
+            </div>
+            <div class="awaken-info-col">
+                <div id="exp-dungeon-stage-name" class="awaken-boss-name"></div>
+                <div id="exp-dungeon-stage-info" class="awaken-level-info"></div>
+                <button id="exp-dungeon-play-btn" class="play-btn">▶ 시작</button>
+                <div id="exp-dungeon-msg" class="equip-picker-msg hidden"></div>
+            </div>
+        </div>
+        <button id="back-from-exp-dungeon-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- Story mode: multi (locked) / solo entry -->

@@ -14,6 +14,8 @@ const screens = {
     modeSelect: document.getElementById('mode-select-screen'),
     storyFork: document.getElementById('story-fork-screen'),
     legendDetail: document.getElementById('legend-detail-screen'),
+    growthDungeon: document.getElementById('growth-dungeon-screen'),
+    expDungeon: document.getElementById('exp-dungeon-screen'),
     storyMode: document.getElementById('story-mode-screen'),
     storyTower: document.getElementById('story-tower-screen'),
     storyFight: document.getElementById('story-fight-screen'),
@@ -630,6 +632,16 @@ function instinctLevelOfChar(charType) {
 // 표를 보고 직접 한다 (equipPayload와 같은 신뢰 모델).
 function instinctPayload(charType) {
     return instinctLevelOfChar(charType);
+}
+// ---- 캐릭터 레벨(성장던전) ----
+// 서버에 보낼 값도 레벨 숫자 하나뿐이다 -- 실제 스탯 배율은 서버가 shared.js
+// 공식(charLevelStatMultiplier)으로 직접 계산한다 (equipPayload/instinctPayload와
+// 같은 신뢰 모델).
+function charLevelOfChar(charType) {
+    return SHARED.charLevelOf(gameData.charExp, charType);
+}
+function charLevelPayload(charType) {
+    return charLevelOfChar(charType);
 }
 const INSTINCT_LEVEL_DESCRIPTIONS = {
     1: `기본 능력치 강화 — 체력 +${SHARED.INSTINCT_L1_BONUS_HEALTH}, 공격력 +${SHARED.INSTINCT_L1_BONUS_ATTACK}`,
@@ -2257,6 +2269,7 @@ charDetailSelectBtn.addEventListener('click', () => {
     if (characterReturnScreen === 'bossDetail') updateDetailCharPreview();
     else if (characterReturnScreen === 'storyTower') renderTower();
     else if (characterReturnScreen === 'zombieDetail' && typeof updateZombieDetailCharPreview === 'function') updateZombieDetailCharPreview();
+    else if (characterReturnScreen === 'expDungeon') renderExpDungeonDetail();
     showScreen(characterReturnScreen);
 });
 
@@ -3238,6 +3251,171 @@ backFromAwakenDetailBtn.addEventListener('click', () => {
     showScreen('awakenBoss');
 });
 
+// ---- 성장 던전 ----
+// 다이아 1회 결제로 여는 솔로 전용 모드 (좀비막기와 같은 1회 해금 패턴,
+// storage.js의 expDungeonUnlocked). 지금은 EXP 던전 하나만 실제로 있고
+// 나머지 두 칸은 index.html에 잠김/준비중 카드로 박아 뒀다.
+const EXP_DUNGEON_UNLOCK_COST = 30000;
+const growthDungeonModeCard = document.getElementById('growth-dungeon-mode-card');
+const growthDungeonModeSub = document.getElementById('growth-dungeon-mode-sub');
+const expDungeonCard = document.getElementById('exp-dungeon-card');
+const expDungeonCardSub = document.getElementById('exp-dungeon-card-sub');
+const backFromGrowthDungeonBtn = document.getElementById('back-from-growth-dungeon-btn');
+const expDungeonStageChipsEl = document.getElementById('exp-dungeon-stage-chips');
+const expDungeonCharSlotEl = document.getElementById('exp-dungeon-char-slot');
+const expDungeonStageNameEl = document.getElementById('exp-dungeon-stage-name');
+const expDungeonStageInfoEl = document.getElementById('exp-dungeon-stage-info');
+const expDungeonPlayBtn = document.getElementById('exp-dungeon-play-btn');
+const expDungeonMsgEl = document.getElementById('exp-dungeon-msg');
+const backFromExpDungeonBtn = document.getElementById('back-from-exp-dungeon-btn');
+
+function isExpDungeonUnlocked() {
+    return adminPowerOn('stages') || gameData.expDungeonUnlocked;
+}
+function renderGrowthDungeonModeCard() {
+    const unlocked = isExpDungeonUnlocked();
+    growthDungeonModeSub.textContent = unlocked ? '' : `🔒 다이아 ${EXP_DUNGEON_UNLOCK_COST.toLocaleString()}`;
+    growthDungeonModeSub.classList.toggle('hidden', unlocked);
+    expDungeonCard.classList.toggle('locked', !unlocked);
+    expDungeonCardSub.textContent = unlocked ? '' : `🔒 다이아 ${EXP_DUNGEON_UNLOCK_COST.toLocaleString()}`;
+    expDungeonCardSub.classList.toggle('hidden', unlocked);
+}
+renderGrowthDungeonModeCard();
+
+let selectedExpDungeonStage = 1;
+
+// 이어서 할 단계: 마지막으로 깬 단계의 다음 단계, 없으면 1단계, 다 깼으면
+// 마지막 단계에 머문다 (스토리 타워/레전드 스토리와 같은 규칙).
+function resumeExpDungeonStage() {
+    const cleared = (gameData.expDungeonCleared || []).filter(n => Number.isInteger(n) && n >= 1);
+    if (!cleared.length) return 1;
+    return Math.min(SHARED.EXP_DUNGEON_STAGE_COUNT, Math.max(...cleared) + 1);
+}
+function isExpDungeonStageUnlocked(n) {
+    if (adminPowerOn('stages')) return true;
+    if (n === 1) return true;
+    return gameData.expDungeonCleared.includes(n - 1);
+}
+function renderExpDungeonStageChips() {
+    expDungeonStageChipsEl.innerHTML = '';
+    for (let n = 1; n <= SHARED.EXP_DUNGEON_STAGE_COUNT; n++) {
+        const unlocked = isExpDungeonStageUnlocked(n);
+        const chip = document.createElement('button');
+        chip.className = 'awaken-level-chip'
+            + (n === selectedExpDungeonStage ? ' selected' : '')
+            + (unlocked ? '' : ' locked');
+        chip.textContent = unlocked ? `${n}단계` : `🔒 ${n}단계`;
+        chip.disabled = !unlocked;
+        if (unlocked) {
+            chip.addEventListener('click', () => {
+                selectedExpDungeonStage = n;
+                renderExpDungeonDetail();
+            });
+        }
+        expDungeonStageChipsEl.appendChild(chip);
+    }
+}
+function renderExpDungeonCharSlot() {
+    expDungeonCharSlotEl.innerHTML = '';
+    const id = gameData.selectedCharacter || 'kicker';
+    const stats = SHARED.CHARACTERS[id];
+    const slot = document.createElement('div');
+    slot.className = 'awaken-party-slot filled';
+    slot.innerHTML = `
+        <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
+        <div class="name">${stats.shortName || stats.name} · Lv.${charLevelOfChar(id)}</div>`;
+    slot.addEventListener('click', () => openCharacterSelect('expDungeon'));
+    expDungeonCharSlotEl.appendChild(slot);
+}
+// 1단계는 원본 그대로, 2단계부터 체력·공격력이 전 단계 대비 2배씩 누적.
+function expDungeonStageMultiplier(n) {
+    return Math.pow(2, Math.max(0, n - 1));
+}
+function showExpDungeonMsg(text, good) {
+    expDungeonMsgEl.textContent = text || '';
+    expDungeonMsgEl.classList.toggle('hidden', !text);
+    expDungeonMsgEl.classList.toggle('good', !!good);
+}
+function renderExpDungeonDetail() {
+    const n = selectedExpDungeonStage;
+    const exp = SHARED.expDungeonExpForStage(n);
+    const mult = expDungeonStageMultiplier(n);
+    expDungeonStageNameEl.textContent = `EXP 던전 · ${n}단계`;
+    const charId = gameData.selectedCharacter || 'kicker';
+    const { level, expIntoLevel, expToNext } = SHARED.charLevelFromExp(SHARED.charExpOf(gameData.charExp, charId));
+    const progressText = expToNext != null ? `${expIntoLevel} / ${expToNext}` : '최대 레벨';
+    expDungeonStageInfoEl.innerHTML = `
+        <ul class="awaken-stat-list">
+            <li>케이크 보스 · 체력·공격력 ${mult}배${n === 1 ? ' (원본)' : ''}</li>
+            <li>클리어 보상: EXP ${exp.toLocaleString()} (몇 번이고 반복 파밍 가능)</li>
+            <li>${SHARED.CHARACTERS[charId].name} 현재 Lv.${level} (${progressText})</li>
+        </ul>`;
+    renderExpDungeonStageChips();
+    renderExpDungeonCharSlot();
+    showExpDungeonMsg('');
+}
+
+growthDungeonModeCard.addEventListener('click', () => {
+    renderGrowthDungeonModeCard();
+    showScreen('growthDungeon');
+});
+backFromGrowthDungeonBtn.addEventListener('click', () => showScreen('modeSelect'));
+
+expDungeonCard.addEventListener('click', () => {
+    if (!isExpDungeonUnlocked()) {
+        if (currencyAmount('diamonds') < EXP_DUNGEON_UNLOCK_COST) return;
+        if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -EXP_DUNGEON_UNLOCK_COST });
+        gameData.expDungeonUnlocked = true;
+        saveGameData(gameData);
+        renderGrowthDungeonModeCard();
+    }
+    selectedExpDungeonStage = resumeExpDungeonStage();
+    renderExpDungeonDetail();
+    showScreen('expDungeon');
+});
+backFromExpDungeonBtn.addEventListener('click', () => showScreen('growthDungeon'));
+
+expDungeonPlayBtn.addEventListener('click', () => {
+    const floorKey = SHARED.expDungeonFloorKey(selectedExpDungeonStage);
+    const charType = gameData.selectedCharacter || 'kicker';
+    socket.emit('joinStoryFloor', {
+        floor: floorKey, charType, equip: equipPayload(charType),
+        instinct: instinctPayload(charType), charLevel: charLevelPayload(charType), solo: true
+    });
+});
+
+// EXP 던전 결과: 이겼으면 첫 클리어 여부와 상관없이(반복 파밍 가능) 그
+// 단계의 EXP를 그대로 준다. floor는 서버가 보낸 그대로의 키('expdungeon3' 등).
+function showExpDungeonResult(floor, result) {
+    const stageNum = SHARED.expDungeonStageOfFloor(floor);
+    resetTowerActions();
+    resultReturnScreen = 'expDungeon';
+    resultBackBtn.textContent = 'EXP 던전으로';
+    resultRewardsEl.innerHTML = '';
+    if (result !== 'win') {
+        resultTitle.textContent = '패배...';
+        resultTitle.style.color = '#e74c3c';
+        resultDesc.textContent = `EXP 던전 ${stageNum}단계에서 쓰러졌습니다.`;
+        showScreen('result');
+        return;
+    }
+    resultTitle.textContent = '단계 클리어!';
+    resultTitle.style.color = '#2ecc71';
+    if (!gameData.expDungeonCleared.includes(stageNum)) {
+        gameData.expDungeonCleared.push(stageNum);
+    }
+    const charId = gameData.selectedCharacter || 'kicker';
+    const before = SHARED.charLevelOf(gameData.charExp, charId);
+    const exp = SHARED.expDungeonExpForStage(stageNum);
+    gameData.charExp[charId] = SHARED.charExpOf(gameData.charExp, charId) + exp;
+    const after = SHARED.charLevelOf(gameData.charExp, charId);
+    saveGameData(gameData);
+    const stats = SHARED.CHARACTERS[charId];
+    resultDesc.textContent = `EXP 던전 ${stageNum}단계를 클리어했습니다. ${stats.name} EXP +${exp.toLocaleString()}`
+        + (after > before ? ` (Lv.${before} → Lv.${after}!)` : ` (Lv.${after})`);
+    showScreen('result');
+}
+
 awakenPlayBtn.addEventListener('click', () => {
     if (awakenPlayBtn.disabled) return;
 
@@ -3264,7 +3442,8 @@ awakenPlayBtn.addEventListener('click', () => {
                 solo: false,
                 myChar,
                 equip: equipPayload(myChar),
-                instinct: instinctPayload(myChar)
+                instinct: instinctPayload(myChar),
+                charLevel: charLevelPayload(myChar)
             });
         } else if (awakenPhase === 'matched' && !awakenMyReady) {
             awakenMyReady = true;
@@ -3286,7 +3465,8 @@ awakenPlayBtn.addEventListener('click', () => {
         solo: true,
         party: awakenParty,
         equipParty: awakenParty.map(id => equipPayload(id)),
-        instinctParty: awakenParty.map(id => instinctPayload(id))
+        instinctParty: awakenParty.map(id => instinctPayload(id)),
+        charLevelParty: awakenParty.map(id => charLevelPayload(id))
     });
 });
 
@@ -3564,7 +3744,7 @@ legendPlayBtn.addEventListener('click', () => {
             legendMyNameEl.textContent = (SHARED.CHARACTERS[myChar] || {}).name || '';
             socket.emit('joinStoryFloor', {
                 floor: floorKey, charType: myChar, equip: equipPayload(myChar),
-                instinct: instinctPayload(myChar), solo: false
+                instinct: instinctPayload(myChar), charLevel: charLevelPayload(myChar), solo: false
             });
         } else if (legendPhase === 'matched' && !legendMyReady) {
             legendMyReady = true;
@@ -3582,10 +3762,11 @@ legendPlayBtn.addEventListener('click', () => {
     showLegendMsg('');
     socket.emit('joinStoryFloor', {
         floor: floorKey, charType: legendParty[0], equip: equipPayload(legendParty[0]),
-        instinct: instinctPayload(legendParty[0]), solo: true,
+        instinct: instinctPayload(legendParty[0]), charLevel: charLevelPayload(legendParty[0]), solo: true,
         party: legendParty,
         equipParty: legendParty.map(id => equipPayload(id)),
-        instinctParty: legendParty.map(id => instinctPayload(id))
+        instinctParty: legendParty.map(id => instinctPayload(id)),
+        charLevelParty: legendParty.map(id => charLevelPayload(id))
     });
 });
 
@@ -3914,7 +4095,7 @@ eventContentEl.addEventListener('click', (e) => {
 // is opened with (see floorDefFor in shared.js).
 function enterEventStage(id) {
     if (!SHARED.EVENT_STAGE_DEFS[id]) return;
-    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker'), instinct: instinctPayload(gameData.selectedCharacter || 'kicker') });
+    socket.emit('joinStoryFloor', { floor: id, charType: gameData.selectedCharacter || 'kicker', equip: equipPayload(gameData.selectedCharacter || 'kicker'), instinct: instinctPayload(gameData.selectedCharacter || 'kicker'), charLevel: charLevelPayload(gameData.selectedCharacter || 'kicker') });
 }
 
 eventBtn.addEventListener('click', () => {
@@ -4506,10 +4687,10 @@ towerPlayBtn.addEventListener('click', () => {
     const charType = gameData.selectedCharacter || 'kicker';
     // 11층부터는 쿠키 두 명을 같이 보낸다. 그 아래 층은 지금까지와 똑같다.
     const partyPayload = SHARED.storyPartySizeFor(selectedStoryFloor) > 1
-        ? { party: storyPartyIds(), equipParty: storyPartyIds().map(equipPayload), instinctParty: storyPartyIds().map(instinctPayload) }
+        ? { party: storyPartyIds(), equipParty: storyPartyIds().map(equipPayload), instinctParty: storyPartyIds().map(instinctPayload), charLevelParty: storyPartyIds().map(charLevelPayload) }
         : {};
     if (!storyIsMulti) {
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), solo: true, ...partyPayload });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType), solo: true, ...partyPayload });
         return;
     }
     if (storyPhase === 'idle') {
@@ -4518,7 +4699,7 @@ towerPlayBtn.addEventListener('click', () => {
         storySearchStartAt = Date.now();
         updateStorySearchLabel();
         storySearchHandle = setInterval(updateStorySearchLabel, 1000);
-        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), solo: false, ...partyPayload });
+        socket.emit('joinStoryFloor', { floor: selectedStoryFloor, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType), solo: false, ...partyPayload });
     } else if (storyPhase === 'matched' && !storyMyReady) {
         storyMyReady = true;
         towerPlayBtn.disabled = true;
@@ -5250,6 +5431,8 @@ socket.on('storyFloorResult', ({ result, floor }) => {
     if (awaken) { showAwakenResult(awaken, result); return; }
     // 레전드 스토리는 판 이름이 'legend1' 같은 고정 문자열 키다.
     if (SHARED.isLegendFloor(floor)) { showLegendResult(floor, result); return; }
+    // 성장던전(EXP 던전)은 판 이름이 'expdungeon3' 같은 고정 문자열 키다.
+    if (SHARED.isExpDungeonFloor(floor)) { showExpDungeonResult(floor, result); return; }
     const stage = eventStageById(floor);
     if (!stage) selectedStoryFloor = floor;
     if (result === 'win') {
@@ -6542,11 +6725,11 @@ function handleMultiOrSoloClick(isMulti) {
             detailSoloBtn.disabled = true;
             detailLeaveBtn.classList.remove('hidden');
             startSearchTimer();
-            socket.emit('joinRaid', { bossId: selectedBossId, charType, equip: equipPayload(charType), instinct: instinctPayload(charType) });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType) });
         } else {
             detailMultiBtn.disabled = true;
             detailSoloBtn.disabled = true;
-            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true, equip: equipPayload(charType), instinct: instinctPayload(charType) });
+            socket.emit('joinRaid', { bossId: selectedBossId, charType, solo: true, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType) });
             socket.emit('startRaid');
         }
     } else if (raidPhase === 'matched' && !myReady) {

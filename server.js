@@ -8,7 +8,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     LEVEL_START_SLACK, alongOf, acrossOf, fromAlongAcross, clampToLane, laneHalfWidthAt,
     GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor,
     equipBonusFor, formStat, reviveCountFor, characterWithGear, awakenGearFor,
-    instinctStatBonus, characterWithInstinct,
+    instinctStatBonus, characterWithInstinct, characterWithLevel,
     awakenFloorKey, AWAKEN_PARTY_SIZE, storyPartySizeFor, AWAKEN_BOSS_LEVELS,
     awakenBossSkillDamage, awakenBossSkillHealOnHit, awakenBossUltimateDamage,
     awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield,
@@ -227,10 +227,11 @@ function bonusOf(p) { return (p && p.bonus) || NO_EQUIP_BONUS; }
 // 넣어 두고, 그 뒤로는 CHARACTERS를 직접 읽지 않고 늘 이것을 읽는다.
 // 본능해제 2강(스킬 강화)도 같은 사본에 얹는다 -- character.skillDamage 등을
 // 읽는 수십 군데 코드를 하나도 안 건드리고 이 한 자리에서만 반영하기 위해서다.
-function charFrom(charType, equip, instinctLevel) {
+function charFrom(charType, equip, instinctLevel, charLevel) {
     const resolved = CHARACTERS[charType] ? charType : 'kicker';
     const withGear = characterWithGear(resolved, (equip && typeof equip === 'object') ? equip : null);
-    return characterWithInstinct(withGear, instinctLevel, resolved);
+    const withInstinct = characterWithInstinct(withGear, instinctLevel, resolved);
+    return characterWithLevel(withInstinct, charLevel);
 }
 // 층 이벤트: floorDef.charEventMultiplier가 있으면 그 층에 들어오는 캐릭터의
 // 공격력/체력에 곱한다 (지하 2층: 레드 드레곤 폭주에 눌려 다들 약해지고,
@@ -3445,10 +3446,10 @@ function activateGuestSlot(p, index) {
     resetBodyFormIfNeeded(p);
 }
 
-function makeGuestPlayer(party, slotIndex, equipParty, instinctParty) {
+function makeGuestPlayer(party, slotIndex, equipParty, instinctParty, charLevelParty) {
     // 게스트 레이드는 쿠키 4명을 번갈아 쓰므로 장비도 슬롯마다 따로 가진다.
     const bonuses = party.map((id, i) => bonusFrom(equipParty && equipParty[i], id, instinctParty && instinctParty[i]));
-    const characters = party.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i]));
+    const characters = party.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i], charLevelParty && charLevelParty[i]));
     const gears = party.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
     const maxHp = party.map((id, i) => characters[i].health + bonuses[i].health);
     const p = {
@@ -4752,9 +4753,9 @@ function createZombieRoom(solo) {
     return roomId;
 }
 
-function makeZombiePlayer(charType, equip, slotIndex, instinctLevel) {
+function makeZombiePlayer(charType, equip, slotIndex, instinctLevel, charLevel) {
     const bonus = bonusFrom(equip, charType, instinctLevel);
-    const character = charFrom(charType, equip, instinctLevel);
+    const character = charFrom(charType, equip, instinctLevel, charLevel);
     const maxHp = character.health + bonus.health;
     return {
         charType, bonus, character,
@@ -5190,9 +5191,9 @@ function tickZombieRoom(roomId) {
 }
 
 io.on('connection', (socket) => {
-    socket.on('joinRaid', ({ bossId, charType, solo, equip, instinct }) => {
+    socket.on('joinRaid', ({ bossId, charType, solo, equip, instinct, charLevel }) => {
         if (!BOSS_DEFS[bossId]) return;
-        const character = charFrom(charType, equip, instinct);
+        const character = charFrom(charType, equip, instinct, charLevel);
         const bonus = bonusFrom(equip, charType, instinct);
 
         let roomId = solo ? null : findOpenRoom(bossId);
@@ -5228,7 +5229,7 @@ io.on('connection', (socket) => {
     // 데려가서(하나가 쓰러지면 다음 쿠키가 들어온다) 혼자 싸우고, 멀티는
     // 스토리 타워와 같은 방식으로 짝을 찾아(findOpenStoryRoom) 각자 캐릭터
     // 하나씩만 데리고 함께 싸운다 -- 파티 교체는 멀티에는 없다.
-    socket.on('joinAwakenBoss', ({ charType, level, party, equipParty, instinctParty, solo, myChar, equip, instinct }) => {
+    socket.on('joinAwakenBoss', ({ charType, level, party, equipParty, instinctParty, solo, myChar, equip, instinct, charLevel, charLevelParty }) => {
         // 레벨은 여기서 자르지 않고 그대로 본다. awakenFloorKey는 범위를 넘는
         // 값을 10으로 맞추는데, 그러면 99를 보낸 사람이 10레벨을 받게 된다.
         if (!AWAKEN_BOSS_LEVELS[Number(level)]) return;
@@ -5251,7 +5252,7 @@ io.on('connection', (socket) => {
             while (chosen.length < AWAKEN_PARTY_SIZE) chosen.push('kicker');
 
             const bonuses = chosen.map((id, i) => bonusFrom(equipParty && equipParty[i], id, instinctParty && instinctParty[i]));
-            const characters = chosen.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i]));
+            const characters = chosen.map((id, i) => charFrom(id, equipParty && equipParty[i], instinctParty && instinctParty[i], charLevelParty && charLevelParty[i]));
             const gears = chosen.map((id, i) => gearFrom(id, equipParty && equipParty[i]));
             const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
             room.players[socket.id] = {
@@ -5277,7 +5278,7 @@ io.on('connection', (socket) => {
         } else {
             const myCharType = myChar && CHARACTERS[myChar] ? myChar : 'kicker';
             const bonus = bonusFrom(equip, myCharType, instinct);
-            const character = charFrom(myCharType, equip, instinct);
+            const character = charFrom(myCharType, equip, instinct, charLevel);
             const slot = Object.keys(room.players).length;
             const spot = slot === 0 ? { x: 0, y: 0 } : fromAlongAcross(floorDef, 0, 30);
             room.players[socket.id] = {
@@ -5347,11 +5348,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinStoryFloor', ({ floor, charType, equip, solo, party, equipParty, instinct, instinctParty }) => {
+    socket.on('joinStoryFloor', ({ floor, charType, equip, solo, party, equipParty, instinct, instinctParty, charLevel, charLevelParty }) => {
         const floorDef = floorDefFor(floor);
         if (!floorDef) return; // no content for this floor yet
         const resolvedCharType = CHARACTERS[charType] ? charType : 'kicker';
-        const character = applyFloorCharEvent(charFrom(charType, equip, instinct), resolvedCharType, floorDef);
+        const character = applyFloorCharEvent(charFrom(charType, equip, instinct, charLevel), resolvedCharType, floorDef);
         const bonus = bonusFrom(equip, charType, instinct);
 
         // 멀티면 먼저 기다리는 방을 찾고, 없으면 새로 판다.
@@ -5377,8 +5378,9 @@ io.on('connection', (socket) => {
             while (chosen.length < partySize) chosen.push(fallback);
             const equips = Array.isArray(equipParty) ? equipParty : [];
             const instincts = Array.isArray(instinctParty) ? instinctParty : [];
+            const levels = Array.isArray(charLevelParty) ? charLevelParty : [];
             const bonuses = chosen.map((id, i) => bonusFrom(equips[i], id, instincts[i]));
-            const characters = chosen.map((id, i) => applyFloorCharEvent(charFrom(id, equips[i], instincts[i]), id, floorDef));
+            const characters = chosen.map((id, i) => applyFloorCharEvent(charFrom(id, equips[i], instincts[i], levels[i]), id, floorDef));
             const gears = chosen.map((id, i) => gearFrom(id, equips[i]));
             const maxHp = chosen.map((id, i) => characters[i].health + bonuses[i].health);
             room.players[socket.id] = {
@@ -6917,7 +6919,7 @@ io.on('connection', (socket) => {
     });
 
     // ---- Guest raid ----
-    socket.on('joinGuestRaid', ({ guestId, party, solo, equipParty, instinctParty }) => {
+    socket.on('joinGuestRaid', ({ guestId, party, solo, equipParty, instinctParty, charLevelParty }) => {
         if (!GUEST_BOSS_DEFS[guestId]) return;
         // Both modes bring a full party of four; only the cookie you are
         // actually controlling is ever drawn, so two players is still two
@@ -6932,7 +6934,8 @@ io.on('connection', (socket) => {
         if (room.state !== 'waiting') return;
 
         room.players[socket.id] = makeGuestPlayer(chosen, Object.keys(room.players).length,
-            Array.isArray(equipParty) ? equipParty : [], Array.isArray(instinctParty) ? instinctParty : []);
+            Array.isArray(equipParty) ? equipParty : [], Array.isArray(instinctParty) ? instinctParty : [],
+            Array.isArray(charLevelParty) ? charLevelParty : []);
         socket.join(roomId);
         socket.data.roomId = roomId;
 
@@ -7651,14 +7654,14 @@ io.on('connection', (socket) => {
     });
 
     // ---------------- 좀비막기 ----------------
-    socket.on('joinZombieDefense', ({ charType, solo, equip, instinct }) => {
+    socket.on('joinZombieDefense', ({ charType, solo, equip, instinct, charLevel }) => {
         if (!CHARACTERS[charType]) return;
         let roomId = solo ? null : findOpenZombieRoom();
         if (!roomId) roomId = createZombieRoom(solo);
         const room = rooms[roomId];
         if (room.state !== 'waiting') return;
 
-        room.players[socket.id] = makeZombiePlayer(charType, equip, Object.keys(room.players).length, instinct);
+        room.players[socket.id] = makeZombiePlayer(charType, equip, Object.keys(room.players).length, instinct, charLevel);
         socket.join(roomId);
         socket.data.roomId = roomId;
 

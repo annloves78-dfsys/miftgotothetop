@@ -188,11 +188,11 @@ function zombieStartClick(isMulti) {
             zombieSoloBtn.disabled = true;
             zombieLeaveBtn.classList.remove('hidden');
             zombieMultiBtn.textContent = '대기중...';
-            socket.emit('joinZombieDefense', { charType, equip: equipPayload(charType), instinct: instinctPayload(charType) });
+            socket.emit('joinZombieDefense', { charType, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType) });
         } else {
             zombieMultiBtn.disabled = true;
             zombieSoloBtn.disabled = true;
-            socket.emit('joinZombieDefense', { charType, solo: true, equip: equipPayload(charType), instinct: instinctPayload(charType) });
+            socket.emit('joinZombieDefense', { charType, solo: true, equip: equipPayload(charType), instinct: instinctPayload(charType), charLevel: charLevelPayload(charType) });
             socket.emit('startZombieDefense');
         }
     } else if (zombiePhase === 'matched' && !zombieMyReady) {

@@ -247,11 +247,11 @@ function guestStartClick(isMulti) {
             guestSoloBtn.disabled = true;
             guestLeaveBtn.classList.remove('hidden');
             guestMultiBtn.textContent = '대기중...';
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, equipParty: lineup.map(id => equipPayload(id)), instinctParty: lineup.map(id => instinctPayload(id)) });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, equipParty: lineup.map(id => equipPayload(id)), instinctParty: lineup.map(id => instinctPayload(id)), charLevelParty: lineup.map(id => charLevelPayload(id)) });
         } else {
             guestMultiBtn.disabled = true;
             guestSoloBtn.disabled = true;
-            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, solo: true, equipParty: lineup.map(id => equipPayload(id)), instinctParty: lineup.map(id => instinctPayload(id)) });
+            socket.emit('joinGuestRaid', { guestId: GUEST_ID, party: lineup, solo: true, equipParty: lineup.map(id => equipPayload(id)), instinctParty: lineup.map(id => instinctPayload(id)), charLevelParty: lineup.map(id => charLevelPayload(id)) });
             socket.emit('startGuestRaid');
         }
     } else if (guestPhase === 'matched' && !guestMyReady) {

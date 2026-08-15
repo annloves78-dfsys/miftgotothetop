@@ -1764,7 +1764,7 @@ const EVENT_STAGE_DEFS = allEventPlayable().reduce((acc, s) => { acc[s.id] = s.d
 // The one place that turns whatever a story room was entered with -- a floor
 // number or an event stage id -- into its level layout.
 function floorDefFor(floor) {
-    const known = STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor] || LEGEND_STORY_FLOOR_DEFS[floor];
+    const known = STORY_FLOOR_DEFS[floor] || EVENT_STAGE_DEFS[floor] || LEGEND_STORY_FLOOR_DEFS[floor] || EXP_DUNGEON_FLOOR_DEFS[floor];
     if (known) return known;
     const parsed = parseAwakenFloorKey(floor);
     if (!parsed) return null;
@@ -5428,6 +5428,127 @@ function legendChestReward(chestId) {
     return LEGEND_CHEST_REWARDS[chestId] || null;
 }
 
+// ==================== 캐릭터 레벨(성장던전) ====================
+// 캐릭터별 영구 레벨업. 저장은 계정 세이브에 캐릭터별 누적 EXP 하나만 두고
+// (charExp[charType]), 레벨/다음 레벨까지 남은 EXP는 전부 이 누적치에서
+// 매번 계산해 낸다 -- STOCK_EVENTS처럼 로그(누적 EXP)만 저장하고 파생값은
+// 절대 따로 저장하지 않아야 저장값과 실제 레벨이 어긋나는 사고가 안 난다.
+const CHAR_LEVEL_MAX = 100;
+const CHAR_LEVEL_BASE_EXP = 100; // 1강(레벨1->2)에 필요한 EXP
+const CHAR_LEVEL_EXP_GROWTH = 1.08; // 레벨이 오를수록 다음 레벨 요구 EXP가 이 배율로 커진다
+const CHAR_LEVEL_STAT_PCT_PER_LEVEL = 0.02; // 레벨당 체력/공격력 +2% (레벨1 기준 누적)
+
+// level -> level+1에 필요한 EXP. 이미 최대 레벨이면 null.
+function charLevelExpToNext(level) {
+    const lv = Math.max(1, Math.floor(level || 1));
+    if (lv >= CHAR_LEVEL_MAX) return null;
+    return Math.round(CHAR_LEVEL_BASE_EXP * Math.pow(CHAR_LEVEL_EXP_GROWTH, lv - 1));
+}
+
+// 누적 EXP -> { level, expIntoLevel(현재 레벨에서 쌓은 EXP), expToNext(다음 레벨까지 필요한 EXP, 만렙이면 null) }
+function charLevelFromExp(totalExp) {
+    let exp = Math.max(0, Math.floor(totalExp || 0));
+    let level = 1;
+    while (level < CHAR_LEVEL_MAX) {
+        const need = charLevelExpToNext(level);
+        if (need == null || exp < need) break;
+        exp -= need;
+        level++;
+    }
+    return { level, expIntoLevel: exp, expToNext: charLevelExpToNext(level) };
+}
+
+function charExpOf(charExpBag, charType) {
+    const n = Number(charExpBag && charExpBag[charType]);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function charLevelOf(charExpBag, charType) {
+    return charLevelFromExp(charExpOf(charExpBag, charType)).level;
+}
+
+function charLevelStatMultiplier(level) {
+    const lv = Math.max(1, Math.min(CHAR_LEVEL_MAX, Math.floor(level || 1)));
+    return 1 + CHAR_LEVEL_STAT_PCT_PER_LEVEL * (lv - 1);
+}
+
+// 레벨 보너스가 실제로 붙는 수치. 전투에 쓰이는 데미지/체력 수치만 대상으로
+// 한다 -- 쿨타임이나 지속시간 같은 건 손대지 않는다.
+const CHAR_LEVEL_SCALED_KEYS = ['health', 'attackDamage', 'skillDamage', 'ultimateDamage'];
+
+// 레벨 보너스를 반영한 캐릭터 수치. 장비/본능해제와 같은 합성 자리에서 쓴다
+// (characterWithGear -> characterWithInstinct -> characterWithLevel 순).
+function characterWithLevel(character, level) {
+    const lv = Math.max(1, Math.floor(level || 1));
+    if (!character || lv <= 1) return character;
+    const mult = charLevelStatMultiplier(lv);
+    const out = Object.assign({}, character);
+    CHAR_LEVEL_SCALED_KEYS.forEach(k => { if (out[k] != null) out[k] = Math.round(out[k] * mult); });
+    return out;
+}
+
+// ==================== 성장던전 ====================
+// 다이아 1회 결제(EXP_DUNGEON_UNLOCK_COST, main.js)로 영구 해금하는 솔로
+// 전용 모드. 지금은 3칸 중 "EXP 던전" 하나만 실제로 만들고 나머지 둘은
+// UI에 잠김/준비중으로만 걸어 둔다.
+// EXP 던전은 스토리 10층(케이크 보스, 잡몹 없이 짧고 넓은 외길+winOnClear)과
+// 완전히 같은 모양의 방을 10단계 반복한다. 1단계는 원본 케이크 보스 그대로,
+// 2단계부터는 체력·공격력이 전 단계 대비 2배씩 누적으로 커져서 10단계는
+// 원본의 512배 -- 사실상 클리어 불가능한 극한 단계다. 깬 단계는 몇 번이고
+// 다시 들어가 반복 파밍할 수 있다(스토리처럼 첫 클리어에만 주는 보상이
+// 아니라, 이길 때마다 그 단계의 EXP를 그대로 준다).
+const EXP_DUNGEON_STAGE_COUNT = 10;
+const EXP_DUNGEON_EXP_BASE = 100; // 1단계 클리어 보상. 단계마다 2배씩.
+
+// 그 단계 클리어로 받는 캐릭터 EXP.
+function expDungeonExpForStage(stage) {
+    const st = Math.max(1, Math.min(EXP_DUNGEON_STAGE_COUNT, Math.floor(stage || 1)));
+    return EXP_DUNGEON_EXP_BASE * Math.pow(2, st - 1);
+}
+
+// 그 단계의 케이크 보스 몬스터 id. 1단계는 원본 cake_boss를 그대로 쓰고,
+// 2단계부터는 스탯을 2배씩 누적으로 키운 사본을 MONSTERS에 새로 등록해 둔다
+// (아래 for문 참고) -- floorDefFor 등 몬스터 조회 경로를 하나도 안 건드리고
+// id 하나로 스탯 스케일링이 끝난다.
+function expDungeonMonsterType(stage) {
+    const st = Math.max(1, Math.min(EXP_DUNGEON_STAGE_COUNT, Math.floor(stage || 1)));
+    return st <= 1 ? 'cake_boss' : `cake_boss_ed${st}`;
+}
+for (let st = 2; st <= EXP_DUNGEON_STAGE_COUNT; st++) {
+    const mult = Math.pow(2, st - 1);
+    MONSTERS[`cake_boss_ed${st}`] = Object.assign({}, MONSTERS.cake_boss, {
+        health: Math.round(MONSTERS.cake_boss.health * mult),
+        attackDamage: Math.round(MONSTERS.cake_boss.attackDamage * mult)
+    });
+}
+
+function expDungeonFloorKey(stage) {
+    return `expdungeon${stage}`;
+}
+// 스토리 10층과 똑같은 모양(짧고 넓은 외길, 잡몹 없이 보스 하나, winOnClear).
+const EXP_DUNGEON_FLOOR_DEFS = {};
+for (let st = 1; st <= EXP_DUNGEON_STAGE_COUNT; st++) {
+    EXP_DUNGEON_FLOOR_DEFS[expDungeonFloorKey(st)] = {
+        levelType: 'bridge',
+        levelLength: 1100,
+        laneHalfWidth: 220,
+        gates: [],
+        monsters: [
+            { type: expDungeonMonsterType(st), x: -800, y: 0, room: 0 }
+        ],
+        winOnClear: true,
+        bossFloor: true,
+        expDungeonStage: st
+    };
+}
+function isExpDungeonFloor(floor) {
+    return Object.prototype.hasOwnProperty.call(EXP_DUNGEON_FLOOR_DEFS, floor);
+}
+function expDungeonStageOfFloor(floor) {
+    const def = EXP_DUNGEON_FLOOR_DEFS[floor];
+    return def ? def.expDungeonStage : null;
+}
+
 // Gacha. A pull first decides soul stone vs. cookie: GACHA_SOUL_STONE_RATE of
 // pulls give a soul stone, and the remainder is a cookie whose grade is drawn
 // from GACHA_GRADE_WEIGHTS. Those weights are percentages *within* that
@@ -7321,7 +7442,7 @@ function zombieWaveReward(wave) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, pathTangentAt, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, LEGEND_PARTY_SLOT_MAX_GRADE, legendPartySlotAllowsGrade, LEGEND_TOTAL_FLOORS, legendFloorKey, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    module.exports = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, pathTangentAt, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, LEGEND_PARTY_SLOT_MAX_GRADE, legendPartySlotAllowsGrade, LEGEND_TOTAL_FLOORS, legendFloorKey, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward, CHAR_LEVEL_MAX, CHAR_LEVEL_BASE_EXP, CHAR_LEVEL_EXP_GROWTH, CHAR_LEVEL_STAT_PCT_PER_LEVEL, charLevelExpToNext, charLevelFromExp, charExpOf, charLevelOf, charLevelStatMultiplier, characterWithLevel, EXP_DUNGEON_STAGE_COUNT, EXP_DUNGEON_EXP_BASE, expDungeonExpForStage, expDungeonMonsterType, expDungeonFloorKey, EXP_DUNGEON_FLOOR_DEFS, isExpDungeonFloor, expDungeonStageOfFloor };
 } else {
-    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, pathTangentAt, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, LEGEND_PARTY_SLOT_MAX_GRADE, legendPartySlotAllowsGrade, LEGEND_TOTAL_FLOORS, legendFloorKey, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward };
+    window.SHARED = { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, BOSS_LIST, MONSTER_RADIUS, monsterRadiusOf, SUMMON_RADIUS, STAR_RADIUS, PROJECTILE_RADIUS, PROJECTILE_MAX_LIFETIME_MS, MONSTERS, STORY_FLOOR_DEFS, GACHA_SOUL_STONE_KEY, GACHA_TABLE, DEMON_GACHA_KEY, DEMON_GACHA_RATES, demonGachaTable, EVENTS, EVENT, EVENT_STAGE_DEFS, allEventStages, allEventBosses, allEventPlayable, floorDefFor, isEventStage, SOUL_STONES_PER_CHARACTER, DUPLICATE_CHAR_SOUL_STONES, INSTINCT_MAX_LEVEL, INSTINCT_COSTS, INSTINCT_L1_BONUS_HEALTH, INSTINCT_L1_BONUS_ATTACK, INSTINCT_L2_SKILL_DAMAGE_BONUS, INSTINCT_L2_SKILL_SHIELD_BONUS, INSTINCT_L2_SKILL_HEAL_BONUS, instinctLevelOf, instinctNextCost, instinctStatBonus, characterWithInstinct, instinctCharLevelEffect, instinctCharLevelDesc, CLEAR_REWARDS, storyRewardKey, clearRewardFor, CLEAR_DROPS, clearDropsFor, TOWER_BOSS_EVERY, isTowerBossFloor, legendaryEquipmentIds, towerBossReward, EQUIP_SLOTS, EQUIP_SLOT_KEYS, EQUIPMENT, equipmentFor, ownerBonusActive, awakenGearFor, characterWithGear, equipBonusFor, EQUIP_MAX_LEVEL, EQUIP_BONUS_KEYS, EQUIP_UPGRADE_STEPS, equipUsesRareMaterial, equipUpgradeCost, equipLevelScale, scaledBonus, equipStatsAtLevel, equipEntryOf, GRADE_ORDER, AWAKEN_SLOT, hasAwakenSlot, formStat, reviveCountFor, STORY_PARTY_FROM_FLOOR, STORY_PARTY_SIZE, storyPartySizeFor, AWAKEN_PARTY_SIZE, AWAKEN_MAX_LEVEL, AWAKEN_BOSS_LEVELS, awakenLevelStats, AWAKEN_BOSS_EXTRA_HEALTH, AWAKEN_BOSS_EXTRA_HEALTH_NO_REVIVE, awakenBossExtraHealth, awakenLevelHealthBonus, awakenBossMaxHp, awakenBossCharTypes, awakenEquipmentIds, awakenFloorKey, parseAwakenFloorKey, awakenBossMonsterType, awakenBossMonsterDef, awakenMinionMonsterType, awakenMinionMonsterDef, AWAKEN_BOSSES, awakenBossSpec, awakenBossUltimateDamage, awakenBossSkillDamage, awakenBossAttackDamage, awakenBossSkillHealOnHit, awakenBossBurnTotal, awakenBossAttackHeal, awakenBossUltimateAttackDamage, awakenBossUltimateHealAmount, awakenBossUltimateShield, awakenBossSummonCount, awakenBossSummonHealth, AWAKEN_FRAGMENT_KEY, AWAKEN_GEAR_ITEM_KEY, AWAKEN_FRAGMENT_GOAL, AWAKEN_LEVEL_DROPS, awakenLevelDrop, rollAwakenDrop, awakenGearIdOf, awakenLevelReward, ITEMS, ITEM_KEYS, LEGENDARY_BANNERS, LEGENDARY_BANNER_RATE, LEGENDARY_BANNER_TAKEN_FROM, legendaryGachaTable, legendaryBannerFor, STOCK_ELEMENTS, STOCK_BASE_PRICE, STOCK_EVENTS, computeStockPrice, computeStockPrices, GUEST_ARENA_HALF_W, GUEST_ARENA_HALF_H, GUEST_PARTY_SIZE, GUEST_BOSS_DEFS, guestDefFor, BOSS3_COLOR_HONEST, BOSS3_COLOR_TRICK, BOSS3_PATTERN_DEFS, BOSS3_PHASES, boss3PhaseFor, boss3PatternStat, STORY_TOWER_BOSS_FLOOR, STORY_TOWER_BOSS_MONSTER, LEVEL_START_SLACK, floorAxis, alongOf, acrossOf, fromAlongAcross, clampToLane, pathSegs, pathLength, projectOnPath, pointOnPath, pathTangentAt, laneHalfWidthAt, makePathFloor, LEGEND_STORY_FLOOR_DEFS, LEGEND_PARTY_SIZE, LEGEND_PARTY_SLOT_MAX_GRADE, legendPartySlotAllowsGrade, LEGEND_TOTAL_FLOORS, legendFloorKey, isLegendFloor, LEGEND_CLEAR_REWARDS, legendClearReward, LEGEND_CHEST_REWARDS, legendChestReward, ZOMBIE_GRID_COLS, ZOMBIE_GRID_ROWS, ZOMBIE_CELL_SIZE, ZOMBIE_ARENA_HALF_W, ZOMBIE_ARENA_HALF_H, ZOMBIE_CELL_COUNT, ZOMBIE_BUILD_RANGE_CELLS, ZOMBIE_MAX_TREES, ZOMBIE_TREE_HITS, ZOMBIE_WOOD_PER_HIT, ZOMBIE_TREE_RESPAWN_MS, ZOMBIE_TREE_RADIUS, ZOMBIE_PREP_MS, ZOMBIE_COIN_PER_KILL, ZOMBIE_BUILDABLES, ZOMBIE_MINER_ORE_INTERVAL_MS, ZOMBIE_FURNACE_SMELT_MS, ZOMBIE_HOUSE_HEAL_INTERVAL_MS, ZOMBIE_HOUSE_HEAL_AMOUNT, ZOMBIE_SOLDIER_DEF, ZOMBIE_SOLDIER_SPAWN_MS, ZOMBIE_SOLDIER_CAP_PER_SPAWNER, ZOMBIE_WORKBENCH_ITEMS, zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow, zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom, ZOMBIE_DEFS, zombieStatsForWave, zombieTypesForWave, zombieCountForWave, zombieRollTypeForWave, zombieWaveReward, CHAR_LEVEL_MAX, CHAR_LEVEL_BASE_EXP, CHAR_LEVEL_EXP_GROWTH, CHAR_LEVEL_STAT_PCT_PER_LEVEL, charLevelExpToNext, charLevelFromExp, charExpOf, charLevelOf, charLevelStatMultiplier, characterWithLevel, EXP_DUNGEON_STAGE_COUNT, EXP_DUNGEON_EXP_BASE, expDungeonExpForStage, expDungeonMonsterType, expDungeonFloorKey, EXP_DUNGEON_FLOOR_DEFS, isExpDungeonFloor, expDungeonStageOfFloor };
 }
