@@ -1446,6 +1446,7 @@ const leaveConfirmYes = document.getElementById('leave-confirm-yes');
 const leaveConfirmNo = document.getElementById('leave-confirm-no');
 
 let gameData = loadGameData();
+sweepExpiredGtBorrowedEquipment();
 
 // ---- Mobile touch controls (joystick + action buttons) ----
 // A device-local UI preference, not part of gameData -- deliberately kept
@@ -2419,7 +2420,7 @@ const GT_PACKAGES = [
     {
         id: 'gpx1010Ultra', vendor: 'sl', name: 'GPX1010 울트라', cost: 20000, durationDays: 30,
         characterPool: 'owned', characterEffect: 'instinctMax', storyMaxFloor: 49, legendaryPickCount: 4,
-        desc: '보유 캐릭터 1명을 한 달간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 49층까지 해금되며, 레전더리 장비 4개를 직접 골라 영구로 받습니다. GT가 끝나면 강화와 해금된 층은 사라지지만 레전더리 장비는 계속 남습니다.'
+        desc: '보유 캐릭터 1명을 한 달간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 49층까지 해금되며, 레전더리 장비 4개를 GT로 직접 골라 빌립니다. GT가 끝나면 강화·해금된 층·빌린 레전더리 장비가 전부 함께 사라집니다.'
     }
 ];
 // gtPendingPackage가 null이면 목록 화면. 아니면 진행 중인 구매 흐름 --
@@ -2436,17 +2437,46 @@ function resetGtPending() {
     gtPendingLegendaryPicks = [];
 }
 
+// GT로 빌린 레전더리 장비는 가방에 실제로 들어가서 장착/강화 화면을 그대로
+// 쓰지만, uid를 gt.borrowedEquipUids에 적어 둬서 GT가 끝나면(sweepExpiredGt
+// BorrowedEquipment) 가방과 장착 칸 양쪽에서 같이 지워지게 한다.
+function removeGtBorrowedEquipment(uids) {
+    if (!uids || !uids.length) return;
+    const uidSet = new Set(uids);
+    gameData.inventory = inventoryItems().filter(it => !uidSet.has(it.uid));
+    Object.values(gameData.equipped || {}).forEach(worn => {
+        Object.keys(worn).forEach(slot => { if (uidSet.has(worn[slot])) delete worn[slot]; });
+    });
+}
+// GT 만료 후 처음 확인하는 시점에 빌렸던 레전더리 장비를 정리한다 (앱 시작
+// 시, GT 탭을 열 때 호출).
+function sweepExpiredGtBorrowedEquipment() {
+    const gt = gameData.gt;
+    if (!gt || !gt.borrowedEquipUids || !gt.borrowedEquipUids.length) return;
+    if (gt.expiresAt && Date.now() < gt.expiresAt) return;
+    removeGtBorrowedEquipment(gt.borrowedEquipUids);
+    gt.borrowedEquipUids = [];
+    saveGameData(gameData);
+}
+
 function buyGtPackage(pkg, characterId, legendaryPicks) {
     if (currencyAmount('diamonds') < pkg.cost) return { ok: false, msg: '다이아가 부족합니다.' };
     if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -pkg.cost });
+    // 새 GT를 사면 이전 GT는 덮어써지므로, 이전 GT가 빌려줬던 레전더리 장비도
+    // 지금 같이 반납된다.
+    removeGtBorrowedEquipment(gameData.gt && gameData.gt.borrowedEquipUids);
+    const borrowedUids = (legendaryPicks || [])
+        .map(itemId => grantEquipment(itemId))
+        .filter(Boolean)
+        .map(g => g.uid);
     gameData.gt = {
         packageId: pkg.id,
         characterId: characterId || null,
         characterEffect: pkg.characterEffect || null,
         expiresAt: Date.now() + pkg.durationDays * 24 * 60 * 60 * 1000,
-        storyMaxFloor: pkg.storyMaxFloor || 0
+        storyMaxFloor: pkg.storyMaxFloor || 0,
+        borrowedEquipUids: borrowedUids
     };
-    (legendaryPicks || []).forEach(itemId => grantEquipment(itemId));
     saveGameData(gameData);
     const charName = characterId ? (SHARED.CHARACTERS[characterId]?.name || characterId) : '';
     let msg = `${pkg.name} 구매 완료!`;
@@ -2455,7 +2485,7 @@ function buyGtPackage(pkg, characterId, legendaryPicks) {
             ? ` ${charName}을(를) ${pkg.durationDays}일간 5성으로 사용할 수 있습니다.`
             : ` ${charName}을(를) ${pkg.durationDays}일간 사용할 수 있습니다.`;
     }
-    if (legendaryPicks && legendaryPicks.length) msg += ` 레전더리 장비 ${legendaryPicks.length}개 지급 완료.`;
+    if (borrowedUids.length) msg += ` 레전더리 장비 ${borrowedUids.length}개를 GT로 빌렸습니다(GT 종료 시 반납).`;
     return { ok: true, msg };
 }
 
@@ -2535,6 +2565,7 @@ function maybeFinalizeGtPurchase() {
 }
 
 function renderGtTab() {
+    sweepExpiredGtBorrowedEquipment();
     if (gtPendingPackage) {
         if (!gtPendingCharacterId) { renderGtCharacterPicker(); return; }
         if (gtPendingLegendaryPicks.length < (gtPendingPackage.legendaryPickCount || 0)) { renderGtLegendaryPicker(); return; }
