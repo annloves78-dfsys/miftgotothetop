@@ -2390,11 +2390,11 @@ const GT_VENDORS = [
 // 기간 차이로만 상품을 가른다(베이직 1주일 / 울트라 1개월).
 const GT_PACKAGES = [
     {
-        id: 'gtBasic', vendor: 'mh', name: 'GT 베이직', cost: 500, durationDays: 7, maxGrade: '비스트',
+        id: 'gtBasic', vendor: 'mh', name: '500x 베이직', cost: 500, durationDays: 7, maxGrade: '비스트',
         desc: '비스트 등급 이하 원하는 캐릭터 1명을 1주일간 사용할 수 있습니다.'
     },
     {
-        id: 'gtUltra', vendor: 'mh', name: 'GT 울트라', cost: 1300, durationDays: 30, maxGrade: '비스트',
+        id: 'gtUltra', vendor: 'mh', name: '500x 울트라', cost: 1300, durationDays: 30, maxGrade: '비스트',
         desc: '비스트 등급 이하 원하는 캐릭터 1명을 한 달간 사용할 수 있습니다.'
     }
 ];
