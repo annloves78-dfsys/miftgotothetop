@@ -1124,7 +1124,7 @@ const CHARACTERS = {
         color: '#7B68EE', // 보라와 파랑 사이
         weaponShape: 'gatling',
         weaponColor: '#e67e22', // 주황 개틀링건
-        grade: '에픽',
+        grade: '에이션트', // 너무 세서 에픽에서 상향(뽑기 확률을 낮춰 희소성으로 완충)
         element: '어둠',
         role: '대미지 딜러',
         health: 120,
