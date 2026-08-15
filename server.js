@@ -1233,7 +1233,7 @@ function publicMonsters(room) {
 function publicProjectiles(room) {
     const out = {};
     for (const [id, pr] of Object.entries(room.projectiles || {})) {
-        out[id] = { x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy, angle: pr.angle };
+        out[id] = { x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy, angle: pr.angle, radius: pr.radius };
     }
     return out;
 }
@@ -1299,6 +1299,7 @@ function spawnMonsterProjectile(ctx, monsterId, m, def, targetX, targetY) {
         angle: Math.atan2(dy, dx),
         damage: def.attackDamage * outgoingDamageMultiplier(m, Date.now()),
         elementMark: m.elementMark,
+        radius: def.attackProjectileRadius, // undefined for ordinary arrows -> PROJECTILE_RADIUS
         bornAt: Date.now()
     };
     room.projectiles[id] = pr;
@@ -1319,7 +1320,7 @@ function tickMonsterProjectiles(ctx, alivePlayers, dtMs) {
         let hitRef = null;
         for (const p of alivePlayers) {
             const r = (room.summons && Object.values(room.summons).includes(p)) ? SUMMON_RADIUS : PLAYER_RADIUS;
-            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + PROJECTILE_RADIUS) { hitRef = p; break; }
+            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + (pr.radius || PROJECTILE_RADIUS)) { hitRef = p; break; }
         }
 
         const expired = now - pr.bornAt >= PROJECTILE_MAX_LIFETIME_MS;
@@ -3895,6 +3896,16 @@ function beginGuestSkill(roomId, room, def, now) {
         io.to(roomId).emit('guestWindup', {
             skill: 'big_slash', near, windupMs: room.bossRuntime.windupMs
         });
+    } else if (pick === 'basic_attack') {
+        // 원거리 기본 공격: 조준한 자리에 경고 표시를 띄운 뒤, 텔레그래프가
+        // 끝나면 실제로 날아가는 큰 불구슬을 던진다 (guestTickRoom 쪽 분기에서
+        // spawnMonsterProjectile로 발사).
+        const p = def.patterns.basic_attack;
+        room.bossRuntime = { phase: 'telegraph', at: now, x: target.x, y: target.y };
+        io.to(roomId).emit('guestTelegraph', {
+            skill: 'basic_attack', x: target.x, y: target.y,
+            radius: p.radius, telegraphMs: p.telegraphMs
+        });
     } else if (pick === 'summon_minions') {
         const p = def.patterns.summon_minions;
         room.bossRuntime = {
@@ -4441,6 +4452,15 @@ function tickGuestRoom(roomId) {
     }, 'guestDropUpdate');
     if (!rooms[roomId]) return;
 
+    // 보스 자신이 던진 투사체(예: 불꽃요정맛 기본 공격)도 이 큐에 들어가므로,
+    // 부하가 하나도 없는 순간에도 항상 돌려야 한다 -- 예전엔 아래 if 블록
+    // 안에서만 돌아서, 부하 없는 판에서 보스 투사체가 아예 움직이지 않고
+    // room.projectiles에 계속 쌓이기만 하는 버그가 있었다.
+    const mctx = guestMonsterCtx(roomId, room);
+    const gTargets = aliveTargetsOf(room);
+    tickMonsterProjectiles(mctx, gTargets, 50);
+    if (!rooms[roomId]) return;
+
     // Summoned adds (2차) live in the same room and fight on their own clock.
     if (Object.keys(room.monsters).length) {
         // 부하는 몬스터를 먼저 치고, 없으면 보스를 친다.
@@ -4467,11 +4487,7 @@ function tickGuestRoom(roomId) {
         });
         if (!rooms[roomId]) return;
 
-        const mctx = guestMonsterCtx(roomId, room);
-        const gTargets = aliveTargetsOf(room);
         tickMonsterSet(mctx, gTargets, now);
-        if (!rooms[roomId]) return;
-        tickMonsterProjectiles(mctx, gTargets, 50);
         if (!rooms[roomId]) return;
     }
 
@@ -4582,6 +4598,21 @@ function tickGuestRoom(roomId) {
             });
             guestCircleHit(room, roomId, rt.x, rt.y, rt.radius, p.damage);
             if (!rooms[roomId]) return;
+            room.bossState = 'idle';
+            room.bossPattern = null;
+            room.nextSkillAt = now + def.skillIntervalMs;
+        }
+    } else if (room.bossPattern === 'basic_attack') {
+        const p = def.patterns.basic_attack;
+        const rt = room.bossRuntime;
+        if (rt.phase === 'telegraph' && now - rt.at >= p.telegraphMs) {
+            // 데미지 10 + 불데미지 20은 이 게임에 "피격자에게 화상 디버프"
+            // 시스템이 아직 없어서, 한 방에 합쳐 30으로 적중시킨다(유누 확정치
+            // 그대로, 판정만 단순화).
+            spawnMonsterProjectile(guestMonsterCtx(roomId, room), 'boss',
+                { x: room.bossX, y: room.bossY, elementMark: null },
+                { projectileSpeed: p.speed, attackDamage: p.damage + p.burnDamage, attackProjectileRadius: p.radius },
+                rt.x, rt.y);
             room.bossState = 'idle';
             room.bossPattern = null;
             room.nextSkillAt = now + def.skillIntervalMs;

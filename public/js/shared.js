@@ -1934,18 +1934,19 @@ const GUEST_BOSS_DEFS = {
         maxHp: 20000, // 유누 확정 (2026-08-15), 1차
         radius: 46,
         homeY: -235,
-        skillIntervalMs: 1000,
-        // patterns는 아직 비워둔다 -- beginGuestSkill(server.js)이 여기 담긴
-        // 키를 그대로 랜덤으로 뽑아서 쓰기 때문에, tick 로직 없는 패턴을
-        // 넣으면 보스가 캐스팅 중 그대로 멈춰버린다. 확정된 수치는 patternDrafts에
-        // 적어두고, 사거리/범위/텔레그래프 등 나머지가 정해져서 server.js에
-        // 실제 tick 분기를 짜 넣을 때 여기로 옮길 것.
-        patterns: {}, // TODO: 1차 패턴 (유누 디자인 대기)
-        patternDrafts: {
-            // 기본(평범) 공격: 데미지 10 + 불데미지 20 확정 (유누, 2026-08-15).
-            // 사거리/범위/텔레그래프, 불데미지가 한번에 붙는지 도트로 나뉘는지는
-            // 아직 안 정해짐.
+        skillIntervalMs: 2000, // 유누 확정 (2026-08-15): 기본 공격이 2초에 한 번
+        patterns: {
+            // 기본(평범) 공격: 원거리, 크고 빠른 불구슬을 던진다.
+            // damage/burnDamage/2초 간격은 유누 확정치 (2026-08-15). radius(큰
+            // 구슬)/speed(빠르게)/telegraphMs는 "크게"/"빠르게"라는 방향만 정해져서,
+            // 기존 수치 스케일(캐릭터 투사체 반지름 6~15, 속도 380~800,
+            // guest1 텔레그래프 300~600ms)에 맞춰 임의로 채운 값 -- 다르면 알려줄 것.
+            // 피격자 화상 디버프 시스템이 이 게임에 아직 없어서, 두 데미지는
+            // 합쳐서(30) 한 방에 적중시킨다 (server.js의 basic_attack 분기 참고).
             basic_attack: {
+                telegraphMs: 500,
+                speed: 900,
+                radius: 34,
                 damage: 10,
                 burnDamage: 20
             }

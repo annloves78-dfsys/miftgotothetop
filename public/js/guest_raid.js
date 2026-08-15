@@ -1257,9 +1257,23 @@ function guestRender(now) {
     Object.values(guestProjectiles).forEach(pr => {
         guestCtx.save();
         guestCtx.translate(pr.x, pr.y);
-        guestCtx.rotate(pr.angle);
-        guestCtx.fillStyle = '#ecf0f1';
-        guestCtx.fillRect(-8, -2, 16, 4);
+        if (pr.radius) {
+            // 불꽃요정맛 기본 공격의 큰 불구슬처럼 반지름이 붙은 투사체는
+            // 화살(기본 그림)이 아니라 그 크기의 불덩이로 그린다.
+            guestCtx.rotate(pr.angle);
+            const grad = guestCtx.createRadialGradient(0, 0, 0, 0, 0, pr.radius);
+            grad.addColorStop(0, '#fff3b0');
+            grad.addColorStop(0.5, '#f39c12');
+            grad.addColorStop(1, '#c0392b');
+            guestCtx.fillStyle = grad;
+            guestCtx.beginPath();
+            guestCtx.arc(0, 0, pr.radius, 0, Math.PI * 2);
+            guestCtx.fill();
+        } else {
+            guestCtx.rotate(pr.angle);
+            guestCtx.fillStyle = '#ecf0f1';
+            guestCtx.fillRect(-8, -2, 16, 4);
+        }
         guestCtx.restore();
     });
     drawSummons(guestCtx, guestSummons, socket.id);
