@@ -622,6 +622,8 @@ function equipBonusOf(charType) {
 // ---- 본능해제 ----
 // 그 캐릭터 자신의 영혼석(중복 뽑기로 쌓인다)을 써서 영구 강화한다.
 function instinctLevelOfChar(charType) {
+    const gt = gtBenefits();
+    if (gt.characterEffect === 'instinctMax' && gt.characterId === charType) return SHARED.INSTINCT_MAX_LEVEL;
     return SHARED.instinctLevelOf(gameData.instinctLevels, charType);
 }
 // 서버에 보낼 값: 레벨 숫자 하나뿐이다. 실제 보너스 계산은 서버가 shared.js
@@ -753,15 +755,18 @@ function currencyText(key) {
 }
 
 function isCharacterUnlocked(id) {
-    return adminPowerOn('characters') || gameData.unlockedCharacters.includes(id) || gtBenefits().characterId === id;
+    const gt = gtBenefits();
+    return adminPowerOn('characters') || gameData.unlockedCharacters.includes(id) || (gt.characterEffect === 'unlock' && gt.characterId === id);
 }
 
 // GT 구독 (상점 GT 탭). 활성 플래그를 따로 두지 않고 expiresAt만으로 매번
-// 판정한다 -- 만료 처리를 깜빡할 여지가 없도록.
+// 판정한다 -- 만료 처리를 깜빡할 여지가 없도록. characterEffect는 gt.characterId를
+// 어떻게 쓸지 구분한다: 'unlock'(mh -- 미보유 캐릭터를 빌려서 사용 가능하게)
+// / 'instinctMax'(sl -- 보유 캐릭터를 본능해제 5강으로 임시 강화).
 function gtBenefits() {
     const gt = gameData.gt;
-    if (!gt || !gt.expiresAt || Date.now() >= gt.expiresAt) return { floorBonus: 0, legendUnlock: false, characterId: null };
-    return { floorBonus: gt.floorBonus || 0, legendUnlock: !!gt.legendUnlock, characterId: gt.characterId || null };
+    if (!gt || !gt.expiresAt || Date.now() >= gt.expiresAt) return { characterId: null, characterEffect: null, storyMaxFloor: 0 };
+    return { characterId: gt.characterId || null, characterEffect: gt.characterEffect || null, storyMaxFloor: gt.storyMaxFloor || 0 };
 }
 function gtDaysRemaining() {
     const gt = gameData.gt;
@@ -2377,41 +2382,81 @@ const SHOP_ITEMS = [
     { key: 'randomLegendaryGear', cost: 1000, costCurrency: 'diamonds', category: 'currency', grantsTo: 'items' }
 ];
 
-// ---- GT (다이아로 사는 기간제 구독. 지정한 미보유 캐릭터 1명을 기간 동안 쓸
-// 수 있게 해준다. 판매처(벤더)별로 상품/가격 정책이 다르다.) ----
-// GT는 판매처(벤더)별로 상품이 따로 있다. 지금은 mh 하나뿐이지만, 나중에
-// 다른 판매처가 추가되면 GT_VENDORS에 항목을 더하고 각 상품에 그 vendor id를
-// 붙이면 된다.
+// ---- GT (다이아로 사는 기간제 구독. 판매처(벤더)별로 상품/가격/혜택 정책이
+// 다르다.) ----
+// GT는 판매처(벤더)별로 상품이 따로 있다. 다른 판매처가 추가되면 GT_VENDORS에
+// 항목을 더하고 각 상품에 그 vendor id를 붙이면 된다.
 const GT_VENDORS = [
     { id: 'mh', name: 'MH' },
-    { id: 'sl', name: 'SL' } // 아직 판매하는 상품 없음 -- 나중에 채워질 자리
+    { id: 'sl', name: 'SL' }
 ];
-// mh는 저가 정책 -- 캐릭터는 비스트 등급까지만(게스트 등급 제외) 고를 수 있고,
-// 기간 차이로만 상품을 가른다(베이직 1주일 / 울트라 1개월).
+// characterPool: 캐릭터 선택 단계에서 어느 풀에서 고르는지 -- 'unowned'(mh, 못
+// 가진 캐릭터를 빌림) | 'owned'(sl, 이미 가진 캐릭터를 임시로 강화).
+// characterEffect: gt.characterId를 어떻게 적용할지 -- 'unlock'(isCharacterUnlocked
+// 통과) | 'instinctMax'(instinctLevelOfChar가 본능해제 5강으로 침).
+// storyMaxFloor: 스토리 타워를 이 층까지 절대 해금(진행도 무관, isFloorUnlocked).
+// legendaryPickCount: 구매 확정 전 레전더리 장비를 몇 개 직접 골라야 하는지.
+// 전부 GT가 끝나면(expiresAt) 캐릭터 접근/강화/층 해금은 같이 사라진다 --
+// legendaryPickCount로 받은 장비만 구매 시점에 영구로 지급되어 남는다.
 const GT_PACKAGES = [
+    // mh: 저가 정책 -- 캐릭터는 비스트 등급까지만(게스트 등급 제외) 빌려준다.
     {
-        id: 'gtBasic', vendor: 'mh', name: '500x 베이직', cost: 500, durationDays: 7, maxGrade: '비스트',
-        desc: '비스트 등급 이하 원하는 캐릭터 1명을 1주일간 사용할 수 있습니다.'
+        id: 'gtBasic', vendor: 'mh', name: '500x 베이직', cost: 500, durationDays: 7,
+        maxGrade: '비스트', characterPool: 'unowned', characterEffect: 'unlock',
+        desc: '비스트 등급 이하 원하는 캐릭터 1명을 1주일간 GT로 빌려서 사용할 수 있습니다. GT가 끝나면 캐릭터도 함께 사라집니다.'
     },
     {
-        id: 'gtUltra', vendor: 'mh', name: '500x 울트라', cost: 1300, durationDays: 30, maxGrade: '비스트',
-        desc: '비스트 등급 이하 원하는 캐릭터 1명을 한 달간 사용할 수 있습니다.'
+        id: 'gtUltra', vendor: 'mh', name: '500x 울트라', cost: 1300, durationDays: 30,
+        maxGrade: '비스트', characterPool: 'unowned', characterEffect: 'unlock',
+        desc: '비스트 등급 이하 원하는 캐릭터 1명을 한 달간 GT로 빌려서 사용할 수 있습니다. GT가 끝나면 캐릭터도 함께 사라집니다.'
+    },
+    // sl: 이미 보유한 캐릭터를 임시로 5성까지 강화 + 스토리 타워 절대 해금.
+    {
+        id: 'gpx1010Basic', vendor: 'sl', name: 'GPX1010 베이직', cost: 5000, durationDays: 7,
+        characterPool: 'owned', characterEffect: 'instinctMax', storyMaxFloor: 40, legendaryPickCount: 0,
+        desc: '보유 캐릭터 1명을 1주일간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 40층까지 해금됩니다. GT가 끝나면 강화와 해금된 층도 함께 사라집니다.'
+    },
+    {
+        id: 'gpx1010Ultra', vendor: 'sl', name: 'GPX1010 울트라', cost: 20000, durationDays: 30,
+        characterPool: 'owned', characterEffect: 'instinctMax', storyMaxFloor: 49, legendaryPickCount: 4,
+        desc: '보유 캐릭터 1명을 한 달간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 49층까지 해금되며, 레전더리 장비 4개를 직접 골라 영구로 받습니다. GT가 끝나면 강화와 해금된 층은 사라지지만 레전더리 장비는 계속 남습니다.'
     }
 ];
-// null이면 목록 화면, GT_PACKAGES의 한 항목이면 "캐릭터 선택" 화면.
+// gtPendingPackage가 null이면 목록 화면. 아니면 진행 중인 구매 흐름 --
+// gtPendingCharacterId가 아직 없으면 캐릭터 선택, 있는데 legendaryPickCount만큼
+// 덜 골랐으면 레전더리 선택, 다 채워지면 바로 구매가 확정된다.
 let gtPendingPackage = null;
+let gtPendingCharacterId = null;
+let gtPendingLegendaryPicks = [];
 let gtSelectedVendor = GT_VENDORS[0].id;
 
-function buyGtPackage(pkg, characterId) {
+function resetGtPending() {
+    gtPendingPackage = null;
+    gtPendingCharacterId = null;
+    gtPendingLegendaryPicks = [];
+}
+
+function buyGtPackage(pkg, characterId, legendaryPicks) {
     if (currencyAmount('diamonds') < pkg.cost) return { ok: false, msg: '다이아가 부족합니다.' };
     if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -pkg.cost });
     gameData.gt = {
         packageId: pkg.id,
-        characterId,
-        expiresAt: Date.now() + pkg.durationDays * 24 * 60 * 60 * 1000
+        characterId: characterId || null,
+        characterEffect: pkg.characterEffect || null,
+        expiresAt: Date.now() + pkg.durationDays * 24 * 60 * 60 * 1000,
+        storyMaxFloor: pkg.storyMaxFloor || 0
     };
+    (legendaryPicks || []).forEach(itemId => grantEquipment(itemId));
     saveGameData(gameData);
-    return { ok: true, msg: `${pkg.name} 구매 완료! ${SHARED.CHARACTERS[characterId].name}을(를) ${pkg.durationDays}일간 사용할 수 있습니다.` };
+    const charName = characterId ? (SHARED.CHARACTERS[characterId]?.name || characterId) : '';
+    let msg = `${pkg.name} 구매 완료!`;
+    if (characterId) {
+        msg += pkg.characterEffect === 'instinctMax'
+            ? ` ${charName}을(를) ${pkg.durationDays}일간 5성으로 사용할 수 있습니다.`
+            : ` ${charName}을(를) ${pkg.durationDays}일간 사용할 수 있습니다.`;
+    }
+    if (legendaryPicks && legendaryPicks.length) msg += ` 레전더리 장비 ${legendaryPicks.length}개 지급 완료.`;
+    return { ok: true, msg };
 }
 
 function renderGtStatusHtml() {
@@ -2420,9 +2465,10 @@ function renderGtStatusHtml() {
     if (!gt || days <= 0) return '';
     const pkg = GT_PACKAGES.find(p => p.id === gt.packageId);
     const charName = SHARED.CHARACTERS[gt.characterId]?.name || gt.characterId;
+    const effectText = gt.characterEffect === 'instinctMax' ? '5성 강화 중' : '사용 가능';
     return `<div class="shop-item-card gt-status-card">
         <span class="shop-item-icon">⏳</span>
-        <span class="shop-item-name">${pkg ? pkg.name : 'GT'} 이용 중<div class="iap-item-desc">${charName} 사용 가능 · D-${days}</div></span>
+        <span class="shop-item-name">${pkg ? pkg.name : 'GT'} 이용 중<div class="iap-item-desc">${charName} ${effectText} · D-${days}</div></span>
     </div>`;
 }
 
@@ -2431,23 +2477,68 @@ function renderGtCharacterPicker() {
     shopContent.classList.remove('shop-content-gt');
     shopContent.classList.add('shop-content-list');
     shopLayoutEl.classList.add('shop-layout-gt');
-    const candidates = Object.entries(SHARED.CHARACTERS).filter(([id, stats]) =>
-        !gameData.unlockedCharacters.includes(id) &&
-        (!pkg.maxGrade || SHARED.GRADE_ORDER.indexOf(stats.grade) <= SHARED.GRADE_ORDER.indexOf(pkg.maxGrade)));
+    const candidates = Object.entries(SHARED.CHARACTERS).filter(([id, stats]) => {
+        const owned = gameData.unlockedCharacters.includes(id);
+        const poolOk = pkg.characterPool === 'owned' ? owned : !owned;
+        const gradeOk = !pkg.maxGrade || SHARED.GRADE_ORDER.indexOf(stats.grade) <= SHARED.GRADE_ORDER.indexOf(pkg.maxGrade);
+        return poolOk && gradeOk;
+    });
     const gradeHint = pkg.maxGrade ? ` (${pkg.maxGrade} 등급까지)` : '';
+    const emptyMsg = pkg.characterPool === 'owned' ? '보유한 캐릭터가 없습니다.' : '선택할 수 있는 미보유 캐릭터가 없습니다.';
     shopContent.innerHTML = `
         <p class="iap-bank-hint">${pkg.name} — ${pkg.durationDays}일간 사용할 캐릭터를 선택하세요${gradeHint}.</p>
         <div class="gt-char-grid">${candidates.map(([id, stats]) => `
             <div class="boss-card gt-char-pick" data-char="${id}">
                 <div class="icon char-swatch" style="background: ${charIconBackground(stats)}"></div>
                 <div class="name">${stats.name}</div>
-            </div>`).join('') || '<p class="shop-empty">선택할 수 있는 미보유 캐릭터가 없습니다.</p>'}</div>
+            </div>`).join('') || `<p class="shop-empty">${emptyMsg}</p>`}</div>
         <button id="gt-picker-cancel" class="secondary-btn">취소</button>
     `;
 }
 
+function renderGtLegendaryPicker() {
+    const pkg = gtPendingPackage;
+    shopContent.classList.remove('shop-content-gt');
+    shopContent.classList.add('shop-content-list');
+    shopLayoutEl.classList.add('shop-layout-gt');
+    const need = pkg.legendaryPickCount;
+    const got = gtPendingLegendaryPicks.length;
+    shopContent.innerHTML = `
+        <p class="iap-bank-hint">${pkg.name} — 레전더리 장비를 직접 골라주세요 (${got}/${need}, 같은 장비 중복 선택 가능).</p>
+        <div class="gt-char-grid">${SHARED.legendaryEquipmentIds().map(id => {
+            const item = SHARED.equipmentFor(id);
+            return `<div class="boss-card gt-legendary-pick" data-item="${id}">
+                <div class="icon">${item.icon}</div>
+                <div class="name">${item.name}</div>
+            </div>`;
+        }).join('')}</div>
+        <button id="gt-picker-cancel" class="secondary-btn">취소</button>
+    `;
+}
+
+// 캐릭터/레전더리 선택이 끝날 때마다 불려서, 다음 단계로 넘길지 구매를
+// 확정할지 정한다.
+function maybeFinalizeGtPurchase() {
+    const pkg = gtPendingPackage;
+    if (!pkg) return;
+    if (!gtPendingCharacterId) { renderGtTab(); return; }
+    if (gtPendingLegendaryPicks.length < (pkg.legendaryPickCount || 0)) { renderGtTab(); return; }
+    const res = buyGtPackage(pkg, gtPendingCharacterId, gtPendingLegendaryPicks);
+    resetGtPending();
+    renderGtTab();
+    const msgEl = document.getElementById('shop-item-msg');
+    if (msgEl) {
+        msgEl.textContent = res.msg;
+        msgEl.classList.remove('hidden');
+        msgEl.classList.toggle('good', res.ok);
+    }
+}
+
 function renderGtTab() {
-    if (gtPendingPackage) { renderGtCharacterPicker(); return; }
+    if (gtPendingPackage) {
+        if (!gtPendingCharacterId) { renderGtCharacterPicker(); return; }
+        if (gtPendingLegendaryPicks.length < (gtPendingPackage.legendaryPickCount || 0)) { renderGtLegendaryPicker(); return; }
+    }
     shopContent.classList.remove('shop-content-list');
     shopContent.classList.add('shop-content-gt');
     shopLayoutEl.classList.add('shop-layout-gt');
@@ -2497,7 +2588,7 @@ function renderShopCategory(key) {
     Object.entries(shopCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
     if (key !== 'gt') { shopContent.classList.remove('shop-content-gt'); shopLayoutEl.classList.remove('shop-layout-gt'); }
     if (key === 'iap') { renderIapTab(); return; }
-    if (key === 'gt') { gtPendingPackage = null; renderGtTab(); return; }
+    if (key === 'gt') { resetGtPending(); renderGtTab(); return; }
     const goods = SHOP_ITEMS.filter(it => it.category === key);
     shopContent.classList.toggle('shop-content-list', goods.length > 0);
     if (goods.length) {
@@ -2524,7 +2615,7 @@ shopContent.addEventListener('click', (e) => {
         return;
     }
     if (e.target.closest('#gt-picker-cancel')) {
-        gtPendingPackage = null;
+        resetGtPending();
         renderGtTab();
         return;
     }
@@ -2536,15 +2627,14 @@ shopContent.addEventListener('click', (e) => {
     }
     const gtCharPick = e.target.closest('.gt-char-pick');
     if (gtCharPick) {
-        const res = buyGtPackage(gtPendingPackage, gtCharPick.dataset.char);
-        gtPendingPackage = null;
-        renderGtTab();
-        const msgEl = document.getElementById('shop-item-msg');
-        if (msgEl) {
-            msgEl.textContent = res.msg;
-            msgEl.classList.remove('hidden');
-            msgEl.classList.toggle('good', res.ok);
-        }
+        gtPendingCharacterId = gtCharPick.dataset.char;
+        maybeFinalizeGtPurchase();
+        return;
+    }
+    const gtLegendaryPick = e.target.closest('.gt-legendary-pick');
+    if (gtLegendaryPick) {
+        gtPendingLegendaryPicks.push(gtLegendaryPick.dataset.item);
+        maybeFinalizeGtPurchase();
         return;
     }
     const gtBuyBtn = e.target.closest('.gt-buy-btn');
@@ -2556,6 +2646,8 @@ shopContent.addEventListener('click', (e) => {
             return;
         }
         gtPendingPackage = pkg;
+        gtPendingCharacterId = null;
+        gtPendingLegendaryPicks = [];
         renderGtTab();
         return;
     }
@@ -3249,7 +3341,6 @@ function resumeLegendFloor() {
 function isLegendFloorUnlocked(n) {
     if (adminPowerOn('stages')) return true;
     if (n === 1) return true;
-    if (gtBenefits().legendUnlock) return true;
     return gameData.clearedLegendFloors.includes(SHARED.legendFloorKey(n - 1));
 }
 function renderLegendFloorChips() {
@@ -4300,14 +4391,9 @@ function isFloorUnlocked(floor) {
     if (adminPowerOn('stages')) return true; // 관리자 전용: every difficulty is open
     if (floor === 1) return true;
     if (gameData.clearedStoryFloors.includes(floor - 1)) return true;
-    const bonus = gtBenefits().floorBonus;
-    return bonus > 0 && floor <= baseUnlockedMaxFloor() + bonus;
-}
-// GT 보너스가 여는 스토리 층 계산용. 실제 진행도(clearedStoryFloors) 위에
-// "+N층"을 얹는 방식이라, GT가 만료돼도 이미 깬 진행도 자체는 그대로 남는다.
-function baseUnlockedMaxFloor() {
-    const cleared = gameData.clearedStoryFloors.filter(f => typeof f === 'number');
-    return cleared.length ? Math.max(...cleared) + 1 : 1;
+    // GT(sl)가 "N층까지 해금"을 주는 경우 -- 진행도와 무관한 절대 상한이라,
+    // GT가 끝나면 실제로 깬 진행도만큼만 다시 남는다.
+    return floor <= gtBenefits().storyMaxFloor;
 }
 
 function renderTower() {
