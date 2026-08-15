@@ -1920,15 +1920,46 @@ const GUEST_BOSS_DEFS = {
                 }
             }
         }
+    },
+    // ==================== guest2: 불꽃요정맛 쿠키 ====================
+    // 골자만 잡아둔 상태 -- 유누가 패턴(1~3차 스킬)을 직접 정해서 줄 예정이니
+    // patterns를 임의로 채우거나 숫자를 다듬지 말 것. 아직 서버 쪽 페이즈 전환
+    // 로직(damageGuestBoss/startGuestPhase2 등)과 게스트 보스 선택 UI도 guest1
+    // 전용으로 짜여 있어 guest2까지 이어지지 않는다 -- 패턴이 정해지면 그것부터
+    // 같이 손볼 것.
+    guest2: {
+        id: 'guest2',
+        name: '불꽃요정맛 쿠키',
+        charType: 'flamefairy',
+        maxHp: 500,
+        radius: 46,
+        homeY: -235,
+        skillIntervalMs: 1000,
+        patterns: {}, // TODO: 1차 패턴 (유누 디자인 대기)
+        phase2: {
+            maxHp: 400,
+            skillIntervalMs: 1000,
+            patterns: {} // TODO: 2차 패턴 (유누 디자인 대기)
+        },
+        phase3: {
+            maxHp: 300,
+            skillIntervalMs: 1000,
+            patterns: {} // TODO: 3차 패턴 (유누 디자인 대기)
+        }
     }
 };
 
-// The definition in force right now: phase 2 overrides maxHp/skillIntervalMs/
+// The definition in force right now: phase 2/3 override maxHp/skillIntervalMs/
 // patterns while keeping the shared body fields (radius, homeY, charType).
+// Overrides apply cumulatively (phase 3 layers on top of phase 2's shape) so a
+// phase3 block only needs to list what actually changes from phase 2.
 function guestDefFor(room) {
     const base = GUEST_BOSS_DEFS[room.guestId];
     if (!base) return null;
-    return room.phase === 2 && base.phase2 ? { ...base, ...base.phase2 } : base;
+    let def = base;
+    if (room.phase >= 2 && base.phase2) def = { ...def, ...base.phase2 };
+    if (room.phase >= 3 && base.phase3) def = { ...def, ...base.phase3 };
+    return def;
 }
 
 const MONSTER_RADIUS = 16;
