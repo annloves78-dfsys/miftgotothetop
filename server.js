@@ -215,7 +215,7 @@ const NO_EQUIP_BONUS = { attack: 0, health: 0, speed: 0, damageTaken: 1, cooldow
 // 더해서 쓴다 -- 장비처럼 그 즉시 읽는 모든 곳에서 자동으로 반영된다.
 function bonusFrom(equip, charType, instinctLevel) {
     const base = (!equip || typeof equip !== 'object') ? { ...NO_EQUIP_BONUS } : equipBonusFor(equip, charType);
-    const inst = instinctStatBonus(instinctLevel);
+    const inst = instinctStatBonus(instinctLevel, charType);
     base.health += inst.health;
     base.attack += inst.attack;
     return base;
@@ -560,6 +560,22 @@ function passiveHitHeal(character, p) {
     p.hitStreak = (p.hitStreak || 0) + 1;
     if (p.hitStreak % character.attackHealEveryHits !== 0) return 0;
     return character.attackHealSelf || 0;
+}
+
+// 파핑캔디맛 전용 탄창 게이트. attackAmmoMax가 있는 캐릭터만 해당하고, 나머지는
+// 항상 true(그냥 통과)다. 재장전 중이면 못 쏘고, 마지막 발을 쏘면 자동으로
+// attackReloadMs짜리 재장전이 시작된다. 클라이언트도 같은 규칙(clientConsumeAmmo,
+// main.js)으로 미리 예측해서 HUD에 보여주지만, 실제 판정은 여기서만 한다.
+function consumeAmmoOrBlock(character, p, now) {
+    if (!character.attackAmmoMax) return true;
+    if (p.reloadUntil && now < p.reloadUntil) return false;
+    if (p.ammoLeft == null || p.ammoLeft > character.attackAmmoMax) p.ammoLeft = character.attackAmmoMax;
+    p.ammoLeft -= 1;
+    if (p.ammoLeft <= 0) {
+        p.ammoLeft = 0;
+        p.reloadUntil = now + (character.attackReloadMs || 3000);
+    }
+    return true;
 }
 
 // p.rapidStrikeUntil is only ever set by the awakening_rapid (orangelemon)
@@ -5565,6 +5581,7 @@ io.on('connection', (socket) => {
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
+        if (!consumeAmmoOrBlock(character, p, now)) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
@@ -6091,6 +6108,20 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('storyPlayerHealed', { id, hp: pl.hp });
             }
             shieldStoryTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'self_ratio_guard') {
+            // 파핑캔디맛: team_guard와 같은 모양이지만 자기 자신에게만 건다.
+            // 11층+ 파티 쿠키라면 partyHp도 같이 맞춰 준다(team_guard는 이
+            // 경우를 안 챙기지만, 자기 자신뿐이라 여기서는 직접 해 준다).
+            const healed = Math.round(p.maxHp * character.ultimateHealRatio);
+            if (p.party) {
+                p.partyHp[p.active] = Math.min(p.partyMaxHp[p.active], p.partyHp[p.active] + healed);
+                p.hp = p.partyHp[p.active];
+            } else {
+                p.hp = Math.min(p.maxHp, p.hp + healed);
+            }
+            io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('storyPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
         } else if (character.ultimateType === 'great_slash') {
             // 0.3초 예열 -> 엄청 큰 반공간 베기. 예열을 먼저 알려서 피할 틈을 준다.
             io.to(roomId).emit('storyGreatSlash', {
@@ -6325,6 +6356,7 @@ io.on('connection', (socket) => {
         const rapid = rapidStrikeActive(character, p, now);
         const cooldown = attackCooldownFor(character, p, rapid, now);
         if (now - p.lastAttackTime < cooldown) return;
+        if (!consumeAmmoOrBlock(character, p, now)) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0; // attacking breaks guard
 
@@ -6652,6 +6684,12 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('playerHealed', { id, hp: pl.hp });
             }
             shieldTeam(room, roomId, character.ultimateShieldAmount);
+        } else if (character.ultimateType === 'self_ratio_guard') {
+            // 파핑캔디맛: team_guard와 같은 모양이지만 자기 자신에게만 건다.
+            p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * character.ultimateHealRatio));
+            io.to(roomId).emit('playerHealed', { id: socket.id, hp: p.hp });
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('playerShielded', { id: socket.id, shieldHp: p.shieldHp });
         } else if (character.ultimateType === 'great_slash') {
             io.to(roomId).emit('greatSlash', {
                 id: socket.id, x: p.x, y: p.y, facing: p.facing,
@@ -7098,6 +7136,7 @@ io.on('connection', (socket) => {
         if (p.untouchableUntil && now < p.untouchableUntil) return;
         const rapid = rapidStrikeActive(character, p, now);
         if (now - p.lastAttackTime < attackCooldownFor(character, p, rapid, now)) return;
+        if (!consumeAmmoOrBlock(character, p, now)) return;
         p.lastAttackTime = now;
         if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
         if (character.attackType === 'throw_projectile') {
@@ -7471,6 +7510,17 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('guestPlayerHealed', { id, hp: pl.hp, partyHp: pl.partyHp });
             }
             shieldGuestTeam(room, roomId, character.ultimateShieldAmount);
+            return;
+        }
+        if (character.ultimateType === 'self_ratio_guard') {
+            // 파핑캔디맛: team_guard와 같은 모양이지만 자기 자신에게만 건다.
+            // 게스트 레이드는 항상 4명 파티라 partyHp 동기화가 필수.
+            const healed = Math.round(p.maxHp * character.ultimateHealRatio);
+            p.partyHp[p.active] = Math.min(p.partyMaxHp[p.active], p.partyHp[p.active] + healed);
+            p.hp = p.partyHp[p.active];
+            io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
+            p.shieldHp = character.ultimateShieldAmount;
+            io.to(roomId).emit('guestPlayerShielded', { id: socket.id, shieldHp: p.shieldHp });
             return;
         }
         if (character.ultimateType === 'great_slash') {

@@ -1117,6 +1117,41 @@ const CHARACTERS = {
         ultimateDamageMultiplier: 0.5,
         ultimateAttackMarkUses: 5,
         ultimateColorOverride: { colorLeft: '#ffffff', colorRight: '#ffffff' }
+    },
+    poppingcandy: {
+        name: '파핑캔디맛 쿠키',
+        shortName: '파핑캔디', // shown on the lobby's character-select button
+        color: '#7B68EE', // 보라와 파랑 사이
+        weaponShape: 'gatling',
+        weaponColor: '#e67e22', // 주황 개틀링건
+        grade: '에픽',
+        element: '어둠',
+        role: '대미지 딜러',
+        health: 120,
+        speed: 2.3, // 바람궁수(2)보다 빠르다
+        // 기본공격: 개틀링건으로 파핑캔디를 마구 쏜다. throw_projectile을
+        // 그대로 쓰되(맞아야 피해가 들어가는 실제 투사체), attackAmmoMax가
+        // 있는 유일한 캐릭터라 공격 버튼을 꾹 누르면 연사가 나간다 -- 연사
+        // 자체는 클라이언트가 재사용 대기시간(0.1초)마다 같은 함수를 계속
+        // 불러서 만든다 (main.js의 "연사" 절 참고). 100발을 쏘면 자동으로
+        // 3초 재장전에 들어간다 (server.js consumeAmmoOrBlock이 판정).
+        attackType: 'throw_projectile',
+        attackProjectileTheme: 'candy',
+        attackProjectileNoun: '파핑캔디',
+        attackProjectileRadius: 5,
+        attackProjectileSpeed: 700,
+        attackRange: 420,
+        attackDamage: 1,
+        attackCooldown: 100, // 0.1초에 한 발
+        attackAmmoMax: 100, // 100발 쏘면 재장전
+        attackReloadMs: 3000, // 재장전 3초
+        attackFireSpeedPenalty: 0.3, // 연사 중(마지막 발 후 잠깐) 이동속도가 이만큼 줄어든다
+        // 특수스킬 없음 -- skillType 자체를 생략한다. 전투 중 스킬 칸에는
+        // 대신 남은 탄수/재장전 상태가 뜬다 (main.js updateCooldownDisplay류).
+        ultimateType: 'self_ratio_guard', // 자기 자신에게만: 최대체력 비율 회복 + 고정 보호막
+        ultimateHealRatio: 0.5,
+        ultimateShieldAmount: 50,
+        ultimateCooldownMs: 30000
     }
 };
 
@@ -6804,15 +6839,27 @@ function instinctNextCost(level) {
 }
 
 // 1강의 기본 능력치 보너스. 장비 보너스와 같은 자리(등가 bonus.health/attack)에 더해서 쓴다.
-function instinctStatBonus(level) {
+// 보통은 모든 캐릭터가 같은 값을 받는 범용 보너스지만, 파핑캔디맛처럼 공격력을
+// 낱발 피해(1) 그대로 쓰는 연사형 캐릭터는 공격력 보너스가 사실상 의미가 없어서
+// INSTINCT_L1_OVERRIDES에 캐릭터별로 다른 배분을 적어 둘 수 있다.
+const INSTINCT_L1_OVERRIDES = {
+    // 연사 위주라 공격력 보너스 대신 그만큼(+20) 체력을 더 준다.
+    poppingcandy: { health: INSTINCT_L1_BONUS_HEALTH + 20, attack: 0 }
+};
+function instinctStatBonus(level, charType) {
     const lv = clampInstinctLevel(level);
-    return lv >= 1 ? { health: INSTINCT_L1_BONUS_HEALTH, attack: INSTINCT_L1_BONUS_ATTACK } : { health: 0, attack: 0 };
+    if (lv < 1) return { health: 0, attack: 0 };
+    const override = charType && INSTINCT_L1_OVERRIDES[charType];
+    return override ? { ...override } : { health: INSTINCT_L1_BONUS_HEALTH, attack: INSTINCT_L1_BONUS_ATTACK };
 }
 
-// 캐릭터별 3~5강(궁극기/패시브 강화). 사용자가 캐릭터마다 직접 디자인해서 채워
-// 넣는 자리 -- 없는 캐릭터/레벨은 characterWithInstinct가 그냥 건너뛰고, 상세화면엔
-// "준비 중"으로 보인다. effect는 그 레벨에서 확정되는 최종값(더하기가 아니라 덮어쓰기)이라,
-// 예를 들어 ultimateDurationMs를 3강 8000 -> 4강 10000처럼 레벨마다 다시 정할 수 있다.
+// 캐릭터별 2~5강(스킬/궁극기/패시브 강화). 사용자가 캐릭터마다 직접 디자인해서
+// 채워 넣는 자리 -- 없는 캐릭터/레벨은 characterWithInstinct가 그냥 건너뛰고,
+// 상세화면엔 "준비 중"으로 보인다. effect는 그 레벨에서 확정되는 최종값(더하기가
+// 아니라 덮어쓰기)이라, 예를 들어 ultimateDurationMs를 3강 8000 -> 4강 10000처럼
+// 레벨마다 다시 정할 수 있다. 2강은 원래 범용 스킬 강화(INSTINCT_L2_SKILL_*_KEYS)
+// 몫이라 대부분 여기 안 쓰지만, 파핑캔디맛처럼 특수스킬 자체가 없어서 범용 2강이
+// 아무 효과도 없는 캐릭터는 여기 2강 항목으로 대신 채워 넣는다.
 const INSTINCT_CHAR_LEVELS = {
     // 자두맛 쿠키: team_heal_over_time 궁극기(1초마다 10 회복)를 오래 켜 둔다.
     kicker: {
@@ -7212,6 +7259,28 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackShieldOnUse: 12 },
             desc: '기본 공격이 적중할 때마다 팀 전체에게 씌우는 보호막이 10에서 12로 늘어납니다.'
         }
+    },
+    // 파핑캔디맛 쿠키: 특수스킬이 없어서 범용 2강(스킬 강화)이 그냥 버려지는
+    // 만큼, 여기서 체력으로 대신 채워 준다. 3~4강은 궁극기(자기 회복+보호막)를
+    // 키우고, 5강은 연사 특성에 맞는 히트 카운트 패시브(passiveHitHeal이
+    // 이미 범용으로 구현돼 있다 -- attackHealEveryHits/attackHealSelf만 채우면 된다).
+    poppingcandy: {
+        2: {
+            effect: { health: 170 }, // 기본 120 + 50
+            desc: '특수스킬이 없어 대신 체력이 120에서 170으로 늘어납니다.'
+        },
+        3: {
+            effect: { ultimateHealRatio: 1 },
+            desc: '궁극기 회복량이 최대 체력의 50%에서 100%로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateShieldAmount: 150 },
+            desc: '궁극기 보호막이 50에서 150으로 늘어납니다.'
+        },
+        5: {
+            effect: { attackHealEveryHits: 3, attackHealSelf: 1 },
+            desc: '패시브로 기본 공격을 3번 명중시킬 때마다 체력을 1 회복합니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
@@ -7233,7 +7302,11 @@ function characterWithInstinct(character, level, charType) {
     INSTINCT_SKILL_HEAL_KEYS.forEach(k => { if (out[k] != null) out[k] += INSTINCT_L2_SKILL_HEAL_BONUS; });
     INSTINCT_SKILL_SHIELD_KEYS.forEach(k => { if (out[k] != null) out[k] += INSTINCT_L2_SKILL_SHIELD_BONUS; });
     if (charType) {
-        for (let l = 3; l <= lv; l++) {
+        // 2강도 캐릭터별 표를 볼 수 있게 3이 아니라 2부터 돈다 -- 기존
+        // 캐릭터는 전부 INSTINCT_CHAR_LEVELS[..][2]가 없어서 그대로 no-op이고,
+        // 특수스킬이 없어 범용 2강이 버려지는 캐릭터(파핑캔디맛)만 여기서
+        // 의미 있는 효과를 받는다.
+        for (let l = 2; l <= lv; l++) {
             const eff = instinctCharLevelEffect(charType, l);
             if (eff) Object.assign(out, eff);
         }
@@ -7285,7 +7358,8 @@ const STOCK_EVENTS = [
     { element: '빛', type: 'new_character', pct: 0.05, note: '버블티맛 쿠키 추가' },
     { element: '바람', type: 'new_character', pct: 0.10, note: '바람궁수맛 쿠키 추가' },
     { element: '어둠', type: 'new_character', pct: 0.10, note: '암흑바다맛 쿠키 추가' },
-    { element: '어둠', type: 'new_character', pct: 0.10, note: '매직블록맛 쿠키 추가' }
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '매직블록맛 쿠키 추가' },
+    { element: '어둠', type: 'new_character', pct: 0.05, note: '파핑캔디맛 쿠키 추가' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

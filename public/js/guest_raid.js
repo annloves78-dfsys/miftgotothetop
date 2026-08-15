@@ -742,8 +742,11 @@ guestCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (guestIsTargetingUltimate) confirmGuestUltimateTarget();
         else if (guestIsTargetingSkill) confirmGuestSkillTarget();
-        else if (autoAimActive()) fireGuestAutoAimedAttack();
-        else tryGuestAttack();
+        else {
+            const fire = () => (autoAimActive() ? fireGuestAutoAimedAttack() : tryGuestAttack());
+            fire();
+            maybeStartHoldFire(fire, () => guestLocal && guestStats());
+        }
     } else if (e.button === 2) {
         guestHandleSkillTrigger();
     }
@@ -790,6 +793,7 @@ function tryGuestAttack() {
     if (rapid) cd = stats.ultimateRapidCooldown;
     else if (stats.attackType === 'combo_two_stage' && guestLocal.comboStage === 1) cd = stats.comboFollowupCooldown;
     if (now - guestLocal.lastAttackClientTime < cd) return;
+    if (!clientConsumeAmmo(stats, guestLocal, now)) return;
     guestLocal.lastAttackClientTime = now;
     guestLocal.attackEffectUntil = now + 180;
     advanceSweepCount(guestLocal, stats);
@@ -947,6 +951,10 @@ function updateGuestCooldownDisplay(now) {
     if (stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
         guestMyUltimateCdEl.textContent = `${natureAwakenStageNoOf(guestLocal)}단계`;
     }
+    // 팝핑캔디맛: 특수스킬이 없어서 그 칸에 남은 탄수/재장전 상태를 보여준다.
+    if (stats.attackAmmoMax) {
+        guestMySkillCdEl.textContent = ammoOrReloadText(stats, guestLocal, now);
+    }
     syncGuestMobileCooldowns(skillRemain, ultRemain);
 }
 
@@ -955,7 +963,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime, guestLocal.firingUntil);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
@@ -1469,7 +1477,7 @@ const mcUltimateCdGuestEl = mcUltimateGuestEl.querySelector('.mc-cd');
 const mcUltimateThumbGuestEl = mcUltimateGuestEl.querySelector('.mc-aim-thumb');
 
 setupJoystick(mcJoystickGuestEl, false);
-mcTap(mcAttackGuestEl, () => fireGuestAutoAimedAttack());
+mcTapOrHoldFire(mcAttackGuestEl, () => fireGuestAutoAimedAttack(), () => guestLocal && guestStats());
 mcTap(mcSkillGuestEl, () => guestHandleSkillTrigger());
 mcTap(mcUltimateGuestEl, () => guestHandleUltimateKey());
 

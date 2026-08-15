@@ -272,6 +272,24 @@ function drawCharacterWeapon(ctx, R, stats, alive) {
             ctx.stroke();
             break;
         }
+        case 'gatling': {
+            // 짧은 몸통 + 여러 개의 회전 총열. 파핑캔디맛의 개틀링건.
+            const bodyLen = R * 0.9, bodyW = R * 0.7;
+            ctx.fillRect(hx, -bodyW / 2, bodyLen, bodyW);
+            const barrelLen = R * 1.1;
+            const barrelCount = 4;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(2, R * 0.14);
+            ctx.lineCap = 'round';
+            for (let i = 0; i < barrelCount; i++) {
+                const off = (i - (barrelCount - 1) / 2) * (bodyW / barrelCount);
+                ctx.beginPath();
+                ctx.moveTo(hx + bodyLen * 0.6, off);
+                ctx.lineTo(hx + bodyLen * 0.6 + barrelLen, off);
+                ctx.stroke();
+            }
+            break;
+        }
     }
     ctx.restore();
 }
@@ -558,7 +576,7 @@ function focusModeActive(stats, now, lastAttackAt, lastHitAt) {
     const since = Math.max(lastAttackAt || 0, lastHitAt || 0);
     return now - since >= fp.idleMs;
 }
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil, lastAttackAt, lastHitAt) {
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil, lastAttackAt, lastHitAt, firingUntil) {
     const bonus = isJoystick ? JOYSTICK_SPEED_BONUS : 0;
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
@@ -585,6 +603,10 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     }
     if (focusModeActive(stats, now, lastAttackAt, lastHitAt)) {
         return withEquipSpeed(stats.speed + stats.focusPassive.speedBonus, equipSpeed) + bonus;
+    }
+    // 팝핑캔디맛: 연사 중(마지막 발을 쏜 직후 잠깐)에는 이동 속도가 줄어든다.
+    if (stats.attackFireSpeedPenalty && now < (firingUntil || 0)) {
+        return withEquipSpeed(Math.max(0.5, stats.speed - stats.attackFireSpeedPenalty), equipSpeed) + bonus;
     }
     return stats.speed + bonus;
 }
@@ -626,6 +648,9 @@ class Player {
         this.natureBoostUntil = 0; // performance.now() timestamp; 바람궁수맛 궁극기 2단계 이동속도
         this.natureAwakenLevel = 0; // 0/1/2 = 다음에 쓸 궁극기가 1/2/3단계 (로컬 예측용; 서버가 진짜 값)
         this.untouchableUntil = 0; // performance.now() timestamp; 바다 수호자맛 sea_hide -- 이 동안 아무도 못 때리고 자기도 못 때린다
+        this.ammoLeft = null; // 팝핑캔디맛 탄창(clientConsumeAmmo가 채운다); 다른 캐릭터는 계속 null
+        this.reloadUntil = 0; // performance.now() timestamp; 탄창이 다 떨어지면 채워진다
+        this.firingUntil = 0; // performance.now() timestamp; 연사 중 이동속도 감속에 쓴다
 
         this.hitEffectUntil = 0; // 피격 섬광/떨림; updateHitAndDeathState가 hp 하락을 감지해서 켠다
         this.deathStartAt = 0; // 사망 애니메이션(drawDeathCollapse) 시작 시각
@@ -672,7 +697,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil, this.lastAttackClientTime, this.lastHitClientTime);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil, this.lastAttackClientTime, this.lastHitClientTime, this.firingUntil);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;

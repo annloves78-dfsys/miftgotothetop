@@ -1044,6 +1044,12 @@ function describeAbility(stats, kind) {
             if (stats.attackSlowMult) {
                 text += ` 맞은 적은 ${sec(stats.attackSlowDurationMs)}초 동안 이동 속도가 ${Math.round(stats.attackSlowMult * 100)}%로 느려집니다.`;
             }
+            if (stats.attackAmmoMax) {
+                text += ` 공격 버튼을 누르고 있으면 연사됩니다. 탄창은 ${stats.attackAmmoMax}발이고, 다 쏘면 ${sec(stats.attackReloadMs)}초간 재장전합니다.`;
+                if (stats.attackFireSpeedPenalty) {
+                    text += ` 연사하는 동안 이동 속도가 ${stats.attackFireSpeedPenalty}만큼 줄어듭니다.`;
+                }
+            }
             return text;
         }
         if (stats.attackType === 'homing_burst') {
@@ -1216,6 +1222,8 @@ function describeAbility(stats, kind) {
                 return `팀 전체에게 ${stats.ultimateShieldAmount}짜리 보호막을 씌우고 체력을 ${stats.ultimateHealAmount}만큼 회복시킵니다.${cd}`;
             case 'team_guard':
                 return `팀원 모두의 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복시키고, ${stats.ultimateShieldAmount}짜리 보호막을 씨워줍니다.${cd}`;
+            case 'self_ratio_guard':
+                return `자신의 체력을 최대 체력의 ${Math.round(stats.ultimateHealRatio * 100)}%만큼 회복하고, 자신에게만 ${stats.ultimateShieldAmount}짜리 보호막을 씌웁니다.${cd}`;
             case 'great_slash':
                 return `${sec(stats.ultimateWindupMs)}초 예열 뒤 전방 ${stats.ultimateRange}px를 엄청 크게(가로 ${stats.ultimateWidth}px)`
                     + ` 베어 ${stats.ultimateDamage}의 피해를 줍니다. 적중하면 최대 체력의`
@@ -1654,6 +1662,69 @@ function mcTap(el, handler) {
 mcTap(mcSkillFightEl, () => tryUseSkill());
 mcTap(mcSkillStoryEl, () => tryStoryUseSkill());
 
+// ---- 연사(꾹 눌러 계속 쏘기) ----
+// 팝핑캔디맛처럼 attackAmmoMax가 있는 캐릭터만 해당한다. 실제 발사 간격은
+// tryAttack()류가 자기 재사용 대기시간으로 알아서 막아 주므로, 여기서는
+// 그보다 짧은 주기로 같은 함수를 계속 불러 주기만 하면 된다 -- 다른
+// 캐릭터는 attackAmmoMax가 없어서 이 인터벌이 그냥 아무것도 안 한다.
+const HOLD_FIRE_POLL_MS = 50;
+let holdFireInterval = null;
+function stopHoldFire() {
+    if (holdFireInterval) { clearInterval(holdFireInterval); holdFireInterval = null; }
+}
+// statsGetter는 지금 조작 중인 캐릭터의 CHARACTERS 항목을 돌려주는 함수 --
+// 모드마다 살아있는 플레이어 객체 자리가 달라서 누를 때마다 다시 구해야 한다.
+function maybeStartHoldFire(fireFn, statsGetter) {
+    stopHoldFire();
+    const stats = statsGetter();
+    if (!stats || !stats.attackAmmoMax) return;
+    holdFireInterval = setInterval(fireFn, HOLD_FIRE_POLL_MS);
+}
+window.addEventListener('mouseup', stopHoldFire);
+window.addEventListener('pointerup', stopHoldFire);
+
+// mcTap과 같지만 attackAmmoMax 캐릭터일 때만 누르고 있는 동안 계속 쏜다 --
+// 스킬/궁극기 버튼은 그대로 mcTap(단발)을 쓴다.
+function mcTapOrHoldFire(el, fireFn, statsGetter) {
+    el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        fireFn();
+        maybeStartHoldFire(fireFn, statsGetter);
+    });
+    el.addEventListener('pointerup', stopHoldFire);
+    el.addEventListener('pointercancel', stopHoldFire);
+    el.addEventListener('pointerleave', stopHoldFire);
+}
+
+// 팝핑캔디맛 같은 탄창 캐릭터의 로컬 예측: 서버(consumeAmmoOrBlock)와 같은
+// 규칙을 클라이언트에서도 미리 계산해서 HUD(탄수/재장전)에 보여준다.
+// stats.attackAmmoMax가 없는 캐릭터는 항상 true(그냥 통과)라 다른 캐릭터는
+// 영향이 없다. 실제 판정은 서버가 다시 한다 -- 여기는 표시용 예측일 뿐이다.
+// 발사에 성공하면 p.firingUntil도 잠깐 갱신해 이동속도 감속(moveSpeedFor)이
+// 연사하는 동안만 걸리게 한다.
+function clientConsumeAmmo(stats, p, now) {
+    if (!stats.attackAmmoMax) return true;
+    if (p.reloadUntil && now < p.reloadUntil) return false;
+    if (p.ammoLeft == null || p.ammoLeft > stats.attackAmmoMax) p.ammoLeft = stats.attackAmmoMax;
+    p.ammoLeft -= 1;
+    if (p.ammoLeft <= 0) {
+        p.ammoLeft = 0;
+        p.reloadUntil = now + (stats.attackReloadMs || 3000);
+    }
+    if (stats.attackFireSpeedPenalty) p.firingUntil = now + 200;
+    return true;
+}
+// 탄창 캐릭터의 스킬 칸 표시(특수스킬이 없어서 그 자리를 대신 쓴다): 재장전
+// 중이면 남은 시간, 아니면 남은 탄수. clientConsumeAmmo가 채워 둔
+// p.ammoLeft/p.reloadUntil을 그대로 읽는다.
+function ammoOrReloadText(stats, p, now) {
+    if (p.reloadUntil && now < p.reloadUntil) {
+        return `장전 ${((p.reloadUntil - now) / 1000).toFixed(1)}s`;
+    }
+    const left = p.ammoLeft != null ? p.ammoLeft : stats.attackAmmoMax;
+    return `${left}발`;
+}
+
 // Aiming by hand on a touchscreen is fiddly, so the attack button auto-aims:
 // it snaps the character to face the nearest live target before swinging.
 // Returns the chosen angle, or null when there's nothing to aim at (then the
@@ -1687,8 +1758,8 @@ function fireAutoAimedAttack(isStory) {
         tryAttack();
     }
 }
-mcTap(mcAttackFightEl, () => fireAutoAimedAttack(false));
-mcTap(mcAttackStoryEl, () => fireAutoAimedAttack(true));
+mcTapOrHoldFire(mcAttackFightEl, () => fireAutoAimedAttack(false), () => players[socket.id] && players[socket.id].stats);
+mcTapOrHoldFire(mcAttackStoryEl, () => fireAutoAimedAttack(true), () => storyPlayer && SHARED.CHARACTERS[storyPlayer.charType]);
 
 // The ultimate control is a joystick for the cookies whose ultimate needs a
 // position (targeted_aoe / magma_zone): drag to pick where it lands, release to
@@ -1845,19 +1916,30 @@ function isWindProjectile(charType) {
     const stats = charType && SHARED.CHARACTERS[charType];
     return !!(stats && stats.attackProjectileTheme === 'wind');
 }
+// 파핑캔디맛의 파핑캔디: 어둠 속성이지만 어둠의 구슬 색 대신 보라/주황이
+// 섞인 알록달록한 사탕으로 그린다.
+function isCandyProjectile(charType) {
+    const stats = charType && SHARED.CHARACTERS[charType];
+    return !!(stats && stats.attackProjectileTheme === 'candy');
+}
 function drawThrownDrops(c, drops, now) {
     Object.values(drops).forEach(d => {
         const t = (now - d.at) / 1000;
         const x = d.x + d.vx * t;
         const y = d.y + d.vy * t;
         const r = d.radius || 10;
-        const wind = isWindProjectile(d.charType);
-        const fire = !wind && isFireProjectile(d.charType);
-        const light = !wind && !fire && isLightProjectile(d.charType);
+        const candy = isCandyProjectile(d.charType);
+        const wind = !candy && isWindProjectile(d.charType);
+        const fire = !candy && !wind && isFireProjectile(d.charType);
+        const light = !candy && !wind && !fire && isLightProjectile(d.charType);
         c.save();
         c.translate(x, y);
         const grad = c.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.2, 0, 0, r);
-        if (wind) {
+        if (candy) {
+            grad.addColorStop(0, '#fff0fa');
+            grad.addColorStop(0.5, '#c39bff');
+            grad.addColorStop(1, '#e67e22');
+        } else if (wind) {
             grad.addColorStop(0, '#eafff0');
             grad.addColorStop(0.5, '#58d68d');
             grad.addColorStop(1, '#1e8449');
@@ -1877,7 +1959,7 @@ function drawThrownDrops(c, drops, now) {
         c.arc(0, 0, r, 0, Math.PI * 2);
         c.fillStyle = grad;
         c.fill();
-        c.strokeStyle = (fire || light || wind) ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
+        c.strokeStyle = (fire || light || wind || candy) ? 'rgba(255, 214, 165, 0.9)' : 'rgba(255,255,255,0.85)';
         c.lineWidth = 2;
         c.stroke();
         c.restore();
@@ -1888,16 +1970,19 @@ function drawThrownDrops(c, drops, now) {
 function drawDropSplashes(c, splashes, now) {
     splashes.forEach(s => {
         const life = (s.until - now) / 260;
-        const wind = isWindProjectile(s.charType);
-        const fire = !wind && isFireProjectile(s.charType);
-        const light = !wind && !fire && isLightProjectile(s.charType);
+        const candy = isCandyProjectile(s.charType);
+        const wind = !candy && isWindProjectile(s.charType);
+        const fire = !candy && !wind && isFireProjectile(s.charType);
+        const light = !candy && !wind && !fire && isLightProjectile(s.charType);
         c.beginPath();
         c.arc(s.x, s.y, 8 + (1 - life) * 16, 0, Math.PI * 2);
-        c.strokeStyle = wind
-            ? `rgba(88, 214, 141, ${Math.max(0, life)})`
-            : fire
-                ? `rgba(255, 138, 61, ${Math.max(0, life)})`
-                : (light ? `rgba(255, 229, 138, ${Math.max(0, life)})` : `rgba(127, 212, 245, ${Math.max(0, life)})`);
+        c.strokeStyle = candy
+            ? `rgba(195, 155, 255, ${Math.max(0, life)})`
+            : wind
+                ? `rgba(88, 214, 141, ${Math.max(0, life)})`
+                : fire
+                    ? `rgba(255, 138, 61, ${Math.max(0, life)})`
+                    : (light ? `rgba(255, 229, 138, ${Math.max(0, life)})` : `rgba(127, 212, 245, ${Math.max(0, life)})`);
         c.lineWidth = 3;
         c.stroke();
     });
@@ -2234,7 +2319,7 @@ function openCharacterDetail(id) {
     charDetailElement.textContent = stats.element || '-';
     charDetailRole.textContent = stats.role || '-';
     const bonus = equipBonusOf(id);
-    const instinctBonus = SHARED.instinctStatBonus(instinctLevelOfChar(id));
+    const instinctBonus = SHARED.instinctStatBonus(instinctLevelOfChar(id), id);
     const atkBonus = bonus.attack + instinctBonus.attack;
     const hpBonus = bonus.health + instinctBonus.health;
     charDetailAtk.innerHTML = attackDamageText(stats)
@@ -5694,10 +5779,13 @@ storyCanvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isStoryTargetingUltimate) confirmStoryUltimateTarget();
         else if (isStoryTargetingSkill) confirmStorySkillTarget();
-        // With 자동조준 on, a click doesn't aim -- it snaps onto the nearest
-        // enemy and swings there (the same path the mobile button uses).
-        else if (autoAimActive()) fireAutoAimedAttack(true);
-        else tryStoryAttack();
+        else {
+            // With 자동조준 on, a click doesn't aim -- it snaps onto the nearest
+            // enemy and swings there (the same path the mobile button uses).
+            const fire = () => (autoAimActive() ? fireAutoAimedAttack(true) : tryStoryAttack());
+            fire();
+            maybeStartHoldFire(fire, () => storyPlayer && SHARED.CHARACTERS[storyPlayer.charType]);
+        }
     } else if (e.button === 2) {
         storyHandleSkillTrigger();
     }
@@ -5846,6 +5934,7 @@ function tryStoryAttack() {
         cooldown = stats.comboFollowupCooldown; // follow-up thrust opens sooner
     }
     if (now - storyPlayer.lastAttackClientTime < cooldown) return;
+    if (!clientConsumeAmmo(stats, storyPlayer, now)) return;
     storyPlayer.lastAttackClientTime = now;
     storyPlayer.attackEffectUntil = now + 180;
     advanceSweepCount(storyPlayer, stats);
@@ -5911,6 +6000,10 @@ function updateStoryCooldownDisplay(now) {
     if (stats.ultimateType === 'nature_awaken' && ultRemain <= 0.05) {
         storyMyUltimateCdEl.textContent = `${natureAwakenStageNoOf(storyPlayer)}단계`;
     }
+    // 팝핑캔디맛: 특수스킬이 없어서 그 칸에 남은 탄수/재장전 상태를 보여준다.
+    if (stats.attackAmmoMax) {
+        storyMySkillCdEl.textContent = ammoOrReloadText(stats, storyPlayer, now);
+    }
     syncMobileCooldowns(skillRemain, ultRemain, true, !stats.ultimateType);
 }
 
@@ -5918,7 +6011,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime, storyPlayer.firingUntil);
         let dx = 0, dy = 0;
         if (storyJoystickMoveVec) {
             dx = storyJoystickMoveVec.x * speed;
@@ -7286,6 +7379,10 @@ function updateCooldownDisplay(now) {
             mySkillCdEl.textContent = `${focusRemain.toFixed(1)}s`;
         }
     }
+    // 팝핑캔디맛: 특수스킬이 없어서 그 칸에 남은 탄수/재장전 상태를 보여준다.
+    if (me.stats.attackAmmoMax) {
+        mySkillCdEl.textContent = ammoOrReloadText(me.stats, me, now);
+    }
     syncMobileCooldowns(skillRemain, ultRemain, false, !me.stats.ultimateType);
 }
 
@@ -7311,8 +7408,11 @@ canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
         if (isTargetingUltimate) confirmUltimateTarget();
         else if (isTargetingSkill) confirmSkillTarget();
-        else if (autoAimActive()) fireAutoAimedAttack(false);
-        else tryAttack();
+        else {
+            const fire = () => (autoAimActive() ? fireAutoAimedAttack(false) : tryAttack());
+            fire();
+            maybeStartHoldFire(fire, () => players[socket.id] && players[socket.id].stats);
+        }
     } else if (e.button === 2) {
         handleSkillTrigger();
     }
@@ -7347,6 +7447,7 @@ function tryAttack() {
     if (!me) return;
     const now = performance.now();
     if (!me.canAttack(now)) return;
+    if (!clientConsumeAmmo(me.stats, me, now)) return;
     me.triggerAttackEffect();
     socket.emit('playerAttack');
 }
