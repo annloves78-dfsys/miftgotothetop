@@ -141,13 +141,37 @@ function updateZombieDetailCharPreview() {
     zombieCharName.textContent = stats.name;
 }
 
+// 좀비막기는 다이아 1회 결제로 영구 해금하는 모드.
+const ZOMBIE_UNLOCK_COST = 10000;
+const zombieModeSubEl = document.getElementById('zombie-mode-sub');
+
+function isZombieModeUnlocked() {
+    return adminPowerOn('stages') || gameData.zombieUnlocked;
+}
+
+function renderZombieModeCard() {
+    const unlocked = isZombieModeUnlocked();
+    zombieModeCard.classList.toggle('locked', !unlocked);
+    zombieModeSubEl.textContent = unlocked ? '' : `🔒 다이아 ${ZOMBIE_UNLOCK_COST.toLocaleString()}`;
+    zombieModeSubEl.classList.toggle('hidden', unlocked);
+}
+renderZombieModeCard();
+
 function openZombieDetail() {
     leaveZombieDefenseIfAny();
     updateZombieDetailCharPreview();
     showScreen('zombieDetail');
 }
 
-zombieModeCard.addEventListener('click', openZombieDetail);
+zombieModeCard.addEventListener('click', () => {
+    if (isZombieModeUnlocked()) { openZombieDetail(); return; }
+    if (currencyAmount('diamonds') < ZOMBIE_UNLOCK_COST) return;
+    if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -ZOMBIE_UNLOCK_COST });
+    gameData.zombieUnlocked = true;
+    saveGameData(gameData);
+    renderZombieModeCard();
+    openZombieDetail();
+});
 backFromZombieDetailBtn.addEventListener('click', () => {
     leaveZombieDefenseIfAny();
     showScreen('modeSelect');
