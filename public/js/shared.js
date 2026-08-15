@@ -5460,10 +5460,12 @@ function legendChestReward(chestId) {
 }
 
 // ==================== 캐릭터 레벨(성장던전) ====================
-// 캐릭터별 영구 레벨업. 저장은 계정 세이브에 캐릭터별 누적 EXP 하나만 두고
-// (charExp[charType]), 레벨/다음 레벨까지 남은 EXP는 전부 이 누적치에서
-// 매번 계산해 낸다 -- STOCK_EVENTS처럼 로그(누적 EXP)만 저장하고 파생값은
-// 절대 따로 저장하지 않아야 저장값과 실제 레벨이 어긋나는 사고가 안 난다.
+// 캐릭터별 영구 레벨업. 성장던전에서 번 EXP는 재화처럼 charExp[charType]에
+// 그냥 쌓이기만 하고, 레벨은 저절로 오르지 않는다 -- 캐릭터 상세 화면의
+// "레벨업" 버튼을 직접 눌러야 그 시점의 다음 레벨 비용(charLevelExpToNext)만큼
+// charExp에서 깎고 charLevels[charType]을 1 올린다. 그래서 레벨은
+// charLevels에 그대로 저장해 두고(파생값이 아니다), charExp는 "아직 안 쓴
+// 잔액"이라는 뜻으로 남는다.
 const CHAR_LEVEL_MAX = 100;
 const CHAR_LEVEL_BASE_EXP = 100; // 1강(레벨1->2)에 필요한 EXP
 const CHAR_LEVEL_EXP_GROWTH = 1.08; // 레벨이 오를수록 다음 레벨 요구 EXP가 이 배율로 커진다
@@ -5476,7 +5478,8 @@ function charLevelExpToNext(level) {
     return Math.round(CHAR_LEVEL_BASE_EXP * Math.pow(CHAR_LEVEL_EXP_GROWTH, lv - 1));
 }
 
-// 누적 EXP -> { level, expIntoLevel(현재 레벨에서 쌓은 EXP), expToNext(다음 레벨까지 필요한 EXP, 만렙이면 null) }
+// 예전 세이브 마이그레이션 전용: 그때는 누적 EXP에서 레벨을 자동 계산했다.
+// 누적 EXP -> { level, expIntoLevel(레벨업 버튼을 안 눌러서 남는 EXP), expToNext }
 function charLevelFromExp(totalExp) {
     let exp = Math.max(0, Math.floor(totalExp || 0));
     let level = 1;
@@ -5494,8 +5497,11 @@ function charExpOf(charExpBag, charType) {
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-function charLevelOf(charExpBag, charType) {
-    return charLevelFromExp(charExpOf(charExpBag, charType)).level;
+// charLevels(레벨업 버튼으로 확정된 레벨 저장소)에서 직접 읽는다. 값이
+// 없으면 기본 1레벨.
+function charLevelOf(charLevels, charType) {
+    const n = Number(charLevels && charLevels[charType]);
+    return Number.isFinite(n) && n >= 1 ? Math.min(CHAR_LEVEL_MAX, Math.floor(n)) : 1;
 }
 
 function charLevelStatMultiplier(level) {

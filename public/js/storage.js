@@ -62,9 +62,13 @@ const defaultData = {
     // 깨 본 EXP 던전 단계 번호(1~10). 다음 단계 잠금 해제용 -- 몇 번이고
     // 다시 들어가 반복 파밍할 수 있으니 "최고 클리어 기록"과 같은 뜻이다.
     expDungeonCleared: [],
-    // 캐릭터별 누적 EXP. charType -> 총 획득 EXP(숫자 하나). 레벨/다음 레벨까지
-    // 필요한 EXP는 이 누적치에서 SHARED.charLevelFromExp로 매번 계산해 낸다.
-    charExp: {}
+    // 캐릭터별 레벨업 재화. charType -> 아직 레벨업에 안 쓴 EXP 잔액. 성장던전
+    // 클리어로 여기 쌓이기만 하고, 레벨은 저절로 안 오른다 -- 캐릭터 상세
+    // 화면의 "레벨업" 버튼을 눌러야 이 잔액에서 비용을 깎고 charLevels가 오른다.
+    charExp: {},
+    // 캐릭터별 확정된 레벨. charType -> 레벨(없으면 1레벨). charExp와 달리
+    // 파생값이 아니라 레벨업 버튼을 누른 결과 그대로 저장한다.
+    charLevels: {}
 };
 
 // `{ ...defaultData }` is a shallow copy, so the nested objects/arrays would be
@@ -109,6 +113,19 @@ function loadGameData() {
             data.instinctLevels = (data.instinctLevels && typeof data.instinctLevels === 'object') ? data.instinctLevels : {};
             data.expDungeonCleared = Array.isArray(data.expDungeonCleared) ? data.expDungeonCleared : [];
             data.charExp = (data.charExp && typeof data.charExp === 'object') ? data.charExp : {};
+            data.charLevels = (data.charLevels && typeof data.charLevels === 'object') ? data.charLevels : {};
+            // 예전엔 charExp가 캐릭터 평생 누적 EXP였고 레벨을 거기서 자동으로
+            // 계산했다. 지금은 레벨업 버튼을 눌러야 레벨이 오르고 charExp는
+            // 아직 안 쓴 잔액이다 -- charLevels가 아예 없던(마이그레이션 전)
+            // 세이브만 한 번, 그 누적치를 레벨+남은 EXP로 변환해서 이미 모아 둔
+            // 만큼은 그대로 인정해 준다.
+            if (!parsed.charLevels && typeof SHARED !== 'undefined') {
+                Object.keys(data.charExp).forEach(charType => {
+                    const { level, expIntoLevel } = SHARED.charLevelFromExp(data.charExp[charType]);
+                    data.charLevels[charType] = level;
+                    data.charExp[charType] = expIntoLevel;
+                });
+            }
             data.equipped = data.equipped || {};
             // uid는 가방에 이미 있는 번호보다 반드시 커야 한다 -- 안 그러면
             // 새 장비가 기존 장비와 같은 번호를 받아 섞인다.
