@@ -7477,12 +7477,26 @@ function zombieRollTypeForWave(wave) {
 }
 
 // 웨이브를 버틴 만큼 주는 보상. 죽은 순간 진행 중이던 웨이브 번호를 넣어 부른다.
+// 코인·다이아는 1웨이브에 각 1개에서 시작해 웨이브마다 2배씩 복리로 불어난다
+// (좀비 자체가 웨이브마다 복리로 세지는 것과 같은 곡선). 30웨이브부터는
+// 강화 재료/포션류가 고정으로 추가되고, 100웨이브부터는 일반 뽑기 티켓이
+// 1장에서 시작해 이것도 웨이브마다(100웨이브 기준) 2배씩 불어난다.
+const ZOMBIE_REWARD_BASE_GROWTH = 2;
+const ZOMBIE_REWARD_TICKET_FROM_WAVE = 100;
 function zombieWaveReward(wave) {
-    return {
-        coins: 100 * wave,
-        material: Math.floor(wave / 2) * 2,
-        diamonds: Math.floor(wave / 5) * 3
-    };
+    const w = Math.max(1, Math.floor(wave || 1));
+    const base = Math.pow(ZOMBIE_REWARD_BASE_GROWTH, w - 1);
+    const reward = { coins: base, diamonds: base };
+    if (w >= 30) {
+        reward.material = 5;
+        reward.materialRare = 2;
+        reward.potion = 1;
+        reward.potionRare = 1;
+    }
+    if (w >= ZOMBIE_REWARD_TICKET_FROM_WAVE) {
+        reward.ticketNormal = Math.pow(ZOMBIE_REWARD_BASE_GROWTH, w - ZOMBIE_REWARD_TICKET_FROM_WAVE);
+    }
+    return reward;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
