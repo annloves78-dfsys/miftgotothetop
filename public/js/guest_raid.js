@@ -1,7 +1,9 @@
 // ==================== Guest raid ====================
-// Square field, a fixed boss (there is no boss list to pick from), and a party
-// of GUEST_PARTY_SIZE cookies you swap between mid-fight -- each cookie keeps
-// its own hp across swaps, so benching a hurt one does not heal it.
+// Square field, and a party of GUEST_PARTY_SIZE cookies you swap between
+// mid-fight -- each cookie keeps its own hp across swaps, so benching a hurt
+// one does not heal it. Which boss you fight is picked with the detail
+// screen's left/right arrows (GUEST_BOSS_ORDER/GUEST_ID below), not a
+// separate list screen like boss-raid's.
 //
 // Loaded after main.js, so it shares that file's globals (socket, showScreen,
 // gameData, charIconBackground, autoAimActive, ...) through the page's single
@@ -11,6 +13,10 @@ const guestRaidModeCard = document.getElementById('guest-raid-mode-card');
 const guestPartySlotsEl = document.getElementById('guest-party-slots');
 const guestPartyHintEl = document.getElementById('guest-party-hint');
 const guestBossHpSpecEl = document.getElementById('guest-boss-hp');
+const guestBossNameEl = document.getElementById('guest-boss-name');
+const guestBossIconEl = document.getElementById('guest-boss-icon');
+const guestBossPrevBtn = document.getElementById('guest-boss-prev-btn');
+const guestBossNextBtn = document.getElementById('guest-boss-next-btn');
 const guestMultiBtn = document.getElementById('guest-multi-btn');
 const guestSoloBtn = document.getElementById('guest-solo-btn');
 const guestLeaveBtn = document.getElementById('guest-leave-btn');
@@ -21,6 +27,7 @@ const guestPartnerName = document.getElementById('guest-partner-name');
 const guestCanvas = document.getElementById('guestCanvas');
 const guestCtx = guestCanvas.getContext('2d');
 const guestBossHpBar = document.getElementById('guest-boss-hp-bar');
+const guestBossHpLabelEl = document.getElementById('guest-boss-hp-label');
 const guestMyHpBar = document.getElementById('guest-my-hp-bar');
 const guestMyShieldBadge = document.getElementById('guest-my-shield-badge');
 const guestMyHpText = document.getElementById('guest-my-hp-text');
@@ -37,7 +44,10 @@ const guestFightMenuBtn = document.getElementById('guest-fight-menu-btn');
 const guestFightSettings = document.getElementById('guest-fight-settings');
 const guestFightLeaveBtn = document.getElementById('guest-fight-leave-btn');
 
-const GUEST_ID = 'guest1'; // the only guest raid so far, and it is never chosen from a list
+// guest-detail-screen's left/right arrows step through this list; GUEST_ID is
+// whichever one is currently showing.
+const GUEST_BOSS_ORDER = Object.keys(SHARED.GUEST_BOSS_DEFS);
+let GUEST_ID = GUEST_BOSS_ORDER[0];
 
 // Always GUEST_PARTY_SIZE long, holes are null. Multiplayer only *shows* and
 // sends the first slot, but the other three are kept so toggling back to solo
@@ -191,13 +201,29 @@ function renderGuestPartySlots() {
 
 function renderGuestDetail() {
     const def = SHARED.GUEST_BOSS_DEFS[GUEST_ID];
+    guestBossNameEl.textContent = def.name;
+    guestBossIconEl.style.background = charIconBackground(SHARED.CHARACTERS[def.charType]);
     guestBossHpSpecEl.textContent = def.maxHp;
+    // Boss can only be switched before you've committed to a match.
+    const canSwitch = guestPhase === 'idle' && GUEST_BOSS_ORDER.length > 1;
+    guestBossPrevBtn.disabled = !canSwitch;
+    guestBossNextBtn.disabled = !canSwitch;
     renderGuestPartySlots();
     if (guestPhase === 'idle') {
         guestMultiBtn.disabled = false; // multiplayer re-cuts the party to 1 on click
         guestSoloBtn.disabled = !guestPartyReady();
     }
 }
+
+function stepGuestBoss(delta) {
+    if (guestPhase !== 'idle' || GUEST_BOSS_ORDER.length <= 1) return;
+    const i = GUEST_BOSS_ORDER.indexOf(GUEST_ID);
+    GUEST_ID = GUEST_BOSS_ORDER[(i + delta + GUEST_BOSS_ORDER.length) % GUEST_BOSS_ORDER.length];
+    renderGuestDetail();
+}
+
+guestBossPrevBtn.addEventListener('click', () => stepGuestBoss(-1));
+guestBossNextBtn.addEventListener('click', () => stepGuestBoss(1));
 
 function resetGuestActions() {
     guestPhase = 'idle';
@@ -355,6 +381,10 @@ function updateGuestHpBars() {
 }
 
 socket.on('guestStarted', (data) => {
+    // Multiplayer can drop you into an already-open room -- match the room's
+    // actual boss rather than trusting whatever the lobby had selected.
+    if (data.guestId && SHARED.GUEST_BOSS_DEFS[data.guestId]) GUEST_ID = data.guestId;
+    guestBossHpLabelEl.textContent = SHARED.GUEST_BOSS_DEFS[GUEST_ID].name;
     guestPlayerFx = {};
     guestState = {
         bossHp: data.bossHp, bossMaxHp: data.bossMaxHp,
@@ -660,18 +690,22 @@ socket.on('guestResult', ({ result }) => {
     guestDrops = {}; guestDropSplashes = []; guestGreatSlashes = []; guestSummons = {};
     guestBarrage = null; guestBossLaser = null; guestWall = null; guestDebuffUntil = 0;
     // 불 미션. Beating 2차 necessarily means 1차 went down too.
+    const bossName = SHARED.GUEST_BOSS_DEFS[GUEST_ID].name;
     const titles = { win: '격파!', phase1: '1차 격파!', lose: '패배...' };
     resultTitle.textContent = titles[result] || '나감';
     const descs = {
-        win: '번개지옥맛 쿠키를 2차 레이드까지 완전히 쓰러뜨렸습니다.',
-        phase1: '번개지옥맛 쿠키는 쓰러지지 않았습니다. 2차 레이드는 준비 중입니다.',
+        win: `${bossName}를 2차 레이드까지 완전히 쓰러뜨렸습니다.`,
+        phase1: `${bossName}는 쓰러지지 않았습니다. 2차 레이드는 준비 중입니다.`,
         lose: '파티가 전멸했습니다.'
     };
     resultDesc.textContent = descs[result] || '';
     // 악마 뽑기 티켓은 오직 여기서만 나온다. 2차까지 잡으면 3장, 1차만 잡아도 1장.
+    // guest2처럼 아직 CLEAR_REWARDS에 자기 키가 없는 보스는 clearRewardFor가
+    // undefined를 돌려주므로 보상 없이 안전하게 넘어간다 (guest1 보상을 대신
+    // 주는 일은 없다).
     resultRewardsEl.innerHTML = '';
-    const rewardKey = result === 'win' ? 'guest1'
-        : (result === 'phase1' ? 'guest1_phase1' : null);
+    const rewardKey = result === 'win' ? GUEST_ID
+        : (result === 'phase1' ? `${GUEST_ID}_phase1` : null);
     if (rewardKey) {
         const bag = SHARED.clearRewardFor(rewardKey);
         if (bag) {
