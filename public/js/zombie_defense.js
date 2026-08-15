@@ -141,12 +141,15 @@ function updateZombieDetailCharPreview() {
     zombieCharName.textContent = stats.name;
 }
 
-// 좀비막기는 다이아 1회 결제로 영구 해금하는 모드.
+// 좀비막기는 다이아 1회 결제로 영구 해금하거나, GT(SL사 TX1010)로 기간제로
+// 빌릴 수 있다 -- gtBenefits().modeUnlock이 'zombie'면 GT가 끝날 때까지만
+// 임시로 풀린다 (expiresAt만으로 매번 판정하는 gtBenefits와 같은 방식이라
+// 따로 만료 처리를 둘 필요가 없다).
 const ZOMBIE_UNLOCK_COST = 10000;
 const zombieModeSubEl = document.getElementById('zombie-mode-sub');
 
 function isZombieModeUnlocked() {
-    return adminPowerOn('stages') || gameData.zombieUnlocked;
+    return adminPowerOn('stages') || gameData.zombieUnlocked || gtBenefits().modeUnlock === 'zombie';
 }
 
 function renderZombieModeCard() {

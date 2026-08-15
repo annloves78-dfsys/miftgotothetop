@@ -781,8 +781,8 @@ function isCharacterUnlocked(id) {
 // / 'instinctMax'(sl -- 보유 캐릭터를 본능해제 5강으로 임시 강화).
 function gtBenefits() {
     const gt = gameData.gt;
-    if (!gt || !gt.expiresAt || Date.now() >= gt.expiresAt) return { characterId: null, characterEffect: null, storyMaxFloor: 0 };
-    return { characterId: gt.characterId || null, characterEffect: gt.characterEffect || null, storyMaxFloor: gt.storyMaxFloor || 0 };
+    if (!gt || !gt.expiresAt || Date.now() >= gt.expiresAt) return { characterId: null, characterEffect: null, storyMaxFloor: 0, modeUnlock: null };
+    return { characterId: gt.characterId || null, characterEffect: gt.characterEffect || null, storyMaxFloor: gt.storyMaxFloor || 0, modeUnlock: gt.modeUnlock || null };
 }
 function gtDaysRemaining() {
     const gt = gameData.gt;
@@ -2431,8 +2431,11 @@ const GT_VENDORS = [
 // 통과) | 'instinctMax'(instinctLevelOfChar가 본능해제 5강으로 침).
 // storyMaxFloor: 스토리 타워를 이 층까지 절대 해금(진행도 무관, isFloorUnlocked).
 // legendaryPickCount: 구매 확정 전 레전더리 장비를 몇 개 직접 골라야 하는지.
-// 전부 GT가 끝나면(expiresAt) 캐릭터 접근/강화/층 해금은 같이 사라진다 --
-// legendaryPickCount로 받은 장비만 구매 시점에 영구로 지급되어 남는다.
+// modeUnlock: 캐릭터가 아니라 게임 모드 자체를 기간제로 풀어주는 상품일 때만
+// 쓴다 (예: 'zombie' -- 좀비막기). characterPool이 없는 상품은 구매 버튼을
+// 누르면 캐릭터/레전더리 선택 없이 바로 구매가 확정된다 (아래 gtBuyBtn 핸들러).
+// 전부 GT가 끝나면(expiresAt) 캐릭터 접근/강화/층 해금/모드 해금은 같이
+// 사라진다 -- legendaryPickCount로 받은 장비만 구매 시점에 영구로 지급되어 남는다.
 const GT_PACKAGES = [
     // mh: 저가 정책 -- 캐릭터는 비스트 등급까지만(게스트 등급 제외) 빌려준다.
     {
@@ -2455,6 +2458,18 @@ const GT_PACKAGES = [
         id: 'gpx1010Ultra', vendor: 'sl', name: 'GPX1010 울트라', cost: 20000, durationDays: 30,
         characterPool: 'owned', characterEffect: 'instinctMax', storyMaxFloor: 49, legendaryPickCount: 4,
         desc: '보유 캐릭터 1명을 한 달간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 49층까지 해금되며, 레전더리 장비 4개를 GT로 직접 골라 빌립니다. GT가 끝나면 강화·해금된 층·빌린 레전더리 장비가 전부 함께 사라집니다.'
+    },
+    // sl: 캐릭터가 아니라 좀비막기 모드 자체를 기간제로 풀어준다 -- 캐릭터
+    // 선택 단계가 없다.
+    {
+        id: 'tx1010Basic', vendor: 'sl', name: 'TX1010 베이직', cost: 500, durationDays: 7,
+        modeUnlock: 'zombie',
+        desc: '좀비막기를 1주일간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
+    },
+    {
+        id: 'tx1010Ultra', vendor: 'sl', name: 'TX1010 울트라', cost: 1500, durationDays: 30,
+        modeUnlock: 'zombie',
+        desc: '좀비막기를 한 달간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
     }
 ];
 // gtPendingPackage가 null이면 목록 화면. 아니면 진행 중인 구매 흐름 --
@@ -2507,6 +2522,7 @@ function buyGtPackage(pkg, characterId, legendaryPicks) {
         packageId: pkg.id,
         characterId: characterId || null,
         characterEffect: pkg.characterEffect || null,
+        modeUnlock: pkg.modeUnlock || null,
         expiresAt: Date.now() + pkg.durationDays * 24 * 60 * 60 * 1000,
         storyMaxFloor: pkg.storyMaxFloor || 0,
         borrowedEquipUids: borrowedUids
@@ -2518,6 +2534,8 @@ function buyGtPackage(pkg, characterId, legendaryPicks) {
         msg += pkg.characterEffect === 'instinctMax'
             ? ` ${charName}을(를) ${pkg.durationDays}일간 5성으로 사용할 수 있습니다.`
             : ` ${charName}을(를) ${pkg.durationDays}일간 사용할 수 있습니다.`;
+    } else if (pkg.modeUnlock === 'zombie') {
+        msg += ` 좀비막기를 ${pkg.durationDays}일간 이용할 수 있습니다.`;
     }
     if (borrowedUids.length) msg += ` 레전더리 장비 ${borrowedUids.length}개를 GT로 빌렸습니다(GT 종료 시 반납).`;
     return { ok: true, msg };
@@ -2528,11 +2546,17 @@ function renderGtStatusHtml() {
     const days = gtDaysRemaining();
     if (!gt || days <= 0) return '';
     const pkg = GT_PACKAGES.find(p => p.id === gt.packageId);
-    const charName = SHARED.CHARACTERS[gt.characterId]?.name || gt.characterId;
-    const effectText = gt.characterEffect === 'instinctMax' ? '5성 강화 중' : '사용 가능';
+    let statusText;
+    if (gt.modeUnlock === 'zombie') {
+        statusText = '좀비막기 이용 가능';
+    } else {
+        const charName = SHARED.CHARACTERS[gt.characterId]?.name || gt.characterId;
+        const effectText = gt.characterEffect === 'instinctMax' ? '5성 강화 중' : '사용 가능';
+        statusText = `${charName} ${effectText}`;
+    }
     return `<div class="shop-item-card gt-status-card">
         <span class="shop-item-icon">⏳</span>
-        <span class="shop-item-name">${pkg ? pkg.name : 'GT'} 이용 중<div class="iap-item-desc">${charName} ${effectText} · D-${days}</div></span>
+        <span class="shop-item-name">${pkg ? pkg.name : 'GT'} 이용 중<div class="iap-item-desc">${statusText} · D-${days}</div></span>
     </div>`;
 }
 
@@ -2708,6 +2732,19 @@ shopContent.addEventListener('click', (e) => {
         if (currencyAmount('diamonds') < pkg.cost) {
             const msgEl = document.getElementById('shop-item-msg');
             if (msgEl) { msgEl.textContent = '다이아가 부족합니다.'; msgEl.classList.remove('hidden'); msgEl.classList.remove('good'); }
+            return;
+        }
+        // characterPool이 없는 상품(모드 해금 등)은 캐릭터/레전더리를 고를
+        // 게 없으니 픽업 화면 없이 바로 구매를 확정한다.
+        if (!pkg.characterPool) {
+            const res = buyGtPackage(pkg, null, []);
+            renderGtTab();
+            const msgEl = document.getElementById('shop-item-msg');
+            if (msgEl) {
+                msgEl.textContent = res.msg;
+                msgEl.classList.remove('hidden');
+                msgEl.classList.toggle('good', res.ok);
+            }
             return;
         }
         gtPendingPackage = pkg;
