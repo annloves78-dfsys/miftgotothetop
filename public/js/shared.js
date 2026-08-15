@@ -1936,19 +1936,25 @@ const GUEST_BOSS_DEFS = {
         homeY: -235,
         skillIntervalMs: 2000, // 유누 확정 (2026-08-15): 기본 공격이 2초에 한 번
         patterns: {
-            // 기본(평범) 공격: 원거리, 크고 빠른 불구슬을 던진다.
-            // damage/burnDamage/2초 간격은 유누 확정치 (2026-08-15). radius(큰
-            // 구슬)/speed(빠르게)/telegraphMs는 "크게"/"빠르게"라는 방향만 정해져서,
-            // 기존 수치 스케일(캐릭터 투사체 반지름 6~15, 속도 380~800,
-            // guest1 텔레그래프 300~600ms)에 맞춰 임의로 채운 값 -- 다르면 알려줄 것.
-            // 피격자 화상 디버프 시스템이 이 게임에 아직 없어서, 두 데미지는
-            // 합쳐서(30) 한 방에 적중시킨다 (server.js의 basic_attack 분기 참고).
+            // 기본(평범) 공격: 원거리, 구체 모양의 크고 빠른 불구슬을 예고 없이
+            // 던진다 (유누, 2026-08-15: "구체로 하고 크기를 키우고 예고하지마").
+            // 그래서 telegraphMs/guestTelegraph 경고 없이 beginGuestSkill에서
+            // 바로 발사까지 끝낸다 (server.js basic_attack 분기 참고).
+            // 적중 시 damage(10) 즉발 + burnDamage(1)를 burnIntervalMs(1초)마다
+            // burnTicks(20)번, 총 20 추가 -- 한 방에 합치지 않고 실제 화상
+            // 디버프로 처리한다 (유누 확정, 2026-08-15: "10 들어가고 1초에 1씩
+            // 20번"). server.js guestMonsterCtx.onHit이 room.activeBuffs에
+            // player_burn을 붙여서 매 초 applyDamageToGuestPlayer로 깎는다.
+            // radius(더 키움)/speed는 "크게"/"빠르게"라는 방향만 정해져서 기존
+            // 수치 스케일(캐릭터 투사체 반지름 6~15, 속도 380~800)에 맞춰 임의로
+            // 채운 값 -- 다르면 알려줄 것.
             basic_attack: {
-                telegraphMs: 500,
                 speed: 900,
-                radius: 34,
+                radius: 60,
                 damage: 10,
-                burnDamage: 20
+                burnDamage: 1,
+                burnTicks: 20,
+                burnIntervalMs: 1000
             }
         },
         phase2: {

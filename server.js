@@ -1300,6 +1300,11 @@ function spawnMonsterProjectile(ctx, monsterId, m, def, targetX, targetY) {
         damage: def.attackDamage * outgoingDamageMultiplier(m, Date.now()),
         elementMark: m.elementMark,
         radius: def.attackProjectileRadius, // undefined for ordinary arrows -> PROJECTILE_RADIUS
+        // 화상: 대부분의 발사체는 안 쓴다 (undefined -> tickMonsterProjectiles의
+        // onHit 훅이 조용히 무시). guest2 기본 공격만 채워서 넘긴다.
+        burnDamage: def.attackBurnDamage,
+        burnTicks: def.attackBurnTicks,
+        burnIntervalMs: def.attackBurnIntervalMs,
         bornAt: Date.now()
     };
     room.projectiles[id] = pr;
@@ -1330,6 +1335,8 @@ function tickMonsterProjectiles(ctx, alivePlayers, dtMs) {
             if (hitRef) {
                 ctx.damageTarget(hitRef, pr.damage, pr.elementMark);
                 if (!rooms[roomId]) return; // player died; room already torn down
+                if (ctx.onHit) ctx.onHit(pr, hitRef);
+                if (!rooms[roomId]) return;
             }
         }
     }
@@ -3897,15 +3904,20 @@ function beginGuestSkill(roomId, room, def, now) {
             skill: 'big_slash', near, windupMs: room.bossRuntime.windupMs
         });
     } else if (pick === 'basic_attack') {
-        // 원거리 기본 공격: 조준한 자리에 경고 표시를 띄운 뒤, 텔레그래프가
-        // 끝나면 실제로 날아가는 큰 불구슬을 던진다 (guestTickRoom 쪽 분기에서
-        // spawnMonsterProjectile로 발사).
+        // 원거리 기본 공격: 예고 없이(유누 지시) 즉시 큰 불구슬을 던진다 --
+        // 다른 패턴들과 달리 telegraph 대기 단계가 없어서 캐스팅 한 틱 안에
+        // 전부 끝난다.
         const p = def.patterns.basic_attack;
-        room.bossRuntime = { phase: 'telegraph', at: now, x: target.x, y: target.y };
-        io.to(roomId).emit('guestTelegraph', {
-            skill: 'basic_attack', x: target.x, y: target.y,
-            radius: p.radius, telegraphMs: p.telegraphMs
-        });
+        spawnMonsterProjectile(guestMonsterCtx(roomId, room), 'boss',
+            { x: room.bossX, y: room.bossY, elementMark: null },
+            {
+                projectileSpeed: p.speed, attackDamage: p.damage, attackProjectileRadius: p.radius,
+                attackBurnDamage: p.burnDamage, attackBurnTicks: p.burnTicks, attackBurnIntervalMs: p.burnIntervalMs
+            },
+            target.x, target.y);
+        room.bossState = 'idle';
+        room.bossPattern = null;
+        room.nextSkillAt = now + def.skillIntervalMs;
     } else if (pick === 'summon_minions') {
         const p = def.patterns.summon_minions;
         room.bossRuntime = {
@@ -3982,6 +3994,19 @@ function guestMonsterCtx(roomId, room) {
         sightBlocked: () => false,
         outOfBounds: (pr) => Math.abs(pr.x) > GUEST_ARENA_HALF_W + 200
             || Math.abs(pr.y) > GUEST_ARENA_HALF_H + 200,
+        // Ordinary arrows (summoned adds) never set pr.burnDamage, so this is a
+        // no-op for them -- only guest2 기본 공격's fireball carries it.
+        onHit: (pr, hitRef) => {
+            if (!pr.burnDamage) return;
+            const pid = Object.keys(room.players).find(k => room.players[k] === hitRef);
+            if (!pid) return; // 부하만 맞았을 땐 화상 없음
+            room.activeBuffs.push({
+                type: 'player_burn', targetId: pid,
+                damage: pr.burnDamage, tickMs: pr.burnIntervalMs,
+                lastTickAt: Date.now(),
+                endAt: Date.now() + pr.burnIntervalMs * pr.burnTicks
+            });
+        },
         ev: {
             telegraph: 'guestMonsterTelegraph', attack: 'guestMonsterAttack',
             defeated: 'guestMonsterDefeated', exploded: 'guestMonsterExploded',
@@ -4401,6 +4426,12 @@ function tickGuestRoom(roomId) {
                     caster.partyHp[caster.active] = caster.hp;
                     io.to(roomId).emit('guestPlayerHealed', { id: buff.casterId, hp: caster.hp, partyHp: caster.partyHp });
                 }
+            } else if (buff.type === 'player_burn') {
+                // guest2 기본 공격의 화상: 명중한 플레이어 한 명에게만, 초당
+                // buff.damage씩 endAt까지 붙는다 (guestMonsterCtx.onHit에서 만듦).
+                const pl = room.players[buff.targetId];
+                if (pl && pl.alive) applyDamageToGuestPlayer(roomId, buff.targetId, buff.damage);
+                if (!rooms[roomId]) return;
             }
         }
     }
@@ -4598,21 +4629,6 @@ function tickGuestRoom(roomId) {
             });
             guestCircleHit(room, roomId, rt.x, rt.y, rt.radius, p.damage);
             if (!rooms[roomId]) return;
-            room.bossState = 'idle';
-            room.bossPattern = null;
-            room.nextSkillAt = now + def.skillIntervalMs;
-        }
-    } else if (room.bossPattern === 'basic_attack') {
-        const p = def.patterns.basic_attack;
-        const rt = room.bossRuntime;
-        if (rt.phase === 'telegraph' && now - rt.at >= p.telegraphMs) {
-            // 데미지 10 + 불데미지 20은 이 게임에 "피격자에게 화상 디버프"
-            // 시스템이 아직 없어서, 한 방에 합쳐 30으로 적중시킨다(유누 확정치
-            // 그대로, 판정만 단순화).
-            spawnMonsterProjectile(guestMonsterCtx(roomId, room), 'boss',
-                { x: room.bossX, y: room.bossY, elementMark: null },
-                { projectileSpeed: p.speed, attackDamage: p.damage + p.burnDamage, attackProjectileRadius: p.radius },
-                rt.x, rt.y);
             room.bossState = 'idle';
             room.bossPattern = null;
             room.nextSkillAt = now + def.skillIntervalMs;
