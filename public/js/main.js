@@ -171,6 +171,10 @@ const charDetailInstinctNav = document.getElementById('char-detail-instinct-nav'
 const charDetailInstinctPrevBtn = document.getElementById('char-detail-instinct-prev-btn');
 const charDetailInstinctNextBtn = document.getElementById('char-detail-instinct-next-btn');
 const charDetailInstinctNavLabel = document.getElementById('char-detail-instinct-nav-label');
+const charDetailLevelIcon = document.getElementById('char-detail-level-icon');
+const charDetailLevelBadge = document.getElementById('char-detail-level-badge');
+const charDetailLevelRow = document.getElementById('char-detail-level-row');
+const charDetailLevelExpEl = document.getElementById('char-detail-level-exp');
 
 // ---- Auth (login / signup / persistent session) ----
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1308,17 +1312,21 @@ function selectCharDetailAbility(kind) {
     if (kind === 'instinct') {
         instinctViewLevel = Math.max(1, instinctLevelOfChar(viewingCharacterId));
         renderInstinctBrowse();
+    } else if (kind === 'level') {
+        renderCharDetailLevelDesc();
     } else {
         charDetailDesc.textContent = describeAbility(stats, kind);
     }
     charDetailInstinctRow.classList.toggle('hidden', kind !== 'instinct');
     charDetailInstinctNav.classList.toggle('hidden', kind !== 'instinct');
+    charDetailLevelRow.classList.toggle('hidden', kind !== 'level');
     [
         [charDetailAttackIcon, 'attack'],
         [charDetailSkillIcon, 'skill'],
         [charDetailUltimateIcon, 'ultimate'],
         [charDetailPassiveIcon, 'passive'],
-        [charDetailInstinctIcon, 'instinct']
+        [charDetailInstinctIcon, 'instinct'],
+        [charDetailLevelIcon, 'level']
     ].forEach(([el, k]) => el.classList.toggle('selected', k === kind));
 }
 
@@ -1350,6 +1358,7 @@ charDetailSkillIcon.addEventListener('click', () => selectCharDetailAbility('ski
 charDetailUltimateIcon.addEventListener('click', () => selectCharDetailAbility('ultimate'));
 charDetailPassiveIcon.addEventListener('click', () => selectCharDetailAbility('passive'));
 charDetailInstinctIcon.addEventListener('click', () => selectCharDetailAbility('instinct'));
+charDetailLevelIcon.addEventListener('click', () => selectCharDetailAbility('level'));
 
 const SKILL_ICONS = {
     melee_kick: '🗡',
@@ -2210,10 +2219,9 @@ function openCharacterDetail(id) {
         + (atkBonus ? `<span class="cd-stat-bonus">+${atkBonus}</span>` : '');
     charDetailHp.innerHTML = (stats.health != null ? stats.health : '-')
         + (hpBonus ? `<span class="cd-stat-bonus">+${hpBonus}</span>` : '');
-    // 지금까지 비어 있던 헤더의 숫자: 장비+본능해제를 포함한 공격력+체력 합산.
-    charDetailPower.textContent = String(
-        (Number(String(attackDamageText(stats)).split(' / ')[0]) || 0) + atkBonus
-        + (stats.health || 0) + hpBonus);
+    // 헤더의 숫자: 예전엔 공격력+체력 합산 "전투력"이었지만, 이제 캐릭터
+    // 레벨(성장던전)이 그 자리를 대신한다.
+    charDetailPower.textContent = `Lv.${charLevelOfChar(id)}`;
     charDetailAwakenSlot.classList.toggle('hidden', !SHARED.hasAwakenSlot(stats.grade));
     renderCharDetailEquipment(id);
     charDetailAttackIcon.innerHTML = skillIconHtml(stats.attackType, '🗡');
@@ -2221,6 +2229,7 @@ function openCharacterDetail(id) {
     charDetailUltimateIcon.innerHTML = skillIconHtml(stats.ultimateType, '❔');
     charDetailPassiveIcon.classList.toggle('empty', !hasPassive(stats));
     renderCharDetailInstinct(id);
+    renderCharDetailLevel(id);
     selectCharDetailAbility('attack');
     showScreen('characterDetail');
 }
@@ -2243,6 +2252,18 @@ function renderCharDetailInstinct(charType) {
         charDetailInstinctBtn.disabled = have < cost;
         charDetailInstinctBtn.textContent = `${nextLevel}강 (영혼석 ${cost})`;
     }
+}
+
+// 레벨 배지: 본능해제와 달리 여기서 직접 강화하는 게 아니라 성장던전에서
+// 모은 EXP로 자동으로 오른다 -- 그래서 버튼 없이 진행도만 재화 표시처럼 보여준다.
+function renderCharDetailLevel(charType) {
+    charDetailLevelBadge.textContent = `Lv.${charLevelOfChar(charType)}`;
+}
+function renderCharDetailLevelDesc() {
+    const charType = viewingCharacterId;
+    const { level, expIntoLevel, expToNext } = SHARED.charLevelFromExp(SHARED.charExpOf(gameData.charExp, charType));
+    charDetailDesc.textContent = `레벨업하면 체력·공격력이 레벨당 +${SHARED.CHAR_LEVEL_STAT_PCT_PER_LEVEL * 100}%씩 오릅니다 (최대 Lv.${SHARED.CHAR_LEVEL_MAX}). 성장던전(EXP 던전)에서 EXP를 모으면 자동으로 레벨업됩니다.`;
+    charDetailLevelExpEl.textContent = expToNext != null ? `⭐ ${expIntoLevel} / ${expToNext}` : `⭐ 최대 레벨 (Lv.${level})`;
 }
 
 charDetailInstinctBtn.addEventListener('click', () => {
@@ -5491,6 +5512,9 @@ storyLeaveBtn.addEventListener('click', () => {
         resetLegendActions();
         renderLegendDetail();
         showScreen('legendDetail');
+    } else if (SHARED.isExpDungeonFloor(activeStoryFloor)) {
+        renderExpDungeonDetail();
+        showScreen('expDungeon');
     } else {
         resetTowerActions();
         renderTower();
@@ -7079,6 +7103,9 @@ resultBackBtn.addEventListener('click', () => {
     } else if (resultReturnScreen === 'guestDetail') {
         renderGuestDetail();
         showScreen('guestDetail');
+    } else if (resultReturnScreen === 'expDungeon') {
+        renderExpDungeonDetail();
+        showScreen('expDungeon');
     } else if (resultReturnScreen === 'modeSelect') {
         showScreen('modeSelect');
     } else {
