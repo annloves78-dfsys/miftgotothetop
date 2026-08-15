@@ -2448,6 +2448,18 @@ const GT_PACKAGES = [
         maxGrade: '비스트', characterPool: 'unowned', characterEffect: 'unlock',
         desc: '비스트 등급 이하 원하는 캐릭터 1명을 한 달간 GT로 빌려서 사용할 수 있습니다. GT가 끝나면 캐릭터도 함께 사라집니다.'
     },
+    // mh: 캐릭터가 아니라 좀비막기 모드 자체를 기간제로 풀어준다 -- 캐릭터
+    // 선택 단계가 없다.
+    {
+        id: 'tx1010Basic', vendor: 'mh', name: 'TX1010 베이직', cost: 500, durationDays: 7,
+        modeUnlock: 'zombie',
+        desc: '좀비막기를 1주일간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
+    },
+    {
+        id: 'tx1010Ultra', vendor: 'mh', name: 'TX1010 울트라', cost: 1500, durationDays: 30,
+        modeUnlock: 'zombie',
+        desc: '좀비막기를 한 달간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
+    },
     // sl: 이미 보유한 캐릭터를 임시로 5성까지 강화 + 스토리 타워 절대 해금.
     {
         id: 'gpx1010Basic', vendor: 'sl', name: 'GPX1010 베이직', cost: 5000, durationDays: 7,
@@ -2458,18 +2470,6 @@ const GT_PACKAGES = [
         id: 'gpx1010Ultra', vendor: 'sl', name: 'GPX1010 울트라', cost: 20000, durationDays: 30,
         characterPool: 'owned', characterEffect: 'instinctMax', storyMaxFloor: 49, legendaryPickCount: 4,
         desc: '보유 캐릭터 1명을 한 달간 5성(본능해제 5강)으로 빌려 강화하고, 스토리 타워가 49층까지 해금되며, 레전더리 장비 4개를 GT로 직접 골라 빌립니다. GT가 끝나면 강화·해금된 층·빌린 레전더리 장비가 전부 함께 사라집니다.'
-    },
-    // sl: 캐릭터가 아니라 좀비막기 모드 자체를 기간제로 풀어준다 -- 캐릭터
-    // 선택 단계가 없다.
-    {
-        id: 'tx1010Basic', vendor: 'sl', name: 'TX1010 베이직', cost: 500, durationDays: 7,
-        modeUnlock: 'zombie',
-        desc: '좀비막기를 1주일간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
-    },
-    {
-        id: 'tx1010Ultra', vendor: 'sl', name: 'TX1010 울트라', cost: 1500, durationDays: 30,
-        modeUnlock: 'zombie',
-        desc: '좀비막기를 한 달간 이용할 수 있습니다. GT가 끝나면 좀비막기 이용도 함께 사라집니다.'
     }
 ];
 // gtPendingPackage가 null이면 목록 화면. 아니면 진행 중인 구매 흐름 --
