@@ -55,6 +55,8 @@ const defaultData = {
     gt: null,
     // 좀비막기는 다이아 1회 결제로 영구 해금하는 모드. ZOMBIE_UNLOCK_COST(zombie_defense.js)
     zombieUnlocked: false,
+    // 각성모드도 같은 방식으로 다이아 1회 결제 영구 해금. AWAKEN_UNLOCK_COST(main.js)
+    awakenUnlocked: false,
     // 성장던전(EXP 던전)도 다이아 1회 결제로 영구 해금 (EXP_DUNGEON_UNLOCK_COST, main.js).
     expDungeonUnlocked: false,
     // 깨 본 EXP 던전 단계 번호(1~10). 다음 단계 잠금 해제용 -- 몇 번이고

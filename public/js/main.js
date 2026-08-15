@@ -3046,7 +3046,22 @@ const TOWER_WAIT_ELS = {
 // ---- 각성모드 ----
 // 각성 장비를 얻는 모드. 어떤 쿠키의 각성 장비를 노릴지 고르면 그 쿠키의
 // 보스 버전과 싸운다. 파티는 3명이고 혼자 한다. 레벨은 순서 잠금이 없다.
+// 좀비막기/성장던전과 같은 다이아 1회 결제 영구 해금 패턴.
+const AWAKEN_UNLOCK_COST = 100000;
 const awakenModeCard = document.getElementById('awaken-mode-card');
+const awakenModeSubEl = document.getElementById('awaken-mode-sub');
+
+function isAwakenModeUnlocked() {
+    return adminPowerOn('stages') || gameData.awakenUnlocked;
+}
+function renderAwakenModeCard() {
+    const unlocked = isAwakenModeUnlocked();
+    awakenModeCard.classList.toggle('locked', !unlocked);
+    awakenModeSubEl.textContent = unlocked ? '' : `🔒 다이아 ${AWAKEN_UNLOCK_COST.toLocaleString()}`;
+    awakenModeSubEl.classList.toggle('hidden', unlocked);
+}
+renderAwakenModeCard();
+
 const awakenBossListEl = document.getElementById('awaken-boss-list');
 const backFromAwakenBossBtn = document.getElementById('back-from-awaken-boss-btn');
 const awakenBossNameEl = document.getElementById('awaken-boss-name');
@@ -3300,6 +3315,13 @@ function showAwakenMsg(text, good) {
 }
 
 awakenModeCard.addEventListener('click', () => {
+    if (!isAwakenModeUnlocked()) {
+        if (currencyAmount('diamonds') < AWAKEN_UNLOCK_COST) return;
+        if (!adminPowerOn('currencies')) grantCurrencies({ diamonds: -AWAKEN_UNLOCK_COST });
+        gameData.awakenUnlocked = true;
+        saveGameData(gameData);
+        renderAwakenModeCard();
+    }
     renderAwakenBossList();
     showScreen('awakenBoss');
 });
