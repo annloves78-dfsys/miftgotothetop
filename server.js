@@ -569,7 +569,15 @@ function passiveHitHeal(character, p) {
 function consumeAmmoOrBlock(character, p, now) {
     if (!character.attackAmmoMax) return true;
     if (p.reloadUntil && now < p.reloadUntil) return false;
-    if (p.ammoLeft == null || p.ammoLeft > character.attackAmmoMax) p.ammoLeft = character.attackAmmoMax;
+    // 재장전이 막 끝났으면(reloadUntil이 있었는데 지금은 지났으면) 여기서
+    // 다시 꽉 채운다 -- ammoLeft가 이미 0이라 아래 null 체크만으로는 절대
+    // 채워지지 않아서, 재장전 끝나고 쏘면 그대로 또 재장전 걸리는 버그가 있었다.
+    if (p.reloadUntil && now >= p.reloadUntil) {
+        p.ammoLeft = character.attackAmmoMax;
+        p.reloadUntil = 0;
+    } else if (p.ammoLeft == null || p.ammoLeft > character.attackAmmoMax) {
+        p.ammoLeft = character.attackAmmoMax;
+    }
     p.ammoLeft -= 1;
     if (p.ammoLeft <= 0) {
         p.ammoLeft = 0;

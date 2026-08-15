@@ -1705,7 +1705,15 @@ function mcTapOrHoldFire(el, fireFn, statsGetter) {
 function clientConsumeAmmo(stats, p, now) {
     if (!stats.attackAmmoMax) return true;
     if (p.reloadUntil && now < p.reloadUntil) return false;
-    if (p.ammoLeft == null || p.ammoLeft > stats.attackAmmoMax) p.ammoLeft = stats.attackAmmoMax;
+    // 재장전이 막 끝났으면 여기서 다시 꽉 채운다 -- ammoLeft가 이미 0이라
+    // 아래 null 체크만으로는 절대 채워지지 않아서, 재장전 끝나고 쏘면 그대로
+    // 또 재장전 걸리는 버그가 있었다 (server.js의 consumeAmmoOrBlock과 동일).
+    if (p.reloadUntil && now >= p.reloadUntil) {
+        p.ammoLeft = stats.attackAmmoMax;
+        p.reloadUntil = 0;
+    } else if (p.ammoLeft == null || p.ammoLeft > stats.attackAmmoMax) {
+        p.ammoLeft = stats.attackAmmoMax;
+    }
     p.ammoLeft -= 1;
     if (p.ammoLeft <= 0) {
         p.ammoLeft = 0;
@@ -1715,13 +1723,16 @@ function clientConsumeAmmo(stats, p, now) {
     return true;
 }
 // 탄창 캐릭터의 스킬 칸 표시(특수스킬이 없어서 그 자리를 대신 쓴다): 재장전
-// 중이면 남은 시간, 아니면 남은 탄수. clientConsumeAmmo가 채워 둔
-// p.ammoLeft/p.reloadUntil을 그대로 읽는다.
+// 중이면 남은 시간, 아니면 남은 탄수. 재장전 시간이 다 지났으면 실제로 쏘기
+// 전이라도(clientConsumeAmmo를 아직 안 거쳤어도) 꽉 찬 탄창을 바로 보여준다
+// -- 안 그러면 재장전이 끝나도 다시 쏘기 전까지 계속 0발로 보인다.
 function ammoOrReloadText(stats, p, now) {
     if (p.reloadUntil && now < p.reloadUntil) {
         return `장전 ${((p.reloadUntil - now) / 1000).toFixed(1)}s`;
     }
-    const left = p.ammoLeft != null ? p.ammoLeft : stats.attackAmmoMax;
+    const left = (p.reloadUntil && now >= p.reloadUntil)
+        ? stats.attackAmmoMax
+        : (p.ammoLeft != null ? p.ammoLeft : stats.attackAmmoMax);
     return `${left}발`;
 }
 

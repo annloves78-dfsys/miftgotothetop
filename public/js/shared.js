@@ -1144,7 +1144,7 @@ const CHARACTERS = {
         attackDamage: 1,
         attackCooldown: 100, // 0.1초에 한 발
         attackAmmoMax: 100, // 100발 쏘면 재장전
-        attackReloadMs: 3000, // 재장전 3초
+        attackReloadMs: 5000, // 재장전 5초
         attackFireSpeedPenalty: 0.3, // 연사 중(마지막 발 후 잠깐) 이동속도가 이만큼 줄어든다
         // 특수스킬 없음 -- skillType 자체를 생략한다. 전투 중 스킬 칸에는
         // 대신 남은 탄수/재장전 상태가 뜬다 (main.js updateCooldownDisplay류).
