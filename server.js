@@ -4848,6 +4848,9 @@ function spawnZombie(roomId, room, now) {
     const id = `z${room.nextZombieId++}`;
     room.zombies[id] = {
         type, x: pos.x, y: pos.y, hp: stats.hp, maxHp: stats.hp,
+        // 공격력/벽 피해도 웨이브별로 커지므로, ZOMBIE_DEFS의 고정값이 아니라
+        // 스폰 시점에 굳힌 이 값을 tickZombie가 쓴다.
+        attackDamage: stats.attackDamage, structureDamage: stats.structureDamage,
         nextAttackAt: 0, facing: Math.atan2(-pos.y, -pos.x)
     };
     io.to(roomId).emit('zombieSpawned', { id, ...room.zombies[id] });
@@ -4955,7 +4958,7 @@ function tickZombie(roomId, room, zid, z, alivePlayers, now) {
         if (now < z.nextAttackAt) return;
         z.nextAttackAt = now + def.attackCooldown;
         if (soldierInRange && (!playerInRange || nearestSoldierDist < nearestDist)) {
-            nearestSoldier.hp -= def.attackDamage;
+            nearestSoldier.hp -= z.attackDamage;
             if (nearestSoldier.hp <= 0) {
                 delete room.soldiers[nearestSoldierId];
                 io.to(roomId).emit('zombieSoldierDied', { id: nearestSoldierId });
@@ -4963,7 +4966,7 @@ function tickZombie(roomId, room, zid, z, alivePlayers, now) {
                 io.to(roomId).emit('zombieHitSoldier', { id: nearestSoldierId, hp: nearestSoldier.hp });
             }
         } else {
-            zombieDamagePlayer(roomId, room, nearest, def.attackDamage);
+            zombieDamagePlayer(roomId, room, nearest, z.attackDamage);
         }
         return;
     }
@@ -4997,7 +5000,7 @@ function tickZombie(roomId, room, zid, z, alivePlayers, now) {
         if (room.grid[aheadIdx]) {
             if (now < z.nextAttackAt) return;
             z.nextAttackAt = now + def.attackCooldown;
-            damageZombieStructure(roomId, room, aheadIdx, def.structureDamage);
+            damageZombieStructure(roomId, room, aheadIdx, z.structureDamage);
             return;
         }
     }

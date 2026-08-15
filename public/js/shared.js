@@ -7406,12 +7406,21 @@ const ZOMBIE_DEFS = {
     }
 };
 
-// 웨이브가 올라갈수록 체력이 조금씩 불어난다 (웨이브당 +12%p). 속도/공격력/
-// 벽 피해는 종류별로 고정 -- 체력만 스케일해도 오래 버틸수록 확실히 버거워진다.
+// 웨이브가 올라갈수록 체력·공격력이 이전 웨이브 대비 배수로 불어난다
+// (체력 x1.4, 공격력·벽 피해 x1.5, 웨이브당 누적 복리). 속도는 종류별로 고정.
+const ZOMBIE_WAVE_HP_GROWTH = 1.4;
+const ZOMBIE_WAVE_ATTACK_GROWTH = 1.5;
 function zombieStatsForWave(type, wave) {
     const def = ZOMBIE_DEFS[type];
-    const scale = 1 + Math.max(0, wave - 1) * 0.12;
-    return { ...def, hp: Math.round(def.hp * scale) };
+    const w = Math.max(1, Math.floor(wave || 1));
+    const hpScale = Math.pow(ZOMBIE_WAVE_HP_GROWTH, w - 1);
+    const atkScale = Math.pow(ZOMBIE_WAVE_ATTACK_GROWTH, w - 1);
+    return {
+        ...def,
+        hp: Math.round(def.hp * hpScale),
+        attackDamage: Math.round(def.attackDamage * atkScale),
+        structureDamage: Math.round(def.structureDamage * atkScale)
+    };
 }
 
 // 그 웨이브에 등장 가능한 종류들.
@@ -7419,9 +7428,13 @@ function zombieTypesForWave(wave) {
     return Object.keys(ZOMBIE_DEFS).filter(t => wave >= ZOMBIE_DEFS[t].unlockWave);
 }
 
-// 그 웨이브에 나오는 총 마릿수. 방 하나가 너무 무거워지지 않도록 상한을 둔다.
+// 그 웨이브에 나오는 총 마릿수. 1웨이브 기준(6마리)에서 웨이브당 x1.3씩
+// 복리로 불어나되, 방 하나가 너무 무거워지지 않도록 상한을 둔다.
+const ZOMBIE_WAVE1_COUNT = 6;
+const ZOMBIE_WAVE_COUNT_GROWTH = 1.3;
 function zombieCountForWave(wave) {
-    return Math.min(4 + wave * 2, 40);
+    const w = Math.max(1, Math.floor(wave || 1));
+    return Math.min(Math.round(ZOMBIE_WAVE1_COUNT * Math.pow(ZOMBIE_WAVE_COUNT_GROWTH, w - 1)), 40);
 }
 
 // 스폰될 좀비 한 마리의 종류를 뽑는다. 느림보가 기본이고, 웨이브가 올라가면
