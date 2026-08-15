@@ -1931,11 +1931,25 @@ const GUEST_BOSS_DEFS = {
         id: 'guest2',
         name: '불꽃요정맛 쿠키',
         charType: 'flamefairy',
-        maxHp: 500,
+        maxHp: 20000, // 유누 확정 (2026-08-15), 1차
         radius: 46,
         homeY: -235,
         skillIntervalMs: 1000,
+        // patterns는 아직 비워둔다 -- beginGuestSkill(server.js)이 여기 담긴
+        // 키를 그대로 랜덤으로 뽑아서 쓰기 때문에, tick 로직 없는 패턴을
+        // 넣으면 보스가 캐스팅 중 그대로 멈춰버린다. 확정된 수치는 patternDrafts에
+        // 적어두고, 사거리/범위/텔레그래프 등 나머지가 정해져서 server.js에
+        // 실제 tick 분기를 짜 넣을 때 여기로 옮길 것.
         patterns: {}, // TODO: 1차 패턴 (유누 디자인 대기)
+        patternDrafts: {
+            // 기본(평범) 공격: 데미지 10 + 불데미지 20 확정 (유누, 2026-08-15).
+            // 사거리/범위/텔레그래프, 불데미지가 한번에 붙는지 도트로 나뉘는지는
+            // 아직 안 정해짐.
+            basic_attack: {
+                damage: 10,
+                burnDamage: 20
+            }
+        },
         phase2: {
             maxHp: 400,
             skillIntervalMs: 1000,
