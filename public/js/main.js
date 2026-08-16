@@ -3175,12 +3175,188 @@ itemsBtn.addEventListener('click', () => {
 backFromItemsBtn.addEventListener('click', () => showScreen('lobby'));
 
 // ---- 친구 ----
-// 아직 기능 없음 (탭만 먼저 추가). 나중에 친구 목록/요청 기능이 정해지면 여기 채운다.
+// 로그인 계정끼리만 가능 (게스트는 기기 간에 유지되는 고유 ID가 없어서 상대를
+// 특정할 수 없다). 위에 친구/친구보기/우편함 세 칸은 상점의 카테고리 탭과
+// 같은 패턴(shop-cat-btn + 하나의 content div)을 그대로 쓴다.
 const friendsBtn = document.getElementById('friends-btn');
 const backFromFriendsBtn = document.getElementById('back-from-friends-btn');
+const friendsGuestBlock = document.getElementById('friends-guest-block');
+const friendsUserBlock = document.getElementById('friends-user-block');
+const friendsGotoAccountBtn = document.getElementById('friends-goto-account-btn');
+const friendsContentEl = document.getElementById('friends-content');
+const friendsMailboxBadge = document.getElementById('friends-mailbox-badge');
+const friendsCatButtons = {
+    list: document.getElementById('friends-cat-list'),
+    browse: document.getElementById('friends-cat-browse'),
+    mailbox: document.getElementById('friends-cat-mailbox')
+};
+let friendsActiveCat = 'list';
+let friendsBrowseList = []; // 서버가 보내주는, 지금 같이 "친구보기"를 켜놓은 사람들
+let friendsBrowseRequested = new Set(); // 이번 화면에서 이미 신청 누른 상대 (중복 클릭 방지용, 화면만 벗어나면 초기화)
 
-if (friendsBtn) friendsBtn.addEventListener('click', () => showScreen('friends'));
-if (backFromFriendsBtn) backFromFriendsBtn.addEventListener('click', () => showScreen('lobby'));
+function friendCharLabel(charType) {
+    const def = charType && SHARED.CHARACTERS[charType];
+    return def ? def.name : '알 수 없음';
+}
+
+// shop-content는 기본적으로 가운데 정렬(빈 안내문 하나용)이라, item-row를 여러
+// 줄 쌓을 때는 shop-content-list로 세로 리스트 레이아웃으로 바꿔줘야 한다
+// (renderShopCategory와 같은 패턴).
+function setFriendsContent(html, isList) {
+    friendsContentEl.classList.toggle('shop-content-list', !!isList);
+    friendsContentEl.innerHTML = html;
+}
+
+function openFriendsScreen() {
+    if (!currentUser) {
+        friendsGuestBlock.classList.remove('hidden');
+        friendsUserBlock.classList.add('hidden');
+        return;
+    }
+    friendsGuestBlock.classList.add('hidden');
+    friendsUserBlock.classList.remove('hidden');
+    friendsBrowseRequested = new Set();
+    renderFriendsCategory('list');
+}
+
+function leaveFriendsBrowse() {
+    if (friendsActiveCat === 'browse') socket.emit('friendsBrowseLeave');
+}
+
+function renderFriendsCategory(key) {
+    if (friendsActiveCat === 'browse' && key !== 'browse') leaveFriendsBrowse();
+    friendsActiveCat = key;
+    Object.entries(friendsCatButtons).forEach(([k, btn]) => btn.classList.toggle('selected', k === key));
+    if (key === 'list') renderFriendsList();
+    else if (key === 'browse') renderFriendsBrowse();
+    else if (key === 'mailbox') renderFriendsMailbox();
+}
+
+async function renderFriendsList() {
+    setFriendsContent('<p class="shop-empty">불러오는 중...</p>', false);
+    try {
+        const { data, error } = await sb.rpc('br_friend_list', { p_token: currentUser.session_token });
+        if (error) throw error;
+        const friends = (data && data.friends) || [];
+        if (!friends.length) {
+            setFriendsContent('<p class="shop-empty">아직 친구가 없습니다. 친구보기 탭에서 만들어보세요.</p>', false);
+            return;
+        }
+        setFriendsContent(friends.map(f => `
+            <div class="item-row">
+                <span class="item-icon">🧑</span>
+                <span class="item-main">
+                    <div class="item-name">${f.nickname}</div>
+                    <div class="item-desc">${friendCharLabel(f.charType)} 사용 중</div>
+                </span>
+            </div>`).join(''), true);
+    } catch (e) {
+        setFriendsContent('<p class="shop-empty">친구 목록을 불러오지 못했습니다.</p>', false);
+    }
+}
+
+function renderFriendsBrowse() {
+    socket.emit('friendsBrowseJoin', {
+        userId: currentUser.id, nickname: currentUser.nickname, charType: gameData.selectedCharacter
+    });
+    renderFriendsBrowseList();
+}
+
+function renderFriendsBrowseList() {
+    if (friendsActiveCat !== 'browse') return;
+    const others = friendsBrowseList.filter(p => p.userId !== String(currentUser.id));
+    if (!others.length) {
+        setFriendsContent('<p class="shop-empty">지금 같이 친구보기를 하고 있는 사람이 없습니다. 잠시 기다려보세요.</p>', false);
+        return;
+    }
+    setFriendsContent(others.map(p => {
+        const requested = friendsBrowseRequested.has(p.userId);
+        return `
+            <div class="item-row">
+                <span class="item-icon">🧑</span>
+                <span class="item-main">
+                    <div class="item-name">${p.nickname}</div>
+                    <div class="item-desc">${friendCharLabel(p.charType)} 사용 중</div>
+                </span>
+                <button class="item-use-btn friends-request-btn" data-user-id="${p.userId}" ${requested ? 'disabled' : ''}>
+                    ${requested ? '신청됨' : '친구신청'}
+                </button>
+            </div>`;
+    }).join(''), true);
+}
+
+async function renderFriendsMailbox() {
+    setFriendsContent('<p class="shop-empty">불러오는 중...</p>', false);
+    try {
+        const { data, error } = await sb.rpc('br_friend_inbox', { p_token: currentUser.session_token });
+        if (error) throw error;
+        const requests = (data && data.requests) || [];
+        friendsMailboxBadge.textContent = String(requests.length);
+        friendsMailboxBadge.classList.toggle('hidden', requests.length <= 0);
+        if (!requests.length) {
+            setFriendsContent('<p class="shop-empty">받은 친구 신청이 없습니다.</p>', false);
+            return;
+        }
+        setFriendsContent(requests.map(r => `
+            <div class="item-row">
+                <span class="item-icon">✉️</span>
+                <span class="item-main">
+                    <div class="item-name">${r.nickname}</div>
+                    <div class="item-desc">${friendCharLabel(r.charType)} 사용 중 · 친구 신청</div>
+                </span>
+                <button class="item-use-btn friends-accept-btn" data-request-id="${r.requestId}">수락</button>
+                <button class="item-use-btn friends-reject-btn" data-request-id="${r.requestId}">거절</button>
+            </div>`).join(''), true);
+    } catch (e) {
+        friendsContentEl.innerHTML = '<p class="shop-empty">우편함을 불러오지 못했습니다.</p>';
+    }
+}
+
+socket.on('friendsBrowseList', (list) => {
+    friendsBrowseList = list || [];
+    renderFriendsBrowseList();
+});
+
+friendsContentEl.addEventListener('click', async (e) => {
+    const requestBtn = e.target.closest('.friends-request-btn');
+    if (requestBtn) {
+        const toId = requestBtn.dataset.userId;
+        friendsBrowseRequested.add(toId);
+        renderFriendsBrowseList();
+        try {
+            await sb.rpc('br_friend_send_request', { p_token: currentUser.session_token, p_to_id: toId });
+        } catch (err) {
+            friendsBrowseRequested.delete(toId);
+            renderFriendsBrowseList();
+        }
+        return;
+    }
+    const acceptBtn = e.target.closest('.friends-accept-btn');
+    const rejectBtn = e.target.closest('.friends-reject-btn');
+    if (acceptBtn || rejectBtn) {
+        const requestId = (acceptBtn || rejectBtn).dataset.requestId;
+        try {
+            await sb.rpc('br_friend_respond', {
+                p_token: currentUser.session_token, p_request_id: requestId, p_accept: !!acceptBtn
+            });
+        } catch (err) { /* ignore, list refresh below will just show it's still there */ }
+        renderFriendsMailbox();
+    }
+});
+
+Object.entries(friendsCatButtons).forEach(([key, btn]) => {
+    btn.addEventListener('click', () => renderFriendsCategory(key));
+});
+
+if (friendsBtn) friendsBtn.addEventListener('click', () => {
+    openFriendsScreen();
+    showScreen('friends');
+});
+if (friendsGotoAccountBtn) friendsGotoAccountBtn.addEventListener('click', () => openAccountScreen());
+if (backFromFriendsBtn) backFromFriendsBtn.addEventListener('click', () => {
+    leaveFriendsBrowse();
+    showScreen('lobby');
+});
 
 // ---- 대기 화면 ----
 // 짝이 맞으면 둘이 모닥불을 사이에 두고 마주 서고, 준비를 누른 쪽 머리 위에

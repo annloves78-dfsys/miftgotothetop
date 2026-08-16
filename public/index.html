@@ -114,8 +114,19 @@
     <!-- 친구 -->
     <div id="friends-screen" class="screen hidden">
         <h2>친구</h2>
-        <div id="friends-list" class="items-list">
-            <p class="shop-empty">친구 기능은 준비 중입니다.</p>
+        <div id="friends-guest-block" class="hidden">
+            <p class="shop-empty">친구 기능은 로그인 후 이용할 수 있습니다.</p>
+            <button id="friends-goto-account-btn" class="secondary-btn">로그인 / 회원가입</button>
+        </div>
+        <div id="friends-user-block" class="hidden">
+            <div class="shop-layout">
+                <div class="shop-categories">
+                    <button id="friends-cat-list" class="shop-cat-btn">친구</button>
+                    <button id="friends-cat-browse" class="shop-cat-btn">친구보기</button>
+                    <button id="friends-cat-mailbox" class="shop-cat-btn">우편함<span id="friends-mailbox-badge" class="event-badge hidden">0</span></button>
+                </div>
+                <div id="friends-content" class="shop-content"></div>
+            </div>
         </div>
         <button id="back-from-friends-btn" class="secondary-btn">뒤로</button>
     </div>

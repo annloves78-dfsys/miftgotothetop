@@ -40,6 +40,17 @@ app.get('/admin', (req, res) => {
 // }
 const rooms = {};
 
+// 친구 탭의 "친구보기": 게임 방(rooms)과 별개로, 지금 이 화면을 보고 있는
+// 소켓들만 모아 두는 전역 상태. 로그인 계정만 참여하며(userId = br_users.id),
+// 서버 재시작 시 사라져도 되는 순수 실시간 데이터라 DB에 저장하지 않는다.
+const friendsBrowsing = {}; // socket.id -> { userId, nickname, charType }
+function broadcastFriendsBrowsing() {
+    const list = Object.values(friendsBrowsing);
+    for (const id of Object.keys(friendsBrowsing)) {
+        io.to(id).emit('friendsBrowseList', list);
+    }
+}
+
 function randomRest(bossDef) {
     const [min, max] = bossDef.restMsRange;
     return min + Math.random() * (max - min);
@@ -5272,6 +5283,25 @@ function tickZombieRoom(roomId) {
 }
 
 io.on('connection', (socket) => {
+    // 친구 탭 > 친구보기: 화면을 여는 동안만 자신을 노출하고, 같은 시간에
+    // 보고 있는 다른 계정들을 서로에게 보여준다. 닉네임/캐릭터는 클라이언트가
+    // 보내는 값을 그대로 믿는다(표시용일 뿐 서버 authoritative 데이터가 아님).
+    socket.on('friendsBrowseJoin', ({ userId, nickname, charType }) => {
+        if (!userId || !nickname) return;
+        friendsBrowsing[socket.id] = {
+            userId: String(userId),
+            nickname: String(nickname).slice(0, 20),
+            charType: charType && CHARACTERS[charType] ? charType : 'kicker'
+        };
+        broadcastFriendsBrowsing();
+    });
+    socket.on('friendsBrowseLeave', () => {
+        if (friendsBrowsing[socket.id]) {
+            delete friendsBrowsing[socket.id];
+            broadcastFriendsBrowsing();
+        }
+    });
+
     socket.on('joinRaid', ({ bossId, charType, solo, equip, instinct, charLevel }) => {
         if (!BOSS_DEFS[bossId]) return;
         const character = charFrom(charType, equip, instinct, charLevel);
@@ -8045,6 +8075,10 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        if (friendsBrowsing[socket.id]) {
+            delete friendsBrowsing[socket.id];
+            broadcastFriendsBrowsing();
+        }
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room) return;
