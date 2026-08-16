@@ -6174,7 +6174,7 @@ const EQUIPMENT = {
         ownerText: '쿠키맛 쿠키 전용 — 기본 공격(구슬)이 하나 맞을 때마다 체력 1 회복, 전투 중 1초마다 체력 1 자동 회복, 쓰러지면 체력 100%로 한 번 부활합니다.'
     },
     golden_gatling: {
-        name: '황금 개틀링', slot: 'awaken', grade: '비스트', icon: '🔫',
+        name: '황금 개틀링', slot: 'awaken', grade: '에이션트', icon: '🔫',
         ownerChar: 'poppingcandy',
         // 탄창과 재사용 대기시간(공속)은 더하기로 표현이 안 되는 값(정원/시간)이라
         // 통째로 덮어쓴다: 탄창 100 -> 150발, 공속 0.1초 -> 0.05초.
