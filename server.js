@@ -51,6 +51,12 @@ function broadcastFriendsBrowsing() {
     }
 }
 
+// 친구 대결(PvP) 신청 수락 시, 신청 보낸 사람이 지금 어느 화면에 있든
+// 매치에 불러오기 위한 "로그인 계정 -> 지금 연결된 소켓" 전역 등록.
+// friendsBrowsing과 달리 친구보기 탭을 열지 않아도, 로그인만 하면 채워진다.
+// 서버 재시작 시 사라져도 되는 순수 실시간 데이터라 DB에 저장하지 않는다.
+const onlineUsers = {}; // userId -> { socketId, nickname, charType, equip, instinct, charLevel }
+
 function randomRest(bossDef) {
     const [min, max] = bossDef.restMsRange;
     return min + Math.random() * (max - min);
@@ -5293,7 +5299,331 @@ function tickZombieRoom(roomId) {
     });
 }
 
+// ==================== 친구 대결 (PvP) ====================
+// 보스 레이드/스토리/게스트/좀비는 전부 "room.players 전체 = 내 편"인
+// 협동 모드라 스킬/궁극기 코드가 팀 전체 회복·버프를 가정하고 있다. PvP는
+// 방에 있는 단 하나의 다른 플레이어가 곧 적이라 그 코드를 그대로 못 쓴다.
+// 그래서 캐릭터마다 다른 skillType/ultimateType 문자열을 하나하나 따라가는
+// 대신, 정의에 있는 값 있는 필드(skillHealAmount, skillDamage처럼)를 보고
+// "회복/보호막/이속·공격력 버프류는 나에게만, 피해가 있으면 상대에게"라는
+// 일반 규칙으로 해석한다(applyPvpAbility). 표식(mark)·소환·부활처럼 값
+// 하나로 설명 안 되는 캐릭터 전용 메커니즘은 재현하지 않는다 -- 쿨타임은
+// 소모되고 이펙트는 뜨지만 그 특수 효과만 빠진다.
+function pvpOpponentEntry(room, casterId) {
+    const entry = Object.entries(room.players).find(([id]) => id !== casterId);
+    return entry ? { id: entry[0], p: entry[1] } : null;
+}
+
+function applyPvpAbility(roomId, room, casterId, prefix, now, payload) {
+    const room2 = rooms[roomId];
+    if (!room2) return;
+    const p = room2.players[casterId];
+    if (!p || !p.alive) return;
+    const character = charOf(p);
+    const opp = pvpOpponentEntry(room2, casterId);
+
+    const healAmount = character[prefix + 'HealAmount'] || character[prefix + 'SelfHeal'];
+    if (healAmount) {
+        p.hp = Math.min(p.maxHp, p.hp + healAmount);
+        io.to(roomId).emit('playerHealed', { id: casterId, hp: p.hp });
+    }
+    const healRatio = character[prefix + 'HealRatio'];
+    if (healRatio) {
+        p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * healRatio));
+        io.to(roomId).emit('playerHealed', { id: casterId, hp: p.hp });
+    }
+    const healPerTick = character[prefix + 'HealPerTick'];
+    const tickMs = character[prefix + 'TickMs'];
+    const durationMs = character[prefix + 'DurationMs'];
+    if (healPerTick && tickMs && durationMs) {
+        room2.activeBuffs.push({
+            type: 'pvp_self_hot', target: casterId,
+            healPerTick, tickMs, endAt: now + durationMs, lastTickAt: now
+        });
+    }
+    const shieldAmount = character[prefix + 'ShieldAmount'];
+    if (shieldAmount) {
+        p.shieldHp = (p.shieldHp || 0) + shieldAmount;
+        io.to(roomId).emit('playerShielded', { id: casterId, shieldHp: p.shieldHp });
+    }
+    const speedValue = character[prefix + 'SpeedValue'] || character[prefix + 'SpeedBonus'];
+    const speedDurationMs = character[prefix + 'SpeedDurationMs'];
+    if (speedValue && speedDurationMs) {
+        p.speedBoostUntil = now + speedDurationMs;
+    }
+    const attackMultiplier = character[prefix + 'AttackMultiplier'];
+    const attackBuffDurationMs = character[prefix + 'AttackBuffDurationMs'];
+    if (attackMultiplier && attackBuffDurationMs) {
+        p.attackMultiplierUntil = now + attackBuffDurationMs;
+        p.attackMultiplierValue = attackMultiplier;
+    }
+    // 자연 성역(바람궁수맛 3단계)류: "보스 체력을 %만큼 깎는다" 필드가 있으면
+    // PvP에서는 상대 체력을 그만큼 깎는 걸로 옮긴다.
+    const enemyDamageRatio = character[prefix + 'SanctuaryEnemyDamageRatio'];
+    if (enemyDamageRatio && opp && opp.p.alive) {
+        applyDamageToPvpPlayer(roomId, opp.id, Math.max(1, Math.round(opp.p.maxHp * enemyDamageRatio)));
+    }
+
+    // 직접 피해: range(+width)면 지금 바라보는 방향의 판정선으로, radius면
+    // (클릭 좌표가 왔으면 그 좌표를 중심으로, 아니면 자기 자신을 중심으로)
+    // 원형 범위로 상대와의 거리를 재서 맞으면 피해를 준다.
+    const damage = character[prefix + 'Damage'];
+    if (damage && opp && opp.p.alive) {
+        const range = character[prefix + 'Range'];
+        const width = character[prefix + 'Width'];
+        const radius = character[prefix + 'Radius'];
+        let hit = false;
+        if (range) {
+            hit = meleeLineHitPoint(p.x, p.y, p.facing, range, width || 60, opp.p.x, opp.p.y, PLAYER_RADIUS);
+        } else if (radius) {
+            const ox = (payload && typeof payload.targetX === 'number') ? payload.targetX : p.x;
+            const oy = (payload && typeof payload.targetY === 'number') ? payload.targetY : p.y;
+            hit = Math.hypot(opp.p.x - ox, opp.p.y - oy) <= radius + PLAYER_RADIUS;
+        }
+        if (hit) applyDamageToPvpPlayer(roomId, opp.id, damage);
+    }
+
+    // 구역 지속 피해(궁극기 마법진류): 상대가 그 안에 있을 때마다 틱마다 깎는다.
+    const zoneDamagePerTick = character[prefix + 'ZoneDamagePerTick'];
+    const zoneTickMs = character[prefix + 'ZoneTickMs'];
+    const zoneDurationMs = character[prefix + 'ZoneDurationMs'];
+    if (zoneDamagePerTick && zoneTickMs && zoneDurationMs && opp) {
+        const zx = (payload && typeof payload.targetX === 'number') ? payload.targetX : p.x;
+        const zy = (payload && typeof payload.targetY === 'number') ? payload.targetY : p.y;
+        room2.activeBuffs.push({
+            type: 'pvp_zone_damage', targetId: opp.id, x: zx, y: zy,
+            radius: character[prefix + 'Radius'] || character[prefix + 'Width'] || 80,
+            damagePerTick: zoneDamagePerTick, tickMs: zoneTickMs,
+            endAt: now + zoneDurationMs, lastTickAt: now
+        });
+    }
+}
+
+function applyDamageToPvpPlayer(roomId, playerId, dmg) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const p = room.players[playerId];
+    if (!p || !p.alive) return;
+    const character = charOf(p);
+    const now = Date.now();
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, now, null));
+    if (p.shieldHp > 0) {
+        const absorbed = Math.min(p.shieldHp, dmg);
+        p.shieldHp -= absorbed;
+        dmg -= absorbed;
+    }
+    p.hp = Math.max(0, p.hp - dmg);
+    if (p.hp <= 0) p.alive = false;
+    io.to(roomId).emit('pvpPlayerDamaged', { id: playerId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
+    if (!p.alive) {
+        const winner = Object.keys(room.players).find(id => id !== playerId);
+        endPvpRoom(roomId, winner || null);
+    }
+}
+
+function pvpLoadout(entry) {
+    const bonus = bonusFrom(entry.equip, entry.charType, entry.instinct);
+    const character = charFrom(entry.charType, entry.equip, entry.instinct, entry.charLevel);
+    return { bonus, character, awakenGear: gearFrom(entry.charType, entry.equip) };
+}
+
+// 배경은 스토리모드 10층과 똑같은 다리(bridge) 모양을 그대로 빌려 쓴다 --
+// 새로 만들지 않고 floorDefFor(10)의 치수를 그대로 읽는다.
+function createPvpRoom(entryA, entryB) {
+    const roomId = `pvp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const floorDef = floorDefFor(10) || { levelLength: 1100, laneHalfWidth: 220 };
+    const halfLen = (floorDef.levelLength || 1100) / 2;
+    const laneHalfWidth = floorDef.laneHalfWidth || 220;
+    const loadA = pvpLoadout(entryA);
+    const loadB = pvpLoadout(entryB);
+    const mk = (entry, load, x, facing) => ({
+        x, y: 0, facing,
+        bonus: load.bonus, character: load.character, awakenGear: load.awakenGear,
+        hp: load.character.health + load.bonus.health, maxHp: load.character.health + load.bonus.health,
+        charType: entry.charType, nickname: entry.nickname,
+        alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
+    });
+    rooms[roomId] = {
+        kind: 'pvp',
+        state: 'waiting',
+        players: {
+            [entryA.socketId]: mk(entryA, loadA, -halfLen + 90, 0),
+            [entryB.socketId]: mk(entryB, loadB, halfLen - 90, Math.PI)
+        },
+        halfLen, laneHalfWidth,
+        activeBuffs: [],
+        loopHandle: null
+    };
+    return roomId;
+}
+
+function publicPvpPlayers(room) {
+    const out = {};
+    for (const [id, p] of Object.entries(room.players)) {
+        out[id] = {
+            x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, nickname: p.nickname,
+            facing: p.facing, alive: p.alive, shieldHp: p.shieldHp || 0
+        };
+    }
+    return out;
+}
+
+const PVP_COUNTDOWN_MS = 3000;
+function startPvpFight(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    room.state = 'countdown';
+    io.to(roomId).emit('pvpMatchFound', {
+        roomId, startAt: Date.now() + PVP_COUNTDOWN_MS,
+        players: publicPvpPlayers(room), halfLen: room.halfLen, laneHalfWidth: room.laneHalfWidth
+    });
+    setTimeout(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'countdown') return;
+        r.state = 'fighting';
+        io.to(roomId).emit('pvpFightStart');
+        r.loopHandle = setInterval(() => tickPvpRoom(roomId), 50);
+    }, PVP_COUNTDOWN_MS);
+}
+
+function tickPvpRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const now = Date.now();
+    if (!room.activeBuffs || !room.activeBuffs.length) return;
+    room.activeBuffs = room.activeBuffs.filter(b => now < b.endAt);
+    for (const buff of room.activeBuffs) {
+        if (now - buff.lastTickAt < buff.tickMs) continue;
+        buff.lastTickAt += buff.tickMs;
+        if (buff.type === 'pvp_self_hot') {
+            const p = room.players[buff.target];
+            if (p && p.alive) {
+                p.hp = Math.min(p.maxHp, p.hp + buff.healPerTick);
+                io.to(roomId).emit('playerHealed', { id: buff.target, hp: p.hp });
+            }
+        } else if (buff.type === 'pvp_zone_damage') {
+            const target = room.players[buff.targetId];
+            if (target && target.alive && Math.hypot(target.x - buff.x, target.y - buff.y) <= buff.radius) {
+                applyDamageToPvpPlayer(roomId, buff.targetId, buff.damagePerTick);
+            }
+        }
+    }
+}
+
+function endPvpRoom(roomId, winnerId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.loopHandle) clearInterval(room.loopHandle);
+    room.state = 'ended';
+    io.to(roomId).emit('pvpResult', { winnerId: winnerId || null });
+    delete rooms[roomId];
+}
+
 io.on('connection', (socket) => {
+    // 로그인 계정의 "지금 이 소켓에 연결돼 있다"를 등록. 친구 대결 신청을
+    // 수락했을 때 신청 보낸 사람을 화면과 무관하게 찾아내기 위해 쓴다.
+    // 캐릭터/장비 스냅샷은 로그인 직후와 로비에 들어올 때마다 다시 보내
+    // 최신으로 유지한다(마지막으로 보낸 값이 살짝 오래됐을 수는 있다).
+    socket.on('identify', ({ userId, nickname, charType, equip, instinct, charLevel }) => {
+        if (!userId || !nickname) return;
+        socket.data.userId = String(userId);
+        onlineUsers[String(userId)] = {
+            socketId: socket.id, nickname: String(nickname).slice(0, 20),
+            charType: charType && CHARACTERS[charType] ? charType : 'kicker',
+            equip, instinct, charLevel
+        };
+    });
+
+    // 친구 대결 신청 수락: br_battle_challenge_respond(수락)로 신청 행을 이미
+    // 지운 뒤, 클라이언트가 실제 매치를 만들어 달라고 여기로 알려준다.
+    // 신청 보낸 쪽(opponentUserId)이 지금 접속해 있지 않으면 시작할 수 없다.
+    socket.on('pvpChallengeAccept', ({ opponentUserId }) => {
+        const myUserId = socket.data.userId;
+        if (!myUserId || !opponentUserId) return;
+        const me = onlineUsers[myUserId];
+        const opp = onlineUsers[String(opponentUserId)];
+        if (!me || me.socketId !== socket.id) return;
+        if (!opp) { socket.emit('pvpMatchError', { message: '상대가 접속해 있지 않습니다.' }); return; }
+        const oppSocket = io.sockets.sockets.get(opp.socketId);
+        if (!oppSocket) { socket.emit('pvpMatchError', { message: '상대가 접속해 있지 않습니다.' }); return; }
+
+        const roomId = createPvpRoom(
+            { socketId: socket.id, nickname: me.nickname, charType: me.charType, equip: me.equip, instinct: me.instinct, charLevel: me.charLevel },
+            { socketId: oppSocket.id, nickname: opp.nickname, charType: opp.charType, equip: opp.equip, instinct: opp.instinct, charLevel: opp.charLevel }
+        );
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        oppSocket.join(roomId);
+        oppSocket.data.roomId = roomId;
+        startPvpFight(roomId);
+    });
+
+    socket.on('pvpPlayerMove', ({ x, y, facing }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'pvp') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (Math.abs(x) > room.halfLen + 1 || Math.abs(y) > room.laneHalfWidth + 1) return;
+        p.x = x; p.y = y; p.facing = facing;
+        socket.to(roomId).emit('pvpPlayerMoved', { id: socket.id, x, y, facing });
+    });
+
+    socket.on('pvpPlayerAttack', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'pvp' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const opp = pvpOpponentEntry(room, socket.id);
+        if (!opp || !opp.p.alive) return;
+        const character = charOf(p);
+        const now = Date.now();
+        const rapid = rapidStrikeActive(character, p, now);
+        const cooldown = attackCooldownFor(character, p, rapid, now);
+        if (now - p.lastAttackTime < cooldown) return;
+        if (!consumeAmmoOrBlock(character, p, now)) return;
+        p.lastAttackTime = now;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
+
+        const swing = resolveAttack(character, p, now, rapid);
+        advanceAttackSequence(character, p);
+        const width = swing.width || (character.attackProjectileRadius ? character.attackProjectileRadius * 2 : 50);
+        if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, width, opp.p.x, opp.p.y, PLAYER_RADIUS)) {
+            applyDamageToPvpPlayer(roomId, opp.id, swing.damage);
+        }
+    });
+
+    socket.on('pvpPlayerSkill', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'pvp' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = charOf(p);
+        if (!character.skillType) return;
+        const now = Date.now();
+        if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
+        p.lastSkillTime = now;
+        io.to(roomId).emit('playerSkillUsed', { id: socket.id });
+        applyPvpAbility(roomId, room, socket.id, 'skill', now, payload);
+    });
+
+    socket.on('pvpPlayerUltimate', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'pvp' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = charOf(p);
+        if (!character.ultimateType) return;
+        const now = Date.now();
+        if (now - p.lastUltimateTime < ultimateCooldownFor(character, p)) return;
+        p.lastUltimateTime = now;
+        io.to(roomId).emit('playerUltimateUsed', { id: socket.id });
+        applyPvpAbility(roomId, room, socket.id, 'ultimate', now, payload);
+    });
+
     // 친구 탭 > 친구보기: 화면을 여는 동안만 자신을 노출하고, 같은 시간에
     // 보고 있는 다른 계정들을 서로에게 보여준다. 닉네임/캐릭터는 클라이언트가
     // 보내는 값을 그대로 믿는다(표시용일 뿐 서버 authoritative 데이터가 아님).
@@ -8110,9 +8440,21 @@ io.on('connection', (socket) => {
             delete friendsBrowsing[socket.id];
             broadcastFriendsBrowsing();
         }
+        // 이 소켓이 지금도 그 계정의 "현재 연결"로 등록돼 있을 때만 지운다 --
+        // 새 탭/기기로 다시 접속해 덮어쓴 뒤라면 그 새 연결을 지우면 안 된다.
+        if (socket.data.userId && onlineUsers[socket.data.userId] && onlineUsers[socket.data.userId].socketId === socket.id) {
+            delete onlineUsers[socket.data.userId];
+        }
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room) return;
+        // PvP는 남은 한 명이 보스 없이 계속 싸울 방법이 없다 -- 상대가 나가면
+        // 그 즉시 남은 쪽 승리로 끝낸다.
+        if (room.kind === 'pvp') {
+            const winner = Object.keys(room.players).find(id => id !== socket.id);
+            endPvpRoom(roomId, winner || null);
+            return;
+        }
         delete room.players[socket.id];
         if (Object.keys(room.players).length === 0) {
             if (room.loopHandle) clearInterval(room.loopHandle);

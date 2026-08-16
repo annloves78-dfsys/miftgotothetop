@@ -131,6 +131,31 @@
         <button id="back-from-friends-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- 친구 대결 (PvP): 배경은 스토리모드 10층과 같은 다리 치수를 그대로 쓴다 -->
+    <div id="pvp-fight-screen" class="screen hidden">
+        <div class="pvp-hud">
+            <div class="pvp-hud-side">
+                <div id="pvp-my-name" class="pvp-hud-name">나</div>
+                <div class="pvp-hp-bar"><div id="pvp-my-hp-fill" class="pvp-hp-fill"></div></div>
+            </div>
+            <div class="pvp-hud-vs">VS</div>
+            <div class="pvp-hud-side">
+                <div id="pvp-opp-name" class="pvp-hud-name">상대</div>
+                <div class="pvp-hp-bar"><div id="pvp-opp-hp-fill" class="pvp-hp-fill"></div></div>
+            </div>
+        </div>
+        <canvas id="pvp-canvas"></canvas>
+        <div class="pvp-controls">
+            <button id="pvp-attack-btn" class="char-select-btn">⚔️ 공격</button>
+            <button id="pvp-skill-btn" class="char-select-btn">✨ 스킬</button>
+            <button id="pvp-ultimate-btn" class="char-select-btn">🌟 궁극기</button>
+        </div>
+        <div id="pvp-result-overlay" class="pvp-result-overlay hidden">
+            <div id="pvp-result-text" class="pvp-result-text"></div>
+            <button id="pvp-back-to-lobby-btn" class="secondary-btn">로비로</button>
+        </div>
+    </div>
+
     <!-- Gacha: banner list -->
     <div id="gacha-screen" class="screen hidden">
         <h2>뽑기</h2>

@@ -7,6 +7,7 @@ const screens = {
     stocks: document.getElementById('stocks-screen'),
     items: document.getElementById('items-screen'),
     friends: document.getElementById('friends-screen'),
+    pvpFight: document.getElementById('pvp-fight-screen'),
     awakenBoss: document.getElementById('awaken-boss-screen'),
     awakenDetail: document.getElementById('awaken-detail-screen'),
     gacha: document.getElementById('gacha-screen'),
@@ -43,7 +44,7 @@ function showScreen(name) {
     playBgm(bgmTrackForScreen(name));
     // The lobby is where the currency bar lives; redraw it on the way in so a
     // reward taken on the result screen is already reflected.
-    if (name === 'lobby') { renderCurrencyBar(); renderItemsBadge(); }
+    if (name === 'lobby') { renderCurrencyBar(); renderItemsBadge(); sendIdentify(); }
 }
 
 // ---- Background music ----
@@ -394,6 +395,7 @@ async function restoreAuthSession() {
         currentUser = { ...data, session_token: session.token };
         updateMenuAuthUI();
         await applyCloudGameData(data.game_data);
+        sendIdentify(); // 페이지가 이미 로비 화면으로 시작해서 showScreen('lobby')를 안 거친다
     } catch (e) {
         localStorage.removeItem(AUTH_SESSION_KEY);
     }
@@ -3196,6 +3198,7 @@ const friendsCatButtons = {
 let friendsActiveCat = 'list';
 let friendsBrowseList = []; // 서버가 보내주는, 지금 같이 "친구보기"를 켜놓은 사람들
 let friendsBrowseRequested = new Set(); // 이번 화면에서 이미 신청 누른 상대 (중복 클릭 방지용, 화면만 벗어나면 초기화)
+let friendsBattleRequested = new Set(); // 친구 목록에서 이미 대결 신청 누른 상대 (같은 용도)
 
 function friendCharLabel(charType) {
     const def = charType && SHARED.CHARACTERS[charType];
@@ -3219,6 +3222,7 @@ function openFriendsScreen() {
     friendsGuestBlock.classList.add('hidden');
     friendsUserBlock.classList.remove('hidden');
     friendsBrowseRequested = new Set();
+    friendsBattleRequested = new Set();
     renderFriendsCategory('list');
 }
 
@@ -3245,14 +3249,20 @@ async function renderFriendsList() {
             setFriendsContent('<p class="shop-empty">아직 친구가 없습니다. 친구보기 탭에서 만들어보세요.</p>', false);
             return;
         }
-        setFriendsContent(friends.map(f => `
+        setFriendsContent(friends.map(f => {
+            const battleRequested = friendsBattleRequested.has(f.id);
+            return `
             <div class="item-row">
                 <span class="item-icon">🧑</span>
                 <span class="item-main">
                     <div class="item-name">${f.nickname}</div>
                     <div class="item-desc">${friendCharLabel(f.charType)} 사용 중</div>
                 </span>
-            </div>`).join(''), true);
+                <button class="item-use-btn friends-battle-btn" data-user-id="${f.id}" ${battleRequested ? 'disabled' : ''}>
+                    ${battleRequested ? '신청함' : '싸우기'}
+                </button>
+            </div>`;
+        }).join(''), true);
     } catch (e) {
         setFriendsContent('<p class="shop-empty">친구 목록을 불러오지 못했습니다.</p>', false);
     }
@@ -3291,16 +3301,22 @@ function renderFriendsBrowseList() {
 async function renderFriendsMailbox() {
     setFriendsContent('<p class="shop-empty">불러오는 중...</p>', false);
     try {
-        const { data, error } = await sb.rpc('br_friend_inbox', { p_token: currentUser.session_token });
-        if (error) throw error;
-        const requests = (data && data.requests) || [];
-        friendsMailboxBadge.textContent = String(requests.length);
-        friendsMailboxBadge.classList.toggle('hidden', requests.length <= 0);
-        if (!requests.length) {
-            setFriendsContent('<p class="shop-empty">받은 친구 신청이 없습니다.</p>', false);
+        const [friendRes, battleRes] = await Promise.all([
+            sb.rpc('br_friend_inbox', { p_token: currentUser.session_token }),
+            sb.rpc('br_battle_inbox', { p_token: currentUser.session_token })
+        ]);
+        if (friendRes.error) throw friendRes.error;
+        if (battleRes.error) throw battleRes.error;
+        const requests = (friendRes.data && friendRes.data.requests) || [];
+        const challenges = (battleRes.data && battleRes.data.challenges) || [];
+        const total = requests.length + challenges.length;
+        friendsMailboxBadge.textContent = String(total);
+        friendsMailboxBadge.classList.toggle('hidden', total <= 0);
+        if (!total) {
+            setFriendsContent('<p class="shop-empty">받은 신청이 없습니다.</p>', false);
             return;
         }
-        setFriendsContent(requests.map(r => `
+        const friendRows = requests.map(r => `
             <div class="item-row">
                 <span class="item-icon">✉️</span>
                 <span class="item-main">
@@ -3309,9 +3325,20 @@ async function renderFriendsMailbox() {
                 </span>
                 <button class="item-use-btn friends-accept-btn" data-request-id="${r.requestId}">수락</button>
                 <button class="item-use-btn friends-reject-btn" data-request-id="${r.requestId}">거절</button>
-            </div>`).join(''), true);
+            </div>`);
+        const battleRows = challenges.map(c => `
+            <div class="item-row">
+                <span class="item-icon">⚔️</span>
+                <span class="item-main">
+                    <div class="item-name">${c.nickname}</div>
+                    <div class="item-desc">${friendCharLabel(c.charType)} 사용 중 · 대결 신청</div>
+                </span>
+                <button class="item-use-btn pvp-accept-btn" data-challenge-id="${c.challengeId}" data-from-id="${c.fromId}">수락</button>
+                <button class="item-use-btn pvp-reject-btn" data-challenge-id="${c.challengeId}">거절</button>
+            </div>`);
+        setFriendsContent(battleRows.join('') + friendRows.join(''), true);
     } catch (e) {
-        friendsContentEl.innerHTML = '<p class="shop-empty">우편함을 불러오지 못했습니다.</p>';
+        setFriendsContent('<p class="shop-empty">우편함을 불러오지 못했습니다.</p>', false);
     }
 }
 
@@ -3332,6 +3359,37 @@ friendsContentEl.addEventListener('click', async (e) => {
             friendsBrowseRequested.delete(toId);
             renderFriendsBrowseList();
         }
+        return;
+    }
+    const battleBtn = e.target.closest('.friends-battle-btn');
+    if (battleBtn) {
+        const toId = battleBtn.dataset.userId;
+        friendsBattleRequested.add(toId);
+        renderFriendsList();
+        try {
+            const { error } = await sb.rpc('br_battle_challenge_send', { p_token: currentUser.session_token, p_to_id: toId });
+            if (error) throw error;
+        } catch (err) {
+            friendsBattleRequested.delete(toId);
+            renderFriendsList();
+        }
+        return;
+    }
+    const pvpAcceptBtn = e.target.closest('.pvp-accept-btn');
+    const pvpRejectBtn = e.target.closest('.pvp-reject-btn');
+    if (pvpAcceptBtn || pvpRejectBtn) {
+        const btn = pvpAcceptBtn || pvpRejectBtn;
+        const challengeId = btn.dataset.challengeId;
+        try {
+            const { data, error } = await sb.rpc('br_battle_challenge_respond', {
+                p_token: currentUser.session_token, p_challenge_id: challengeId, p_accept: !!pvpAcceptBtn
+            });
+            if (error) throw error;
+            if (pvpAcceptBtn && data && data.fromId) {
+                socket.emit('pvpChallengeAccept', { opponentUserId: data.fromId });
+            }
+        } catch (err) { /* ignore, mailbox refresh below will just show current state */ }
+        renderFriendsMailbox();
         return;
     }
     const acceptBtn = e.target.closest('.friends-accept-btn');
@@ -7916,3 +7974,215 @@ function render(now) {
 
     ctx.restore();
 }
+
+// ==================== 친구 대결 (PvP) ====================
+// 보스 레이드 화면(#fight-screen, players/boss 전역)과는 완전히 분리된
+// 화면/상태를 쓴다 -- 두 모드가 같은 세션에서 번갈아 열려도 서로 안 건드리게.
+// Player 클래스(그리기/애니메이션)는 그대로 재사용하고, 이동 경계 계산만
+// 보스 레이드의 원형 아레나 대신 이 화면 전용으로 새로 짠다.
+let pvpPlayers = {}; // id -> Player
+let pvpOpponentId = null;
+let pvpHalfLen = 550;
+let pvpLaneHalfWidth = 220;
+let pvpCountdownEndAt = 0;
+let pvpFighting = false;
+let pvpLoopHandle = null;
+
+// 로그인 계정의 "지금 이 소켓" 등록. 친구가 대결을 신청했을 때 내가 지금
+// 무슨 화면에 있든 서버가 나를 찾아 매치에 불러올 수 있게, 로그인 직후와
+// 로비에 들어올 때마다(캐릭터/장비가 바뀌었을 수 있으니) 다시 보낸다.
+function sendIdentify() {
+    if (!currentUser) return;
+    const charType = gameData.selectedCharacter;
+    socket.emit('identify', {
+        userId: currentUser.id,
+        nickname: currentUser.nickname,
+        charType,
+        equip: equipPayload(charType),
+        instinct: instinctPayload(charType),
+        charLevel: charLevelPayload(charType)
+    });
+}
+socket.on('connect', () => { if (currentUser) sendIdentify(); });
+
+socket.on('pvpMatchError', ({ message }) => {
+    alert(message || '대결을 시작할 수 없습니다.');
+});
+
+socket.on('pvpMatchFound', (data) => {
+    pvpPlayers = {};
+    pvpHalfLen = data.halfLen || 550;
+    pvpLaneHalfWidth = data.laneHalfWidth || 220;
+    Object.entries(data.players).forEach(([id, p]) => {
+        const pl = new Player(id, p.charType, p.x, p.y, id === socket.id);
+        pl.hp = p.hp; pl.maxHp = p.maxHp; pl.facing = p.facing; pl.alive = p.alive; pl.shieldHp = p.shieldHp || 0;
+        pl.nickname = p.nickname;
+        if (id === socket.id) {
+            const b = equipBonusOf(p.charType);
+            pl.equipSpeed = b.speed;
+            pl.equipCooldown = b.cooldown;
+        }
+        pvpPlayers[id] = pl;
+    });
+    pvpOpponentId = Object.keys(data.players).find(id => id !== socket.id) || null;
+    pvpCountdownEndAt = data.startAt;
+    pvpFighting = false;
+    document.getElementById('pvp-result-overlay').classList.add('hidden');
+    document.getElementById('pvp-my-name').textContent = pvpPlayers[socket.id] ? (pvpPlayers[socket.id].nickname || '나') : '나';
+    document.getElementById('pvp-opp-name').textContent = pvpOpponentId && pvpPlayers[pvpOpponentId] ? pvpPlayers[pvpOpponentId].nickname : '상대';
+    resizePvpCanvas();
+    showScreen('pvpFight');
+    startPvpLoop();
+});
+
+socket.on('pvpFightStart', () => { pvpFighting = true; });
+
+socket.on('pvpPlayerMoved', ({ id, x, y, facing }) => {
+    const p = pvpPlayers[id];
+    if (p) { p.x = x; p.y = y; p.facing = facing; }
+});
+
+socket.on('pvpPlayerDamaged', ({ id, hp, alive, shieldHp }) => {
+    const p = pvpPlayers[id];
+    if (!p) return;
+    p.hp = hp; p.alive = alive; p.shieldHp = shieldHp || 0;
+});
+
+// playerHealed/playerShielded/playerSkillUsed/playerUltimateUsed는 보스
+// 레이드도 같은 이름을 쓰지만, pvpPlayers에 없는 id는 그냥 무시되니 안전하다.
+socket.on('playerHealed', ({ id, hp }) => {
+    const p = pvpPlayers[id];
+    if (p) { p.hp = hp; p.triggerHealEffect(); }
+});
+socket.on('playerShielded', ({ id, shieldHp }) => {
+    const p = pvpPlayers[id];
+    if (p) p.shieldHp = shieldHp;
+});
+socket.on('playerSkillUsed', ({ id }) => {
+    const p = pvpPlayers[id];
+    if (p && id !== socket.id) p.triggerSkillEffect();
+});
+socket.on('playerUltimateUsed', ({ id }) => {
+    const p = pvpPlayers[id];
+    if (p && id !== socket.id) p.triggerUltimateEffect();
+});
+
+socket.on('pvpResult', ({ winnerId }) => {
+    pvpFighting = false;
+    stopPvpLoop();
+    const overlay = document.getElementById('pvp-result-overlay');
+    const text = document.getElementById('pvp-result-text');
+    text.textContent = !winnerId ? '무승부' : (winnerId === socket.id ? '승리!' : '패배...');
+    overlay.classList.remove('hidden');
+});
+
+document.getElementById('pvp-back-to-lobby-btn').addEventListener('click', () => {
+    stopPvpLoop();
+    showScreen('lobby');
+});
+
+// ---- 이동 (보스 레이드의 원형 아레나 대신 다리 모양 직사각형 경계) ----
+function pvpUpdateLocal(me, keysDown) {
+    if (!me.alive) return false;
+    const speed = moveSpeedFor(me.stats, performance.now(), me.speedBoostUntil, me.awakenUntil,
+        me.butterflyOn, me.equipSpeed, me.rapidStrikeUntil, false, me.natureBoostUntil,
+        me.lastAttackClientTime, me.lastHitClientTime, me.firingUntil);
+    let dx = 0, dy = 0;
+    if (keysDown['w'] || keysDown['W']) dy -= speed;
+    if (keysDown['s'] || keysDown['S']) dy += speed;
+    if (keysDown['a'] || keysDown['A']) dx -= speed;
+    if (keysDown['d'] || keysDown['D']) dx += speed;
+    if (dx === 0 && dy === 0) return false;
+    const R = SHARED.PLAYER_RADIUS;
+    me.x = Math.max(-pvpHalfLen + R, Math.min(pvpHalfLen - R, me.x + dx));
+    me.y = Math.max(-pvpLaneHalfWidth + R, Math.min(pvpLaneHalfWidth - R, me.y + dy));
+    return true;
+}
+
+const pvpCanvas = document.getElementById('pvp-canvas');
+const pvpCtx = pvpCanvas.getContext('2d');
+function resizePvpCanvas() {
+    pvpCanvas.width = Math.min(window.innerWidth - 32, 960);
+    pvpCanvas.height = Math.min(window.innerHeight - 260, 420);
+}
+window.addEventListener('resize', resizePvpCanvas);
+
+function updatePvpHud() {
+    const me = pvpPlayers[socket.id];
+    const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
+    document.getElementById('pvp-my-hp-fill').style.width = me ? `${Math.max(0, me.hp / me.maxHp * 100)}%` : '0%';
+    document.getElementById('pvp-opp-hp-fill').style.width = opp ? `${Math.max(0, opp.hp / opp.maxHp * 100)}%` : '0%';
+}
+
+function pvpRender(now) {
+    const w = pvpCanvas.width, h = pvpCanvas.height;
+    const me = pvpPlayers[socket.id];
+    const camX = me ? me.x : 0;
+    pvpCtx.fillStyle = '#14301d';
+    pvpCtx.fillRect(0, 0, w, h);
+    pvpCtx.save();
+    pvpCtx.translate(w / 2 - camX, h / 2);
+    // 배경(다리): 스토리모드 10층과 같은 치수/색을 그대로 읽어 쓴다.
+    const floorDef = SHARED.floorDefFor(10) || {};
+    pvpCtx.fillStyle = floorDef.deckColor || '#4a3c2f';
+    pvpCtx.fillRect(-pvpHalfLen, -pvpLaneHalfWidth, pvpHalfLen * 2, pvpLaneHalfWidth * 2);
+    pvpCtx.strokeStyle = floorDef.deckGlow || 'rgba(255,255,255,0.15)';
+    pvpCtx.lineWidth = 4;
+    pvpCtx.strokeRect(-pvpHalfLen, -pvpLaneHalfWidth, pvpHalfLen * 2, pvpLaneHalfWidth * 2);
+    Object.values(pvpPlayers).forEach(p => p.draw(pvpCtx, now));
+    pvpCtx.restore();
+
+    if (!pvpFighting) {
+        const remain = Math.max(0, Math.ceil((pvpCountdownEndAt - Date.now()) / 1000));
+        pvpCtx.fillStyle = 'rgba(0,0,0,0.4)';
+        pvpCtx.fillRect(0, 0, w, h);
+        pvpCtx.fillStyle = '#fff';
+        pvpCtx.font = 'bold 64px sans-serif';
+        pvpCtx.textAlign = 'center';
+        pvpCtx.textBaseline = 'middle';
+        pvpCtx.fillText(remain > 0 ? String(remain) : '싸워라!', w / 2, h / 2);
+    }
+    updatePvpHud();
+}
+
+function pvpFrame() {
+    const me = pvpPlayers[socket.id];
+    if (me) {
+        const moved = pvpUpdateLocal(me, keys);
+        const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
+        if (opp) me.aimAt(opp.x, opp.y);
+        if (moved) socket.emit('pvpPlayerMove', { x: me.x, y: me.y, facing: me.facing });
+    }
+    pvpRender(performance.now());
+    pvpLoopHandle = requestAnimationFrame(pvpFrame);
+}
+function startPvpLoop() {
+    stopPvpLoop();
+    pvpLoopHandle = requestAnimationFrame(pvpFrame);
+}
+function stopPvpLoop() {
+    if (pvpLoopHandle) cancelAnimationFrame(pvpLoopHandle);
+    pvpLoopHandle = null;
+}
+
+document.getElementById('pvp-attack-btn').addEventListener('click', () => {
+    const me = pvpPlayers[socket.id];
+    if (!me || !pvpFighting || !me.canAttack(performance.now())) return;
+    if (!clientConsumeAmmo(me.stats, me, performance.now())) return;
+    me.triggerAttackEffect();
+    socket.emit('pvpPlayerAttack');
+});
+document.getElementById('pvp-skill-btn').addEventListener('click', () => {
+    const me = pvpPlayers[socket.id];
+    if (!me || !pvpFighting || !me.canUseSkill(performance.now())) return;
+    me.triggerSkillEffect();
+    const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
+    socket.emit('pvpPlayerSkill', opp ? { targetX: opp.x, targetY: opp.y } : {});
+});
+document.getElementById('pvp-ultimate-btn').addEventListener('click', () => {
+    const me = pvpPlayers[socket.id];
+    if (!me || !pvpFighting || !me.canUseUltimate(performance.now())) return;
+    me.triggerUltimateEffect();
+    const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
+    socket.emit('pvpPlayerUltimate', opp ? { targetX: opp.x, targetY: opp.y } : {});
+});

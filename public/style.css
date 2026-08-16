@@ -3622,8 +3622,74 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .item-use-btn:disabled { background: #566573; cursor: default; }
 
 /* 우편함 거절 버튼만 수락(초록)과 다른 색으로 구분 */
-.item-use-btn.friends-reject-btn { background: #7f8c8d; }
-.item-use-btn.friends-reject-btn:hover { background: #95a5a6; }
+.item-use-btn.friends-reject-btn,
+.item-use-btn.pvp-reject-btn { background: #7f8c8d; }
+.item-use-btn.friends-reject-btn:hover,
+.item-use-btn.pvp-reject-btn:hover { background: #95a5a6; }
+
+/* ---- 친구 대결 (PvP) ---- */
+#pvp-fight-screen {
+    justify-content: flex-start;
+    padding-top: 16px;
+    gap: 10px;
+}
+.pvp-hud {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: min(960px, 96vw);
+}
+.pvp-hud-side { flex: 1 1 0; min-width: 0; }
+.pvp-hud-name {
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pvp-hud-side:last-child { text-align: right; }
+.pvp-hud-vs { color: #f1c40f; font-weight: bold; font-size: 18px; flex: 0 0 auto; }
+.pvp-hp-bar {
+    height: 14px;
+    border-radius: 7px;
+    background: #1c2735;
+    border: 1px solid #34495e;
+    overflow: hidden;
+}
+.pvp-hp-fill {
+    height: 100%;
+    width: 100%;
+    background: #2ecc71;
+    transition: width 0.15s ease-out;
+}
+#pvp-canvas {
+    background: #14301d;
+    border-radius: 12px;
+    border: 2px solid #34495e;
+    max-width: 96vw;
+}
+.pvp-controls {
+    display: flex;
+    gap: 10px;
+}
+.pvp-result-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(10, 14, 20, 0.75);
+    z-index: 20;
+}
+.pvp-result-text {
+    color: #fff;
+    font-size: 36px;
+    font-weight: bold;
+}
 
 /* ---- 각성모드 ---- */
 .awaken-sub {
