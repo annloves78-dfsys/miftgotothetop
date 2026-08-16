@@ -6173,6 +6173,14 @@ const EQUIPMENT = {
         },
         ownerText: '쿠키맛 쿠키 전용 — 기본 공격(구슬)이 하나 맞을 때마다 체력 1 회복, 전투 중 1초마다 체력 1 자동 회복, 쓰러지면 체력 100%로 한 번 부활합니다.'
     },
+    golden_gatling: {
+        name: '황금 개틀링', slot: 'awaken', grade: '비스트', icon: '🔫',
+        ownerChar: 'poppingcandy',
+        // 탄창과 재사용 대기시간(공속)은 더하기로 표현이 안 되는 값(정원/시간)이라
+        // 통째로 덮어쓴다: 탄창 100 -> 150발, 공속 0.1초 -> 0.05초.
+        awakenForm: { attackAmmoMax: 150, attackCooldown: 50 },
+        ownerText: '파핑캔디맛 쿠키 전용 — 탄창 100 → 150발, 공격 재사용 대기시간 0.1초 → 0.05초로 더 빨라집니다.'
+    },
     // ---- 등급 x 종류 채우기 (각성 장비 제외, 등급별 5종류 모두 하나씩) ----
     // ---- 일반 ----
     rusty_sword: { name: '녹슨 검', slot: 'weapon', grade: '일반', icon: '🗡', bonusAttack: 1 },
@@ -6506,6 +6514,14 @@ const AWAKEN_BOSSES = {
         skill: { damagePerLevel: 2 },
         // 각성(궁극기)은 그대로 둔다.
         ultimate: null,
+        movement: null
+    },
+    poppingcandy: {
+        // 특수스킬이 없는 쿠키라 손댈 게 없다.
+        skill: { perLevel: null },
+        // 궁극기(자기 회복+보호막)의 보호막만 레벨마다 5씩. 10레벨이면 50 -> 100.
+        // 회복은 비율(ultimateHealRatio)이라 이 표로는 못 건드린다 -- 그대로 둔다.
+        ultimate: { shieldAmountPerLevel: 5 },
         movement: null
     }
 };
