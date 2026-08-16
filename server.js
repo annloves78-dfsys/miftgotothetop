@@ -356,7 +356,14 @@ function effectiveAttackDamage(character, p, now) {
     } else {
         base = stat(character, p, 'attackDamage') + bonusOf(p).attack;
     }
-    return base + killBuffBonus(character, p, now) + ultimateOnHitBuff(character, p, now) + reviveAttackBonus(character, p);
+    const total = base + killBuffBonus(character, p, now) + ultimateOnHitBuff(character, p, now) + reviveAttackBonus(character, p);
+    // 치즈케이크맛 특수스킬(팀 공격력 배수 버프)처럼 배수로 올리는 버프를
+    // 위한 범용 훅. p.attackMultiplierUntil/Value를 세팅하는 캐릭터라면
+    // 누구나(어느 모드든) 그대로 재사용 가능하다.
+    if (p.attackMultiplierUntil && now < p.attackMultiplierUntil) {
+        return Math.round(total * (p.attackMultiplierValue || 1));
+    }
+    return total;
 }
 
 // 바다펄맛: 약해진 주먹이 적중할 때마다 스스로 회복하는 양.
@@ -5671,6 +5678,17 @@ io.on('connection', (socket) => {
                 endAt: now + character.skillDurationMs,
                 lastTickAt: now
             });
+        }
+        // 치즈케이크맛 특수스킬: 위 보스 레이드 분기 주석 참고. 파티(벤치)까지
+        // 포함해 healStoryTeamBy로 비율 회복시키고, 지금 나와 있는 캐릭터에만
+        // 공격력 배수 버프를 건다.
+        else if (character.skillType === 'team_ratio_heal_attack_buff') {
+            healStoryTeamBy(room, roomId, maxHp => Math.round(maxHp * character.skillHealRatio));
+            for (const pl of Object.values(room.players)) {
+                if (!pl.alive) continue;
+                pl.attackMultiplierUntil = now + character.skillAttackBuffDurationMs;
+                pl.attackMultiplierValue = character.skillAttackMultiplier;
+            }
         } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             // lava_burst (volcano cookie) uses the exact same self-centered AoE shape.
             for (const [mid, m] of Object.entries(room.monsters)) {
@@ -6003,6 +6021,17 @@ io.on('connection', (socket) => {
             }
             advanceNatureAwakenLevel(p);
         } else if (character.ultimateType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
+        }
+        // 치즈케이크맛 궁극기: 위 보스 레이드 분기 주석 참고.
+        else if (character.ultimateType === 'revive_team_hot') {
+            reviveDownedStoryTeammate(roomId, room);
             room.activeBuffs.push({
                 type: 'team_heal_over_time',
                 tickMs: character.ultimateTickMs,
@@ -6412,6 +6441,19 @@ io.on('connection', (socket) => {
                 endAt: now + character.skillDurationMs,
                 lastTickAt: now
             });
+        }
+        // 치즈케이크맛 특수스킬: 조준 없이 즉시 발동, 팀 전체 체력을 최대
+        // 체력의 skillHealRatio만큼 채우고 skillAttackBuffDurationMs 동안
+        // 공격력을 skillAttackMultiplier배로 올린다(p.attackMultiplierUntil/
+        // Value, effectiveAttackDamage가 읽는다).
+        else if (character.skillType === 'team_ratio_heal_attack_buff') {
+            for (const [id, pl] of Object.entries(room.players)) {
+                if (!pl.alive) continue;
+                pl.hp = Math.min(pl.maxHp, pl.hp + Math.round(pl.maxHp * character.skillHealRatio));
+                io.to(roomId).emit('playerHealed', { id, hp: pl.hp });
+                pl.attackMultiplierUntil = now + character.skillAttackBuffDurationMs;
+                pl.attackMultiplierValue = character.skillAttackMultiplier;
+            }
         } else if (character.skillType === 'pull_in') {
             // The raid boss is bolted to the middle of the arena, so there is
             // nothing to drag -- it takes the "can't be pulled" damage instead.
@@ -6675,6 +6717,18 @@ io.on('connection', (socket) => {
             }
             advanceNatureAwakenLevel(p);
         } else if (character.ultimateType === 'team_heal_over_time') {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs,
+                lastTickAt: now
+            });
+        }
+        // 치즈케이크맛 궁극기: 팀 중 쓰러진 동료가 있으면 부활시키고(없으면
+        // 그냥 넘어간다), 그와 별개로 항상 team_heal_over_time 버프를 얹는다.
+        else if (character.ultimateType === 'revive_team_hot') {
+            reviveDownedPlayer(roomId, room, character);
             room.activeBuffs.push({
                 type: 'team_heal_over_time',
                 tickMs: character.ultimateTickMs,
@@ -7225,6 +7279,18 @@ io.on('connection', (socket) => {
                 endAt: now + character.skillDurationMs,
                 lastTickAt: now
             });
+        }
+        // 치즈케이크맛 특수스킬: 위 보스 레이드 분기 주석 참고. 게스트는
+        // healGuestTeamByRatio(바다펄맛 밀물이 쓰는 것과 같은 함수)로 파티
+        // 전체를 비율 회복시키고, 지금 나와 있는 캐릭터에만 공격력 배수
+        // 버프를 건다.
+        else if (character.skillType === 'team_ratio_heal_attack_buff') {
+            healGuestTeamByRatio(room, roomId, character.skillHealRatio);
+            for (const pl of Object.values(room.players)) {
+                if (!pl.alive) continue;
+                pl.attackMultiplierUntil = now + character.skillAttackBuffDurationMs;
+                pl.attackMultiplierValue = character.skillAttackMultiplier;
+            }
         } else if (character.skillType === 'spin_kick' || character.skillType === 'lava_burst') {
             damageGuestTargets(roomId, room,
                 guestCircleTargets(room, p.x, p.y, character.skillRange), character.skillDamage, socket.id);
@@ -7584,6 +7650,16 @@ io.on('connection', (socket) => {
                     endAt: now + character.ultimateMarkDurationMs, lastTickAt: now
                 });
             }
+            return;
+        }
+        // 치즈케이크맛 궁극기: 위 보스 레이드 분기 주석 참고.
+        if (character.ultimateType === 'revive_team_hot') {
+            reviveDownedGuestTeammate(roomId, room);
+            room.activeBuffs.push({
+                type: 'team_heal_over_time', tickMs: character.ultimateTickMs,
+                healPerTick: character.ultimateHealPerTick,
+                endAt: now + character.ultimateDurationMs, lastTickAt: now
+            });
             return;
         }
 

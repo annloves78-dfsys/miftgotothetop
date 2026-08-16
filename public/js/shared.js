@@ -1152,6 +1152,46 @@ const CHARACTERS = {
         ultimateHealRatio: 0.5,
         ultimateShieldAmount: 50,
         ultimateCooldownMs: 30000
+    },
+    // 유누 신청작. 게스트 등급의 빛 속성 힐러, 근접. 특수스킬로 팀 전체를
+    // 채워주면서 잠깐 공격력을 올려 주고, 궁극기로 쓰러진 동료를 되살리면서
+    // 팀 전체에 지속 회복을 건다.
+    cheesecake: {
+        name: '치즈케이크맛 쿠키',
+        shortName: '치즈케이크', // shown on the lobby's character-select button
+        color: '#f7e7ce',
+        colorLeft: '#f7e7ce', // 크림
+        colorRight: '#d9a441', // 구운 크러스트
+        grade: '게스트',
+        element: '빛',
+        role: '힐러',
+        health: 180,
+        speed: 2,
+        attackType: 'melee_kick',
+        attackRange: 90,
+        attackWidth: 35,
+        attackDamage: 3,
+        attackCooldown: 500,
+        // 특수스킬: 조준 없이 즉시 발동, 팀 전체 체력을 최대 체력의 30%만큼
+        // 채우고 4초간 공격력을 1.3배로 올린다. 배수 공격력 버프는 이 캐릭터가
+        // 처음이라 새로 만든 generic 필드(p.attackMultiplierUntil/Value,
+        // server.js effectiveAttackDamage에서 최종 피해에 곱해진다) -- 다른
+        // 캐릭터도 그대로 재사용 가능하다.
+        skillType: 'team_ratio_heal_attack_buff',
+        skillHealRatio: 0.3,
+        skillAttackMultiplier: 1.3,
+        skillAttackBuffDurationMs: 4000,
+        skillCooldown: 10000,
+        // 궁극기: 팀 중 쓰러진 동료가 있으면 부활시키고(바람궁수맛의
+        // reviveDownedPlayer류 재사용), 그와 별개로 10초간 1초마다 팀 전체를
+        // 15씩 회복시키는 team_heal_over_time 버프를 얹는다(쿠키맛처럼 항상
+        // 재사용).
+        ultimateType: 'revive_team_hot',
+        ultimateReviveHpRatio: 1,
+        ultimateHealPerTick: 15,
+        ultimateTickMs: 1000,
+        ultimateDurationMs: 10000,
+        ultimateCooldownMs: 30000
     }
 };
 
@@ -7277,6 +7317,22 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { attackHealEveryHits: 3, attackHealSelf: 1 },
             desc: '패시브로 기본 공격을 3번 명중시킬 때마다 체력을 1 회복합니다.'
         }
+    },
+    // 치즈케이크맛 쿠키: 특수스킬(팀 회복+공격력 버프)과 궁극기(부활+지속회복)를
+    // 번갈아 키운다.
+    cheesecake: {
+        3: {
+            effect: { skillAttackBuffDurationMs: 6000 },
+            desc: '특수스킬의 공격력 버프 지속시간이 4초에서 6초로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateHealPerTick: 20 },
+            desc: '궁극기 지속회복량이 초당 15에서 20으로 늘어납니다.'
+        },
+        5: {
+            effect: { skillHealRatio: 0.4 },
+            desc: '특수스킬 회복량이 최대 체력의 30%에서 40%로 늘어납니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
@@ -7356,7 +7412,8 @@ const STOCK_EVENTS = [
     { element: '어둠', type: 'new_character', pct: 0.10, note: '암흑바다맛 쿠키 추가' },
     { element: '어둠', type: 'new_character', pct: 0.10, note: '매직블록맛 쿠키 추가' },
     { element: '어둠', type: 'new_character', pct: 0.05, note: '파핑캔디맛 쿠키 추가' },
-    { element: '어둠', type: 'nerf', pct: -0.15, note: '파핑캔디맛 쿠키 등급 상향(에픽→에이션트)' }
+    { element: '어둠', type: 'nerf', pct: -0.15, note: '파핑캔디맛 쿠키 등급 상향(에픽→에이션트)' },
+    { element: '빛', type: 'new_character', pct: 0.05, note: '치즈케이크맛 쿠키 추가' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

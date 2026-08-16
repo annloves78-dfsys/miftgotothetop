@@ -6,6 +6,7 @@ const screens = {
     shop: document.getElementById('shop-screen'),
     stocks: document.getElementById('stocks-screen'),
     items: document.getElementById('items-screen'),
+    friends: document.getElementById('friends-screen'),
     awakenBoss: document.getElementById('awaken-boss-screen'),
     awakenDetail: document.getElementById('awaken-detail-screen'),
     gacha: document.getElementById('gacha-screen'),
@@ -1136,6 +1137,9 @@ function describeAbility(stats, kind) {
             case 'self_mark_burst':
                 return `조준 없이 즉시 자기 중심 반경 ${stats.skillRadius}px에 터뜨립니다. 범위 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다`
                     + ` (표식이 있는 동안 같은 속성 공격은 피해가 ${stats.skillMarkMultiplier}배). 피해는 없습니다.${cd}`;
+            case 'team_ratio_heal_attack_buff':
+                return `조준 없이 즉시 발동합니다. 팀 전체 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 채우고,`
+                    + ` ${sec(stats.skillAttackBuffDurationMs)}초 동안 팀 전체의 공격력을 ${stats.skillAttackMultiplier}배로 올립니다.${cd}`;
             default:
                 return '스킬 정보가 없습니다.';
         }
@@ -1250,6 +1254,9 @@ function describeAbility(stats, kind) {
                     `2단계 · 1단계 효과에 더해 ${sec(stats.ultimateDurationMs)}초 동안 이동 속도가 ${stats.ultimateLevel2SpeedBonus} 빨라지고, 기본 공격이 적중할 때마다 팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복시킵니다.`,
                     `3단계 · 조준 없이 즉시 발동합니다. 팀 중 죽은 캐릭터가 있으면 하나를 부활시키고, 없으면 마법진을 열어 팀 전체 체력을 100%로 채우고 적 체력의 ${Math.round((stats.ultimateSanctuaryEnemyDamageRatio || 0) * 100)}%를 깎습니다.${cd}`
                 ].join('\n');
+            case 'revive_team_hot':
+                return `조준 없이 즉시 발동합니다. 팀 중 쓰러진 동료가 있으면 한 명을 부활시키고,`
+                    + ` 그와 별개로 ${sec(stats.ultimateDurationMs)}초 동안 ${sec(stats.ultimateTickMs)}초마다 팀 전체를 ${stats.ultimateHealPerTick}만큼 회복시킵니다.${cd}`;
             default:
                 return '궁극기 정보가 없습니다.';
         }
@@ -1446,7 +1453,9 @@ const SKILL_ICONS = {
     nature_awaken: '🍃',
     water_drag: '🫧',
     dash_guard: '🏃',
-    self_mark_burst: '🌑'
+    self_mark_burst: '🌑',
+    team_ratio_heal_attack_buff: '💪',
+    revive_team_hot: '⭐'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -3164,6 +3173,14 @@ itemsBtn.addEventListener('click', () => {
     showScreen('items');
 });
 backFromItemsBtn.addEventListener('click', () => showScreen('lobby'));
+
+// ---- 친구 ----
+// 아직 기능 없음 (탭만 먼저 추가). 나중에 친구 목록/요청 기능이 정해지면 여기 채운다.
+const friendsBtn = document.getElementById('friends-btn');
+const backFromFriendsBtn = document.getElementById('back-from-friends-btn');
+
+if (friendsBtn) friendsBtn.addEventListener('click', () => showScreen('friends'));
+if (backFromFriendsBtn) backFromFriendsBtn.addEventListener('click', () => showScreen('lobby'));
 
 // ---- 대기 화면 ----
 // 짝이 맞으면 둘이 모닥불을 사이에 두고 마주 서고, 준비를 누른 쪽 머리 위에
