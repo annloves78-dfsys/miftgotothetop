@@ -1258,8 +1258,7 @@ function describeAbility(stats, kind) {
             case 'great_slash':
                 return `${sec(stats.ultimateWindupMs)}초 예열 뒤 전방 ${stats.ultimateRange}px를 엄청 크게(가로 ${stats.ultimateWidth}px)`
                     + ` 베어 ${stats.ultimateDamage}의 피해를 줍니다. 적중하면 최대 체력의`
-                    + ` ${Math.round(stats.ultimateHealRatio * 100)}%를 회복하고, ${sec(stats.ultimateSpeedDurationMs)}초 동안`
-                    + ` 이동 속도가 ${stats.ultimateSpeedBonus} 빨라집니다.${cd}`;
+                    + ` ${Math.round(stats.ultimateHealRatio * 100)}%를 회복합니다.${cd}`;
             case 'butterfly_mode':
                 return `나비모드가 됩니다. 이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고 기본 공격 피해가 ${stats.ultimateAttackDamage}가 됩니다. 지속 시간은 없지만 ${sec(stats.ultimateSelfDamageIntervalMs)}초마다 자신의 체력을 ${stats.ultimateSelfDamage}씩 깎습니다. 궁극기 버튼을 한 번 더 누르면 해제되며, 해제한 순간부터 ${sec(stats.ultimateCooldownMs)}초가 카운트됩니다.`;
             case 'sky_slam':
@@ -6148,7 +6147,6 @@ function tryStoryUseUltimate() {
     }
     if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.ultimateDurationMs;
-    if (stats.ultimateType === 'great_slash') storyPlayer.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
     if (stats.ultimateType === 'nature_awaken') {
         const level = (storyPlayer.natureAwakenLevel || 0) % 3;
         if (level < 2) {

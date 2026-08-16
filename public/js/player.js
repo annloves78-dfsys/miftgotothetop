@@ -586,7 +586,6 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
         if (stats.skillType === 'speed_boost') return withEquipSpeed(stats.skillSpeedValue, equipSpeed) + bonus;
         if (stats.skillType === 'charge_dash') return withEquipSpeed(stats.speed + stats.skillSpeedBonus, equipSpeed) + bonus;
         if (stats.ultimateType === 'undying_soul') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
-        if (stats.ultimateType === 'great_slash') return withEquipSpeed(stats.speed + stats.ultimateSpeedBonus, equipSpeed) + bonus;
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
         // 매직블록맛처럼 배수 대신 그냥 더하는 캐릭터도 있다.

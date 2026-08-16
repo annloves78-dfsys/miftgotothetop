@@ -554,8 +554,6 @@ const CHARACTERS = {
         ultimateWidth: 200,
         ultimateDamage: 50,
         ultimateHealRatio: 0.1,
-        ultimateSpeedBonus: 0.5,
-        ultimateSpeedDurationMs: 10000,
         ultimateCooldownMs: 30000,
         // 각성 형태. 여기 적힌 것만 덮어쓴다.
         awakenedForm: {
@@ -949,7 +947,7 @@ const CHARACTERS = {
         weaponShape: 'bow',
         weaponColor: '#27ae60',
         grade: '레전더리',
-        element: '빛',
+        element: '바람',
         role: '힐러',
         seasonLimited: true,
         health: 140,
@@ -958,7 +956,7 @@ const CHARACTERS = {
         // 대기시간이 0.3초로 이 게임에서 가장 빠른 기본 공격이다. 적중하면
         // 피해와 별개로 팀 전체를 항상(확률 없이) 조금 회복시킨다.
         attackType: 'throw_projectile',
-        attackProjectileTheme: 'wind', // 빛 속성이지만 금빛이 아니라 초록으로 그린다
+        attackProjectileTheme: 'wind', // 초록으로 그린다(바람 속성과 일치)
         attackProjectileNoun: '화살',
         attackProjectileRadius: 6,
         attackProjectileSpeed: 800,
@@ -7506,7 +7504,9 @@ const STOCK_EVENTS = [
     { element: '어둠', type: 'new_character', pct: 0.05, note: '파핑캔디맛 쿠키 추가' },
     { element: '어둠', type: 'nerf', pct: -0.15, note: '파핑캔디맛 쿠키 등급 상향(에픽→에이션트)' },
     { element: '빛', type: 'new_character', pct: 0.05, note: '치즈케이크맛 쿠키 추가' },
-    { element: '어둠', type: 'new_character', pct: 0.10, note: '체리크림맛 쿠키 추가' }
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '체리크림맛 쿠키 추가' },
+    { element: '빛', type: 'nerf', pct: -0.30, note: '번개악마맛 쿠키 궁극기(크게베기) 이동속도 버프 제거' },
+    { element: '바람', type: 'nerf', pct: -0.10, note: '바람궁수맛 쿠키 속성 변경(빛→바람)' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

@@ -7241,7 +7241,6 @@ io.on('connection', (socket) => {
                 range: character.ultimateRange, width: character.ultimateWidth,
                 windupMs: character.ultimateWindupMs
             });
-            p.speedBoostUntil = now + character.ultimateSpeedDurationMs;
             afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
                 if (!meleeLineHit(pl.x, pl.y, pl.facing, character.ultimateRange,
                     character.ultimateWidth, BOSS_RADIUS)) return;
@@ -8124,7 +8123,6 @@ io.on('connection', (socket) => {
                 range: character.ultimateRange, width: character.ultimateWidth,
                 windupMs: character.ultimateWindupMs
             });
-            p.speedBoostUntil = now + character.ultimateSpeedDurationMs;
             afterWindup(roomId, socket.id, character.ultimateWindupMs, (rm, pl) => {
                 const hit = guestLineTargets(rm, pl.x, pl.y, pl.facing,
                     character.ultimateRange, character.ultimateWidth);

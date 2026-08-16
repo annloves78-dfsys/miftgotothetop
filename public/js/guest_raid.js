@@ -868,7 +868,6 @@ function tryGuestUseUltimate() {
     }
     if (stats.ultimateType === 'awakening_rapid') guestLocal.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') guestLocal.speedBoostUntil = now + stats.ultimateDurationMs;
-    if (stats.ultimateType === 'great_slash') guestLocal.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
     if (stats.ultimateType === 'nature_awaken') {
         const level = (guestLocal.natureAwakenLevel || 0) % 3;
         if (level < 2) {
