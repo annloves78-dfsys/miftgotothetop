@@ -7414,16 +7414,16 @@ const INSTINCT_CHAR_LEVELS = {
     // 5강은 기본 공격력을 올린다.
     cherrycream: {
         3: {
-            effect: { skillHealPerTick: 5 },
-            desc: '특수스킬(회복 지대)의 초당 회복량이 3에서 5로 늘어납니다.'
+            effect: { ultimateDurationMs: 10000, ultimateHealPerAttack: 4, ultimateShieldPerAttack: 3 },
+            desc: '궁극기(분노) 지속시간이 8초에서 10초로 늘어나고, 명중 시 회복량이 3에서 4로, 보호막이 2에서 3으로 늘어납니다.'
         },
         4: {
-            effect: { ultimateDurationMs: 10000 },
-            desc: '궁극기(분노) 지속시간이 8초에서 10초로 늘어납니다.'
+            effect: { ultimateRageChance: 0.4 },
+            desc: '궁극기 "극대노" 확률이 30%에서 40%로 늘어납니다.'
         },
         5: {
-            effect: { attackDamage: 7 },
-            desc: '기본 공격력이 5에서 7로 강해집니다.'
+            effect: { attackSpeedBonusOnHit: 0.3 },
+            desc: '패시브 이동속도 증가량이 0.2에서 0.3으로 늘어납니다.'
         }
     }
 };
