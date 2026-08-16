@@ -3395,6 +3395,11 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     left: 24px;
 }
 
+/* 친구 버튼: 아이템 버튼(corner-btn) 바로 왼쪽 자리. */
+.corner-btn-3 {
+    right: 128px;
+}
+
 .corner-btn-2.spinning {
     animation: refresh-spin 0.6s linear;
 }
