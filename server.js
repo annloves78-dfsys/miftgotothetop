@@ -2025,6 +2025,17 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
         const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
         healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
     }
+    // 치즈케이크맛: 기본 공격이 적중할 때마다 team_heal_over_time과 같은
+    // 버프를 하나 새로 쌓는다(덮어쓰지 않는다 -- 연타로 여러 개가 동시에 돈다).
+    if (character.attackHealOverTimeOnHit) {
+        room.activeBuffs.push({
+            type: 'team_heal_over_time',
+            tickMs: character.attackHealOverTimeTickMs,
+            healPerTick: character.attackHealOverTimeOnHit,
+            endAt: now + character.attackHealOverTimeDurationMs,
+            lastTickAt: now
+        });
+    }
     // 암흑바다맛: 기본 공격이 적중할 때마다 팀 전체에게 보호막을 더해 준다
     // (덮어쓰지 않는다 -- addShieldTeam 주석 참고).
     if (character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
@@ -5678,6 +5689,16 @@ io.on('connection', (socket) => {
             const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
+        // 치즈케이크맛: 위 보스 레이드 분기 주석 참고.
+        if (anyHit && character.attackHealOverTimeOnHit) {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.attackHealOverTimeTickMs,
+                healPerTick: character.attackHealOverTimeOnHit,
+                endAt: now + character.attackHealOverTimeDurationMs,
+                lastTickAt: now
+            });
+        }
         if (anyHit && character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
             addShieldStoryTeam(room, roomId, character.attackShieldOnUse);
         }
@@ -7279,6 +7300,16 @@ io.on('connection', (socket) => {
         if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
             const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
             healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        }
+        // 치즈케이크맛: 위 보스 레이드 분기 주석 참고.
+        if (character.attackHealOverTimeOnHit) {
+            room.activeBuffs.push({
+                type: 'team_heal_over_time',
+                tickMs: character.attackHealOverTimeTickMs,
+                healPerTick: character.attackHealOverTimeOnHit,
+                endAt: now + character.attackHealOverTimeDurationMs,
+                lastTickAt: now
+            });
         }
         if (character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
             addShieldGuestTeam(room, roomId, character.attackShieldOnUse);

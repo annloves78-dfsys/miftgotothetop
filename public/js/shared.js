@@ -1171,7 +1171,13 @@ const CHARACTERS = {
         attackRange: 90,
         attackWidth: 35,
         attackDamage: 3,
-        attackCooldown: 500,
+        attackCooldown: 800,
+        // 패시브: 기본 공격이 적중할 때마다 team_heal_over_time과 같은 모양의
+        // 버프를 하나 새로 얹는다(덮어쓰지 않고 각자 따로 5초 동안 틱). 연타로
+        // 여러 번 맞히면 버프가 여러 개 동시에 쌓여 초당 회복량이 그만큼 늘어난다.
+        attackHealOverTimeOnHit: 2,
+        attackHealOverTimeTickMs: 1000,
+        attackHealOverTimeDurationMs: 5000,
         // 특수스킬: 조준 없이 즉시 발동, 팀 전체 체력을 최대 체력의 30%만큼
         // 채우고 4초간 공격력을 1.3배로 올린다. 배수 공격력 버프는 이 캐릭터가
         // 처음이라 새로 만든 generic 필드(p.attackMultiplierUntil/Value,

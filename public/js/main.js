@@ -907,6 +907,9 @@ function passiveText(stats) {
         const total = stats.attackBurnDamage * stats.attackBurnTicks;
         parts.push(`기본 공격이 적중하면 대상을 불태워 ${sec(stats.attackBurnIntervalMs)}초마다 ${stats.attackBurnDamage}의 화염 피해를 ${stats.attackBurnTicks}번 추가로 줍니다. (추가 피해 합계 ${total})`);
     }
+    if (stats.attackHealOverTimeOnHit) {
+        parts.push(`기본 공격이 적중할 때마다 팀 전체에게 ${sec(stats.attackHealOverTimeDurationMs)}초 동안 ${sec(stats.attackHealOverTimeTickMs)}초마다 ${stats.attackHealOverTimeOnHit}씩 회복시키는 효과가 새로 붙습니다. 여러 번 맞히면 효과가 겹쳐 쌓입니다.`);
+    }
     // 치즈만두맛은 부활이 곧 각성이라(awakenOnReviveNo가 1) 여기서 한 번 더
     // 말하면 체력이 그대로 돌아오는 것처럼 읽힌다. 각성 쪽 문장에 맡긴다.
     if (stats.passiveReviveCount && stats.awakenOnReviveNo !== 1) {
