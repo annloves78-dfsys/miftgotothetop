@@ -1165,12 +1165,12 @@ const CHARACTERS = {
         grade: '게스트',
         element: '빛',
         role: '힐러',
-        health: 180,
+        health: 250,
         speed: 2,
         attackType: 'melee_kick',
         attackRange: 90,
         attackWidth: 35,
-        attackDamage: 3,
+        attackDamage: 4,
         attackCooldown: 800,
         // 패시브: 기본 공격이 적중할 때마다 team_heal_over_time과 같은 모양의
         // 버프를 하나 새로 얹는다(덮어쓰지 않고 각자 따로 5초 동안 틱). 연타로
