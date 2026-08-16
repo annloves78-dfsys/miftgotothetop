@@ -62,11 +62,12 @@ const defaultData = {
     // 깨 본 EXP 던전 단계 번호(1~10). 다음 단계 잠금 해제용 -- 몇 번이고
     // 다시 들어가 반복 파밍할 수 있으니 "최고 클리어 기록"과 같은 뜻이다.
     expDungeonCleared: [],
-    // 캐릭터별 레벨업 재화. charType -> 아직 레벨업에 안 쓴 EXP 잔액. 성장던전
-    // 클리어로 여기 쌓이기만 하고, 레벨은 저절로 안 오른다 -- 캐릭터 상세
-    // 화면의 "레벨업" 버튼을 눌러야 이 잔액에서 비용을 깎고 charLevels가 오른다.
-    charExp: {},
-    // 캐릭터별 확정된 레벨. charType -> 레벨(없으면 1레벨). charExp와 달리
+    // 레벨업 재화. 캐릭터별로 안 나뉘고 계정 전체가 같이 쓰는 공용 EXP
+    // 잔액이다. 성장던전 클리어로 여기 쌓이기만 하고, 레벨은 저절로 안
+    // 오른다 -- 캐릭터 상세 화면의 "레벨업" 버튼을 눌러야 이 잔액에서
+    // 비용을 깎고 charLevels가 오른다.
+    sharedExp: 0,
+    // 캐릭터별 확정된 레벨. charType -> 레벨(없으면 1레벨). sharedExp와 달리
     // 파생값이 아니라 레벨업 버튼을 누른 결과 그대로 저장한다.
     charLevels: {}
 };
@@ -112,20 +113,30 @@ function loadGameData() {
             data.stocks = (data.stocks && typeof data.stocks === 'object') ? data.stocks : {};
             data.instinctLevels = (data.instinctLevels && typeof data.instinctLevels === 'object') ? data.instinctLevels : {};
             data.expDungeonCleared = Array.isArray(data.expDungeonCleared) ? data.expDungeonCleared : [];
-            data.charExp = (data.charExp && typeof data.charExp === 'object') ? data.charExp : {};
             data.charLevels = (data.charLevels && typeof data.charLevels === 'object') ? data.charLevels : {};
-            // 예전엔 charExp가 캐릭터 평생 누적 EXP였고 레벨을 거기서 자동으로
-            // 계산했다. 지금은 레벨업 버튼을 눌러야 레벨이 오르고 charExp는
-            // 아직 안 쓴 잔액이다 -- charLevels가 아예 없던(마이그레이션 전)
-            // 세이브만 한 번, 그 누적치를 레벨+남은 EXP로 변환해서 이미 모아 둔
-            // 만큼은 그대로 인정해 준다.
-            if (!parsed.charLevels && typeof SHARED !== 'undefined') {
-                Object.keys(data.charExp).forEach(charType => {
-                    const { level, expIntoLevel } = SHARED.charLevelFromExp(data.charExp[charType]);
+            data.sharedExp = Number.isFinite(Number(data.sharedExp)) ? Math.max(0, Math.floor(Number(data.sharedExp))) : 0;
+            // 마이그레이션 1: 아주 예전엔(레벨업 버튼이 없던 시절) charExp가
+            // 캐릭터별 평생 누적 EXP였고 레벨을 거기서 자동으로 계산했다.
+            // charLevels가 아예 없던(그 마이그레이션 전) 세이브만, 한 번 그
+            // 누적치를 레벨+남은 EXP로 변환해서 이미 모아 둔 만큼은 인정해 준다.
+            const legacyCharExp = (data.charExp && typeof data.charExp === 'object') ? data.charExp : null;
+            if (!parsed.charLevels && legacyCharExp && typeof SHARED !== 'undefined') {
+                Object.keys(legacyCharExp).forEach(charType => {
+                    const { level, expIntoLevel } = SHARED.charLevelFromExp(legacyCharExp[charType]);
                     data.charLevels[charType] = level;
-                    data.charExp[charType] = expIntoLevel;
+                    legacyCharExp[charType] = expIntoLevel;
                 });
             }
+            // 마이그레이션 2: charExp가 캐릭터별로 나뉜 EXP 잔액이던 시절 --
+            // 이제는 캐릭터 구분 없이 계정 전체가 같이 쓰는 sharedExp 하나로
+            // 합친다. sharedExp가 아직 없던(그 마이그레이션 전) 세이브만 해당.
+            if (parsed.sharedExp == null && legacyCharExp) {
+                data.sharedExp += Object.values(legacyCharExp).reduce((sum, v) => {
+                    const n = Number(v);
+                    return sum + (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+                }, 0);
+            }
+            delete data.charExp;
             data.equipped = data.equipped || {};
             // uid는 가방에 이미 있는 번호보다 반드시 커야 한다 -- 안 그러면
             // 새 장비가 기존 장비와 같은 번호를 받아 섞인다.

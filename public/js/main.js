@@ -645,16 +645,16 @@ function instinctPayload(charType) {
 function charLevelOfChar(charType) {
     return SHARED.charLevelOf(gameData.charLevels, charType);
 }
-// 레벨업 버튼: 그 시점의 다음 레벨 비용만큼 charExp 잔액에서 깎고 레벨을
-// 1 올린다. 자동으로 오르지 않으므로 성장던전에서 EXP만 모아 뒀다면 여기서
-// 직접 눌러야 실제 전투 스탯(characterWithLevel)에 반영된다.
+// 레벨업 버튼: 그 시점의 다음 레벨 비용만큼 공용 EXP 잔액(sharedExp)에서
+// 깎고 레벨을 1 올린다. EXP는 캐릭터별로 안 나뉘고 계정 전체가 같이 쓴다 --
+// 자동으로 오르지 않으므로 성장던전에서 EXP만 모아 뒀다면 여기서 직접
+// 눌러야 실제 전투 스탯(characterWithLevel)에 반영된다.
 function levelUpCharacter(charType) {
     const level = charLevelOfChar(charType);
     const cost = SHARED.charLevelExpToNext(level);
     if (cost == null) return { ok: false, msg: '이미 최대 레벨입니다.' };
-    const have = SHARED.charExpOf(gameData.charExp, charType);
-    if (have < cost) return { ok: false, msg: 'EXP가 부족합니다.' };
-    gameData.charExp[charType] = have - cost;
+    if (gameData.sharedExp < cost) return { ok: false, msg: 'EXP가 부족합니다.' };
+    gameData.sharedExp -= cost;
     gameData.charLevels[charType] = level + 1;
     saveGameData(gameData);
     return { ok: true, msg: `Lv.${level + 1}이 되었습니다!` };
@@ -2380,9 +2380,9 @@ function renderCharDetailLevel(charType) {
 function renderCharDetailLevelDesc() {
     const charType = viewingCharacterId;
     const level = charLevelOfChar(charType);
-    const have = SHARED.charExpOf(gameData.charExp, charType);
+    const have = gameData.sharedExp;
     const cost = SHARED.charLevelExpToNext(level);
-    charDetailDesc.textContent = `레벨업하면 체력·공격력이 레벨당 +${SHARED.CHAR_LEVEL_STAT_PCT_PER_LEVEL * 100}%씩 오릅니다 (최대 Lv.${SHARED.CHAR_LEVEL_MAX}). 성장던전(EXP 던전)에서 EXP를 모은 뒤 여기서 레벨업 버튼을 눌러야 실제로 레벨이 오릅니다.`;
+    charDetailDesc.textContent = `레벨업하면 체력·공격력이 레벨당 +${SHARED.CHAR_LEVEL_STAT_PCT_PER_LEVEL * 100}%씩 오릅니다 (최대 Lv.${SHARED.CHAR_LEVEL_MAX}). EXP는 캐릭터별로 나뉘지 않고 계정 전체가 공용으로 씁니다 -- 성장던전(EXP 던전)에서 EXP를 모은 뒤 여기서 레벨업 버튼을 눌러야 실제로 레벨이 오릅니다.`;
     if (cost == null) {
         charDetailLevelExpEl.textContent = `⭐ 최대 레벨 (Lv.${level})`;
         charDetailLevelUpBtn.disabled = true;
@@ -3575,9 +3575,9 @@ function renderExpDungeonDetail() {
     expDungeonStageNameEl.textContent = `EXP 던전 · ${n}단계`;
     const charId = gameData.selectedCharacter || 'kicker';
     const level = charLevelOfChar(charId);
-    const have = SHARED.charExpOf(gameData.charExp, charId);
+    const have = gameData.sharedExp;
     const cost = SHARED.charLevelExpToNext(level);
-    const progressText = cost != null ? `${have.toLocaleString()} / ${cost.toLocaleString()} (레벨업은 캐릭터 화면에서)` : '최대 레벨';
+    const progressText = cost != null ? `${have.toLocaleString()} / ${cost.toLocaleString()} (레벨업은 캐릭터 화면에서, 공용 EXP)` : '최대 레벨';
     expDungeonStageInfoEl.innerHTML = `
         <ul class="awaken-stat-list">
             <li>케이크 보스 · 체력·공격력 ${mult}배${n === 1 ? ' (원본)' : ''}</li>
@@ -3638,14 +3638,12 @@ function showExpDungeonResult(floor, result) {
     if (!gameData.expDungeonCleared.includes(stageNum)) {
         gameData.expDungeonCleared.push(stageNum);
     }
-    const charId = gameData.selectedCharacter || 'kicker';
     const exp = SHARED.expDungeonExpForStage(stageNum);
-    gameData.charExp[charId] = SHARED.charExpOf(gameData.charExp, charId) + exp;
+    gameData.sharedExp += exp;
     saveGameData(gameData);
-    const stats = SHARED.CHARACTERS[charId];
-    // 레벨은 여기서 자동으로 오르지 않는다 -- 캐릭터 상세 화면에서 직접
-    // "레벨업" 버튼을 눌러야 이 EXP를 써서 레벨이 오른다.
-    resultDesc.textContent = `EXP 던전 ${stageNum}단계를 클리어했습니다. ${stats.name} EXP +${exp.toLocaleString()} (캐릭터 화면에서 레벨업하세요)`;
+    // 레벨은 여기서 자동으로 오르지 않는다 -- 캐릭터 화면에서 직접 "레벨업"
+    // 버튼을 눌러야 이 공용 EXP를 써서 그 캐릭터의 레벨이 오른다.
+    resultDesc.textContent = `EXP 던전 ${stageNum}단계를 클리어했습니다. 공용 EXP +${exp.toLocaleString()} (캐릭터 화면에서 레벨업하세요)`;
     showScreen('result');
 }
 
