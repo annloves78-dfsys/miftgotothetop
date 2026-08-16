@@ -897,7 +897,8 @@ adminOffBtn.addEventListener('click', () => {
 // Passives get their own icon on the detail screen (next to the ultimate), so
 // this is the text for that slot. Cookies without one show 없음.
 function hasPassive(stats) {
-    return !!(stats.passiveReviveCount || stats.passiveResistElement || stats.attackBurnDamage);
+    return !!(stats.passiveReviveCount || stats.passiveResistElement || stats.attackBurnDamage
+        || stats.attackSpeedBonusOnHit);
 }
 
 function passiveText(stats) {
@@ -908,6 +909,9 @@ function passiveText(stats) {
         // stays at attackDamage); it lives here instead.
         const total = stats.attackBurnDamage * stats.attackBurnTicks;
         parts.push(`기본 공격이 적중하면 대상을 불태워 ${sec(stats.attackBurnIntervalMs)}초마다 ${stats.attackBurnDamage}의 화염 피해를 ${stats.attackBurnTicks}번 추가로 줍니다. (추가 피해 합계 ${total})`);
+    }
+    if (stats.attackSpeedBonusOnHit) {
+        parts.push(`기본 공격이 적중할 때마다 ${sec(stats.attackSpeedBoostDurationMs)}초 동안 이동 속도가 ${stats.attackSpeedBonusOnHit} 빨라집니다.`);
     }
     if (stats.attackHealOverTimeOnHit) {
         parts.push(`기본 공격이 적중할 때마다 팀 전체에게 ${sec(stats.attackHealOverTimeDurationMs)}초 동안 ${sec(stats.attackHealOverTimeTickMs)}초마다 ${stats.attackHealOverTimeOnHit}씩 회복시키는 효과가 새로 붙습니다. 여러 번 맞히면 효과가 겹쳐 쌓입니다.`);
@@ -1142,6 +1146,9 @@ function describeAbility(stats, kind) {
             case 'self_mark_burst':
                 return `조준 없이 즉시 자기 중심 반경 ${stats.skillRadius}px에 터뜨립니다. 범위 안의 적에게 ${stats.element} 속성 표식을 ${stats.skillMarkUses}번 부여합니다`
                     + ` (표식이 있는 동안 같은 속성 공격은 피해가 ${stats.skillMarkMultiplier}배). 피해는 없습니다.${cd}`;
+            case 'self_heal_zone':
+                return `조준 없이 자기 발밑에 반경 ${stats.skillRadius}px의 회복 지대를 소환합니다. ${sec(stats.skillDurationMs)}초 동안 유지되며,`
+                    + ` 그 안에 있는 팀원은 누구나 ${sec(stats.skillTickMs)}초마다 ${stats.skillHealPerTick}씩 회복합니다.${cd}`;
             case 'team_ratio_heal_attack_buff':
                 return `조준 없이 즉시 발동합니다. 팀 전체 체력을 최대 체력의 ${Math.round(stats.skillHealRatio * 100)}%만큼 채우고,`
                     + ` ${sec(stats.skillAttackBuffDurationMs)}초 동안 팀 전체의 공격력을 ${stats.skillAttackMultiplier}배로 올립니다.${cd}`;
@@ -1169,12 +1176,27 @@ function describeAbility(stats, kind) {
                 const speedText = stats.ultimateSpeedBonus != null
                     ? `이동 속도가 ${stats.ultimateSpeedBonus} 빨라지고`
                     : `이동 속도가 ${stats.ultimateSpeedMultiplier}배가 되고`;
-                let text = `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 ${speedText}, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다.`;
+                // 체리크림맛처럼 받는 피해 감소가 없는(배수 1) 캐릭터는 그 문구를 뺀다.
+                const dmgTakenText = stats.ultimateDamageMultiplier < 1
+                    ? `, 받는 피해가 ${Math.round(stats.ultimateDamageMultiplier * 100)}%로 줄어들며` : '';
+                let text = `각성 상태가 되어 ${sec(stats.ultimateDurationMs)}초 동안 ${speedText}${dmgTakenText}, 공격력이 ${stats.ultimateAttackDamage}로 증가합니다.`;
                 if (stats.ultimateAttackMarkUses) {
                     text += ` 그동안 기본 공격이 적중할 때마다 ${stats.element} 속성 표식을 ${stats.ultimateAttackMarkUses}번 남깁니다.`;
                 }
                 if (stats.ultimateSelfHeal) {
                     text += ` 체력을 ${stats.ultimateSelfHeal}만큼 즉시 회복합니다.`;
+                }
+                // 체리크림맛 "극대노": 발동할 때 확률로 더 강한 수치로 바뀐다.
+                if (stats.ultimateRageChance) {
+                    text += ` 발동할 때 ${Math.round(stats.ultimateRageChance * 100)}% 확률로 "극대노"가 되어`
+                        + ` 이동 속도 +${stats.ultimateRageSpeedBonus}, 공격력 ${stats.ultimateRageAttackDamage}로 더 강해집니다.`;
+                }
+                // 체리크림맛: 그 지속시간 동안 명중할 때마다 회복/보호막을 얻는다.
+                if (stats.ultimateHealPerAttack != null || stats.ultimateShieldPerAttack != null) {
+                    const bits = [];
+                    if (stats.ultimateHealPerAttack != null) bits.push(`팀 전체를 ${stats.ultimateHealPerAttack}만큼 회복`);
+                    if (stats.ultimateShieldPerAttack != null) bits.push(`보호막을 ${stats.ultimateShieldPerAttack}만큼 추가`);
+                    text += ` 그 동안 기본 공격이 적중할 때마다 ${bits.join('하고 ')}합니다.`;
                 }
                 return text + cd;
             }
@@ -1287,9 +1309,10 @@ const ELEMENT_ICONS = { '바람': '🌪️', '불': '🔥', '어둠': '🌑', '�
 // 바닥에 깔리는 지대는 지금 두 가지다 -- 화산맛의 마그마(주황)와 치즈만두맛의
 // 만두 덩어리(노랑/초록). 서버가 look으로 어느 쪽인지 알려 준다.
 function zoneColors(look) {
-    return look === 'dumpling'
-        ? { fill: 'rgba(39, 174, 96, 0.28)', stroke: 'rgba(244, 208, 63, 0.9)' }
-        : { fill: 'rgba(230, 81, 0, 0.25)', stroke: 'rgba(255, 152, 0, 0.85)' };
+    if (look === 'dumpling') return { fill: 'rgba(39, 174, 96, 0.28)', stroke: 'rgba(244, 208, 63, 0.9)' };
+    // 체리크림맛 특수스킬(회복 지대): 부드러운 크림빛 핑크.
+    if (look === 'heal') return { fill: 'rgba(255, 182, 193, 0.30)', stroke: 'rgba(255, 105, 180, 0.9)' };
+    return { fill: 'rgba(230, 81, 0, 0.25)', stroke: 'rgba(255, 152, 0, 0.85)' };
 }
 
 // 불꽃요정맛 궁극기: 원형이 아니라 사각형(길고 넓은) 지대라서 magmaZones와는
@@ -1460,7 +1483,8 @@ const SKILL_ICONS = {
     dash_guard: '🏃',
     self_mark_burst: '🌑',
     team_ratio_heal_attack_buff: '💪',
-    revive_team_hot: '⭐'
+    revive_team_hot: '⭐',
+    self_heal_zone: '🌸'
 };
 
 // A few skills need a second small glyph pinned to a corner of the icon
@@ -5400,7 +5424,7 @@ socket.on('storyFloorStarted', (data) => {
         equipSpeed: 0, equipCooldown: 1, // filled in below from what this cookie has on
         lastAttackClientTime: -Infinity, lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
         attackEffectUntil: 0, skillEffectUntil: 0, ultimateEffectUntil: 0, healEffectUntil: 0, speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0,
-        natureBoostUntil: 0, natureAwakenLevel: 0,
+        natureBoostUntil: 0, natureAwakenLevel: 0, attackSpeedUntil: 0, awakenRaged: false,
         comboStage: 0, attackEffectStage: null, spearSide: 0, attackEffectSide: 0,
         tideStage: 1 // 바다펄맛 밀물은 언제나 1단계부터 시작한다
     };
@@ -5803,6 +5827,11 @@ socket.on('storyPlayerHealed', ({ id, hp, partyHp }) => {
     }
 });
 
+// 체리크림맛 패시브: 위 raid 모드 쪽 attackSpeedBoost와 같은 이유.
+socket.on('storyAttackSpeedBoost', ({ id, until }) => {
+    if (id === socket.id && storyPlayer) storyPlayer.attackSpeedUntil = until;
+});
+
 // 레전드 스토리 스위치: 공격이 아니라 밟으면 열린다. 판정은 서버가 하고,
 // 여기선 문 그림/이동 클램프가 참고하는 로컬 상태만 갱신한다.
 socket.on('legendSwitchHit', ({ id }) => {
@@ -6113,7 +6142,10 @@ function tryStoryUseUltimate() {
     const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
     storyPlayer.lastUltimateClientTime = now;
     storyPlayer.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
-    if (stats.ultimateType === 'awakening') storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'awakening') {
+        storyPlayer.awakenUntil = now + stats.ultimateDurationMs;
+        if (stats.ultimateRageChance != null) storyPlayer.awakenRaged = Math.random() < stats.ultimateRageChance;
+    }
     if (stats.ultimateType === 'awakening_rapid') storyPlayer.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') storyPlayer.speedBoostUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'great_slash') storyPlayer.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
@@ -6274,7 +6306,7 @@ function storyFrame() {
     const now = performance.now();
     if (storyPlayer && storyPlayer.alive) {
         const stats = SHARED.CHARACTERS[storyPlayer.charType] || SHARED.CHARACTERS.kicker;
-        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime, storyPlayer.firingUntil);
+        const speed = moveSpeedFor(stats, now, storyPlayer.speedBoostUntil, storyPlayer.awakenUntil, storyPlayer.butterflyOn, storyPlayer.equipSpeed, storyPlayer.rapidStrikeUntil, !!storyJoystickMoveVec, storyPlayer.natureBoostUntil, storyPlayer.lastAttackClientTime, storyPlayer.lastHitClientTime, storyPlayer.firingUntil, storyPlayer.attackSpeedUntil, storyPlayer.awakenRaged);
         let dx = 0, dy = 0;
         if (storyJoystickMoveVec) {
             dx = storyJoystickMoveVec.x * speed;
@@ -7446,6 +7478,14 @@ socket.on('playerHealed', ({ id, hp }) => {
     p.hp = hp;
     p.triggerHealEffect();
     updateHpBars();
+});
+
+// 체리크림맛 패시브: 기본 공격이 적중했다는 걸 서버가 확인해 주면 그 순간부터
+// attackSpeedUntil을 세운다("명중"은 이동과 달리 서버만 아는 사실이라 낙관적
+// 예측이 안 된다).
+socket.on('attackSpeedBoost', ({ id, until }) => {
+    const p = players[id];
+    if (p) p.attackSpeedUntil = until;
 });
 
 // 전기줄맛: 상체 <-> 하체 <-> 합체. 체력 상한 자체가 바뀐다.

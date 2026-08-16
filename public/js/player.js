@@ -576,7 +576,7 @@ function focusModeActive(stats, now, lastAttackAt, lastHitAt) {
     const since = Math.max(lastAttackAt || 0, lastHitAt || 0);
     return now - since >= fp.idleMs;
 }
-function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil, lastAttackAt, lastHitAt, firingUntil) {
+function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equipSpeed, rapidStrikeUntil, isJoystick, natureBoostUntil, lastAttackAt, lastHitAt, firingUntil, attackSpeedUntil, awakenRaged) {
     const bonus = isJoystick ? JOYSTICK_SPEED_BONUS : 0;
     // 나비모드 runs until it is switched off, so it wins over any timer.
     if (butterflyOn && stats.ultimateType === 'butterfly_mode') {
@@ -590,7 +590,12 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     }
     if (stats.ultimateType === 'awakening' && now < (awakenUntil || 0)) {
         // 매직블록맛처럼 배수 대신 그냥 더하는 캐릭터도 있다.
-        if (stats.ultimateSpeedBonus != null) return stats.speed + stats.ultimateSpeedBonus + bonus;
+        if (stats.ultimateSpeedBonus != null) {
+            // 체리크림맛: 궁극기 발동 시 30% 확률로 "극대노"가 되어 더 빨라진다
+            // (ultimateRageChance가 있는 캐릭터만 해당, 롤 결과는 awakenRaged로 받는다).
+            const spd = (stats.ultimateRageChance != null && awakenRaged) ? stats.ultimateRageSpeedBonus : stats.ultimateSpeedBonus;
+            return stats.speed + spd + bonus;
+        }
         return stats.speed * stats.ultimateSpeedMultiplier + bonus;
     }
     // 본능해제 4강(오렌지레몬맛): awakening_rapid 궁극기가 켜져 있는 동안 이동속도를 더한다.
@@ -600,6 +605,12 @@ function moveSpeedFor(stats, now, speedBoostUntil, awakenUntil, butterflyOn, equ
     // 바람궁수맛 궁극기 2단계: rapidStrikeUntil과 별도 타이머로, 그동안만 이동속도가 붙는다.
     if (stats.ultimateLevel2SpeedBonus && now < (natureBoostUntil || 0)) {
         return withEquipSpeed(stats.speed + stats.ultimateLevel2SpeedBonus, equipSpeed) + bonus;
+    }
+    // 체리크림맛 패시브: 기본 공격이 적중할 때마다 잠깐 빨라진다. "명중"은
+    // 서버만 아는 사실이라 attackSpeedUntil은 서버의 attackSpeedBoost류
+    // 이벤트로 채워진다(다른 타이머들처럼 클라이언트 낙관적 예측이 아니다).
+    if (stats.attackSpeedBonusOnHit && now < (attackSpeedUntil || 0)) {
+        return withEquipSpeed(stats.speed + stats.attackSpeedBonusOnHit, equipSpeed) + bonus;
     }
     if (focusModeActive(stats, now, lastAttackAt, lastHitAt)) {
         return withEquipSpeed(stats.speed + stats.focusPassive.speedBonus, equipSpeed) + bonus;
@@ -651,6 +662,8 @@ class Player {
         this.ammoLeft = null; // 팝핑캔디맛 탄창(clientConsumeAmmo가 채운다); 다른 캐릭터는 계속 null
         this.reloadUntil = 0; // performance.now() timestamp; 탄창이 다 떨어지면 채워진다
         this.firingUntil = 0; // performance.now() timestamp; 연사 중 이동속도 감속에 쓴다
+        this.attackSpeedUntil = 0; // performance.now() timestamp; 체리크림맛 패시브(명중 시 가속), 서버 이벤트로 채워진다
+        this.awakenRaged = false; // 체리크림맛 궁극기 "극대노" 롤 결과(낙관적 예측, 클라이언트가 직접 굴린다)
 
         this.hitEffectUntil = 0; // 피격 섬광/떨림; updateHitAndDeathState가 hp 하락을 감지해서 켠다
         this.deathStartAt = 0; // 사망 애니메이션(drawDeathCollapse) 시작 시각
@@ -697,7 +710,7 @@ class Player {
     // other players (driven by playerMoved) and for all damage.
     updateLocal(keys) {
         if (!this.alive) return false;
-        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil, this.lastAttackClientTime, this.lastHitClientTime, this.firingUntil);
+        const speed = moveSpeedFor(this.stats, performance.now(), this.speedBoostUntil, this.awakenUntil, this.butterflyOn, this.equipSpeed, this.rapidStrikeUntil, !!joystickMoveVec, this.natureBoostUntil, this.lastAttackClientTime, this.lastHitClientTime, this.firingUntil, this.attackSpeedUntil, this.awakenRaged);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
@@ -773,6 +786,12 @@ class Player {
         this.ultimateEffectUntil = performance.now() + (this.stats.ultimateDurationMs || 0);
         if (this.stats.ultimateType === 'awakening') {
             this.awakenUntil = performance.now() + this.stats.ultimateDurationMs;
+            // 체리크림맛: "극대노" 여부는 서버도 따로(진짜 피해 계산용) 굴리는
+            // 독립적인 확률이다 -- 이동속도는 화면상 느낌만 맞으면 되는 클라이언트
+            // 예측 영역이라 서버와 완전히 같은 결과일 필요는 없다.
+            if (this.stats.ultimateRageChance != null) {
+                this.awakenRaged = Math.random() < this.stats.ultimateRageChance;
+            }
         } else if (this.stats.ultimateType === 'awakening_rapid') {
             this.rapidStrikeUntil = performance.now() + this.stats.ultimateDurationMs;
         } else if (this.stats.ultimateType === 'undying_soul') {

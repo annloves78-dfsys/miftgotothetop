@@ -351,7 +351,10 @@ function reviveAttackBonus(character, p) {
 function effectiveAttackDamage(character, p, now) {
     let base;
     if (character.ultimateType === 'awakening' && p.awakenUntil && now < p.awakenUntil && character.ultimateAttackDamage != null) {
-        base = character.ultimateAttackDamage + bonusOf(p).attack;
+        // 체리크림맛: "극대노"(ultimateRageChance)로 걸렸으면 더 센 수치를 쓴다.
+        const dmg = (character.ultimateRageChance != null && p.awakenRaged)
+            ? character.ultimateRageAttackDamage : character.ultimateAttackDamage;
+        base = dmg + bonusOf(p).attack;
     } else if (character.ultimateType === 'undying_soul' && p.undyingSoulUntil && now < p.undyingSoulUntil
         && character.ultimateAttackDamage != null) {
         // undying_soul (lightninghell) swaps in a bigger basic attack the same way.
@@ -900,6 +903,18 @@ function tickRoom(roomId) {
                 buff.lastTickAt += buff.tickMs;
                 if (buff.type === 'team_heal_over_time') {
                     healTeam(room, roomId, buff.healPerTick);
+                } else if (buff.type === 'ally_heal_zone') {
+                    // 체리크림맛 특수스킬: 반경 안에 있는 팀원 누구나(팀 전체가
+                    // 아니라 자리에 있어야 한다) 회복한다.
+                    for (const [id, pl] of Object.entries(room.players)) {
+                        if (!pl.alive) continue;
+                        if (Math.hypot(buff.x - pl.x, buff.y - pl.y) > buff.radius + PLAYER_RADIUS) continue;
+                        const healed = Math.min(pl.maxHp, pl.hp + buff.healPerTick);
+                        if (healed !== pl.hp) {
+                            pl.hp = healed;
+                            io.to(roomId).emit('playerHealed', { id, hp: pl.hp });
+                        }
+                    }
                 } else if (buff.type === 'spin_heal_check' && !buff.triggered) {
                     const caster = room.players[buff.casterId];
                     if (caster && caster.alive) {
@@ -2025,11 +2040,25 @@ function landRaidHitOnBoss(roomId, room, attackerId, p, character, baseDamage, n
         p.hp = Math.min(p.maxHp, p.hp + selfHeal);
         io.to(roomId).emit('playerHealed', { id: attackerId, hp: p.hp });
     }
-    if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-        // ultimateType 체크 없이 타이머+수치만 본다 (시금치맛의 attack_heal_boost뿐
-        // 아니라 바람궁수맛의 nature_awaken 2단계도 같은 타이머를 재사용한다).
-        const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
-        healTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+    // ultimateType 체크 없이 타이머+수치만 본다 (시금치맛의 attack_heal_boost뿐
+    // 아니라 바람궁수맛의 nature_awaken 2단계도 같은 타이머를 재사용한다).
+    // 체리크림맛처럼 평소엔 attackHealOnUse가 아예 없고 궁극기 중에만 이 효과가
+    // 붙는 캐릭터도 있어서, boosted만으로도 게이트를 통과하도록 일반화했다.
+    const attackHealBoosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+    if ((character.attackHealOnUse || attackHealBoosted) && Math.random() < (character.attackHealChance ?? 1)) {
+        healTeam(room, roomId, attackHealBoosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+    }
+    // 체리크림맛 궁극기(분노): 지속시간 동안 명중할 때마다 팀 전체에게 보호막을
+    // 더해 준다(덮어쓰지 않는다 -- addShieldTeam). attackHealBoostUntil을
+    // 그대로 같이 쓴다 -- 같은 "분노 창" 안에서 회복/보호막이 함께 켜지므로
+    // 타이머를 새로 만들 필요가 없다.
+    if (character.ultimateShieldPerAttack && p.attackHealBoostUntil && now < p.attackHealBoostUntil) {
+        addShieldTeam(room, roomId, character.ultimateShieldPerAttack);
+    }
+    // 체리크림맛 패시브: 기본 공격이 적중하면 3초간 이동속도가 빨라진다.
+    // 이동은 클라이언트 예측이라, "명중"을 아는 서버가 확인해 줘야 한다.
+    if (character.attackSpeedBonusOnHit) {
+        io.to(roomId).emit('attackSpeedBoost', { id: attackerId, until: now + character.attackSpeedBoostDurationMs });
     }
     // 치즈케이크맛: 기본 공격이 적중할 때마다 team_heal_over_time과 같은
     // 버프를 하나 새로 쌓는다(덮어쓰지 않는다 -- 연타로 여러 개가 동시에 돈다).
@@ -3285,6 +3314,20 @@ function tickStoryRoom(roomId) {
             buff.lastTickAt += buff.tickMs;
             if (buff.type === 'team_heal_over_time') {
                 healStoryPlayer(room, roomId, buff.healPerTick);
+            } else if (buff.type === 'ally_heal_zone') {
+                // 체리크림맛 특수스킬: 위 보스 레이드 분기 주석 참고. 지금 나와
+                // 있는 캐릭터의 위치만 의미가 있으므로(벤치는 자리에 없다)
+                // p.x/p.y로 판정하고 partyHp도 같이 맞춘다.
+                for (const [id, pl] of Object.entries(room.players)) {
+                    if (!pl.alive) continue;
+                    if (Math.hypot(buff.x - pl.x, buff.y - pl.y) > buff.radius + PLAYER_RADIUS) continue;
+                    const healed = Math.min(pl.maxHp, pl.hp + buff.healPerTick);
+                    if (healed !== pl.hp) {
+                        pl.hp = healed;
+                        if (pl.party && pl.partyHp) pl.partyHp[pl.active] = pl.hp;
+                        io.to(roomId).emit('storyPlayerHealed', { id, hp: pl.hp, partyHp: pl.partyHp });
+                    }
+                }
             } else if (buff.type === 'story_spin_heal_check' && !buff.triggered) {
                 const caster = room.players[buff.casterId];
                 if (caster && caster.alive) {
@@ -4463,6 +4506,19 @@ function tickGuestRoom(roomId) {
             if (now - buff.lastTickAt < buff.tickMs) continue;
             buff.lastTickAt += buff.tickMs;
             if (buff.type === 'team_heal_over_time') healGuestTeam(room, roomId, buff.healPerTick);
+            else if (buff.type === 'ally_heal_zone') {
+                // 체리크림맛 특수스킬: 위 보스 레이드 분기 주석 참고.
+                for (const [id, pl] of Object.entries(room.players)) {
+                    if (!pl.alive) continue;
+                    if (Math.hypot(buff.x - pl.x, buff.y - pl.y) > buff.radius + PLAYER_RADIUS) continue;
+                    const healed = Math.min(pl.maxHp, pl.hp + buff.healPerTick);
+                    if (healed !== pl.hp) {
+                        pl.hp = healed;
+                        pl.partyHp[pl.active] = pl.hp;
+                        io.to(roomId).emit('guestPlayerHealed', { id, hp: pl.hp, partyHp: pl.partyHp });
+                    }
+                }
+            }
             else if (buff.type === 'magma_zone') {
                 const inside = guestCircleTargets(room, buff.x, buff.y, buff.radius);
                 damageGuestTargets(roomId, room, inside, buff.damage, buff.casterId);
@@ -6015,9 +6071,10 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('storyPlayerHealed', { id: socket.id, hp: p.hp });
             }
         }
-        if (anyHit && character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-            const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
-            healStoryPlayer(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        // 체리크림맛처럼 attackHealOnUse가 없어도 궁극기 중이면 게이트를 통과한다.
+        const storyHealBoosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+        if (anyHit && (character.attackHealOnUse || storyHealBoosted) && Math.random() < (character.attackHealChance ?? 1)) {
+            healStoryPlayer(room, roomId, storyHealBoosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
         // 치즈케이크맛: 위 보스 레이드 분기 주석 참고.
         if (anyHit && character.attackHealOverTimeOnHit) {
@@ -6031,6 +6088,14 @@ io.on('connection', (socket) => {
         }
         if (anyHit && character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
             addShieldStoryTeam(room, roomId, character.attackShieldOnUse);
+        }
+        // 체리크림맛 궁극기(분노): 위 보스 레이드 분기 주석 참고.
+        if (anyHit && character.ultimateShieldPerAttack && p.attackHealBoostUntil && now < p.attackHealBoostUntil) {
+            addShieldStoryTeam(room, roomId, character.ultimateShieldPerAttack);
+        }
+        // 체리크림맛 패시브: 위 보스 레이드 분기 주석 참고.
+        if (anyHit && character.attackSpeedBonusOnHit) {
+            io.to(roomId).emit('storyAttackSpeedBoost', { id: socket.id, until: now + character.attackSpeedBoostDurationMs });
         }
     });
 
@@ -6303,6 +6368,20 @@ io.on('connection', (socket) => {
             });
             markMonstersInCircle(roomId, room, p.x, p.y,
                 character.skillRadius, character.element, skillMarkOpts(character));
+        }
+        // 체리크림맛 특수스킬: 조준 없이 자기 발밑에 회복 지대를 소환한다.
+        // magma_zone과 같은 원형 시각 효과를 look:'heal'로 재사용하고, 틱 처리는
+        // ally_heal_zone이라는 새 버프 타입으로 room.activeBuffs 루프에서 돈다.
+        else if (character.skillType === 'self_heal_zone') {
+            io.to(roomId).emit('storyMagmaZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, radius: character.skillRadius,
+                durationMs: character.skillDurationMs, look: 'heal'
+            });
+            room.activeBuffs.push({
+                type: 'ally_heal_zone', x: p.x, y: p.y, radius: character.skillRadius,
+                healPerTick: character.skillHealPerTick, tickMs: character.skillTickMs,
+                endAt: now + character.skillDurationMs, lastTickAt: now
+            });
         }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
         // 몬스터를 그 자리에서 기절시킨다. 피해도 표식도 없다.
@@ -6630,6 +6709,17 @@ io.on('connection', (socket) => {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
         } else if (character.ultimateType === 'awakening') {
             p.awakenUntil = now + character.ultimateDurationMs;
+            // 체리크림맛: 30% 확률로 "극대노"(더 강한 수치)가 된다. 서버가 굴리는
+            // 이 값이 피해 계산의 진짜 기준이고, 클라이언트는 이동속도 표현용으로
+            // 따로(독립적으로) 굴린다 -- moveSpeedFor 쪽 주석 참고.
+            if (character.ultimateRageChance != null) {
+                p.awakenRaged = Math.random() < character.ultimateRageChance;
+            }
+            // 체리크림맛: 그 8초 동안 명중할 때마다 회복/보호막을 준다. 시금치맛의
+            // attack_heal_boost 타이머를 그대로 재사용한다.
+            if (character.ultimateHealPerAttack != null || character.ultimateShieldPerAttack != null) {
+                p.attackHealBoostUntil = now + character.ultimateDurationMs;
+            }
             if (character.ultimateSelfHeal) {
                 const healed = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
                 if (healed !== p.hp) {
@@ -6893,6 +6983,18 @@ io.on('connection', (socket) => {
             });
             markBossInCircle(roomId, room, p.x, p.y, character.skillRadius,
                 character.element, skillMarkOpts(character), 'bossMarked');
+        }
+        // 체리크림맛 특수스킬: 위 스토리 모드 분기 주석 참고.
+        else if (character.skillType === 'self_heal_zone') {
+            io.to(roomId).emit('magmaZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, radius: character.skillRadius,
+                durationMs: character.skillDurationMs, look: 'heal'
+            });
+            room.activeBuffs.push({
+                type: 'ally_heal_zone', x: p.x, y: p.y, radius: character.skillRadius,
+                healPerTick: character.skillHealPerTick, tickMs: character.skillTickMs,
+                endAt: now + character.skillDurationMs, lastTickAt: now
+            });
         }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안에
         // 보스가 있으면 그 자리에서 기절시킨다. 피해도 표식도 없다.
@@ -7286,6 +7388,13 @@ io.on('connection', (socket) => {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
         } else if (character.ultimateType === 'awakening') {
             p.awakenUntil = now + character.ultimateDurationMs;
+            // 체리크림맛: 위 스토리 모드 분기 주석 참고.
+            if (character.ultimateRageChance != null) {
+                p.awakenRaged = Math.random() < character.ultimateRageChance;
+            }
+            if (character.ultimateHealPerAttack != null || character.ultimateShieldPerAttack != null) {
+                p.attackHealBoostUntil = now + character.ultimateDurationMs;
+            }
             if (character.ultimateSelfHeal) {
                 const healed = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
                 if (healed !== p.hp) {
@@ -7627,9 +7736,10 @@ io.on('connection', (socket) => {
             p.partyHp[p.active] = p.hp;
             io.to(roomId).emit('guestPlayerHealed', { id: socket.id, hp: p.hp, partyHp: p.partyHp });
         }
-        if (character.attackHealOnUse && Math.random() < (character.attackHealChance ?? 1)) {
-            const boosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
-            healGuestTeam(room, roomId, boosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
+        // 체리크림맛처럼 attackHealOnUse가 없어도 궁극기 중이면 게이트를 통과한다.
+        const guestHealBoosted = character.ultimateHealPerAttack != null && p.attackHealBoostUntil && now < p.attackHealBoostUntil;
+        if ((character.attackHealOnUse || guestHealBoosted) && Math.random() < (character.attackHealChance ?? 1)) {
+            healGuestTeam(room, roomId, guestHealBoosted ? character.ultimateHealPerAttack : character.attackHealOnUse);
         }
         // 치즈케이크맛: 위 보스 레이드 분기 주석 참고.
         if (character.attackHealOverTimeOnHit) {
@@ -7643,6 +7753,14 @@ io.on('connection', (socket) => {
         }
         if (character.attackShieldOnUse && Math.random() < (character.attackShieldChance ?? 1)) {
             addShieldGuestTeam(room, roomId, character.attackShieldOnUse);
+        }
+        // 체리크림맛 궁극기(분노): 위 보스 레이드 분기 주석 참고.
+        if (character.ultimateShieldPerAttack && p.attackHealBoostUntil && now < p.attackHealBoostUntil) {
+            addShieldGuestTeam(room, roomId, character.ultimateShieldPerAttack);
+        }
+        // 체리크림맛 패시브: 위 보스 레이드 분기 주석 참고.
+        if (character.attackSpeedBonusOnHit) {
+            io.to(roomId).emit('guestAttackSpeedBoost', { id: socket.id, until: now + character.attackSpeedBoostDurationMs });
         }
     });
 
@@ -7899,6 +8017,18 @@ io.on('connection', (socket) => {
             markBossInCircle(roomId, room, p.x, p.y, character.skillRadius,
                 character.element, skillMarkOpts(character), 'guestBossMarked');
         }
+        // 체리크림맛 특수스킬: 위 스토리 모드 분기 주석 참고.
+        else if (character.skillType === 'self_heal_zone') {
+            io.to(roomId).emit('guestMagmaZonePlaced', {
+                id: socket.id, x: p.x, y: p.y, radius: character.skillRadius,
+                durationMs: character.skillDurationMs, look: 'heal'
+            });
+            room.activeBuffs.push({
+                type: 'ally_heal_zone', x: p.x, y: p.y, radius: character.skillRadius,
+                healPerTick: character.skillHealPerTick, tickMs: character.skillTickMs,
+                endAt: now + character.skillDurationMs, lastTickAt: now
+            });
+        }
         // 암흑바다맛 물속으로 데려가기: 직접 지정한 좁은 반경(skillRadius) 안의
         // 부하를 그 자리에서 기절시킨다. 게스트 레이드 보스는 raid의 보스와
         // 달리 기절 매커니즘이 없어 보스에게는 걸리지 않는다.
@@ -8148,6 +8278,13 @@ io.on('connection', (socket) => {
             p.attackHealBoostUntil = now + character.ultimateDurationMs;
         } else if (character.ultimateType === 'awakening') {
             p.awakenUntil = now + character.ultimateDurationMs;
+            // 체리크림맛: 위 스토리 모드 분기 주석 참고.
+            if (character.ultimateRageChance != null) {
+                p.awakenRaged = Math.random() < character.ultimateRageChance;
+            }
+            if (character.ultimateHealPerAttack != null || character.ultimateShieldPerAttack != null) {
+                p.attackHealBoostUntil = now + character.ultimateDurationMs;
+            }
             if (character.ultimateSelfHeal) {
                 p.hp = Math.min(p.maxHp, p.hp + character.ultimateSelfHeal);
                 p.partyHp[p.active] = p.hp;

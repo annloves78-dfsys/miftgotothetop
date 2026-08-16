@@ -1198,6 +1198,60 @@ const CHARACTERS = {
         ultimateTickMs: 1000,
         ultimateDurationMs: 10000,
         ultimateCooldownMs: 30000
+    },
+    // 유누 신청작. 에픽 등급의 어둠 속성 대미지 딜러. 보라색 몸에 하얀 쌍검을
+    // 들고, 앞으로 찌르지 않고 앞쪽을 가로로 넓게 베는 근접 판정을 쓴다.
+    cherrycream: {
+        name: '체리크림맛 쿠키',
+        shortName: '체리크림', // shown on the lobby's character-select button
+        color: '#9b59b6',
+        weaponShape: 'dualswords',
+        weaponColor: '#f5f5f5', // 하얀 쌍검
+        grade: '에픽',
+        element: '어둠',
+        role: '대미지 딜러',
+        health: 115,
+        speed: 2,
+        // 앞으로 찌르는 게 아니라 앞쪽을 가로로 넓게 베는 판정 -- melee_kick
+        // 그대로에 사거리를 짧게, 폭을 넓게 잡는 것만으로 새 코드 없이 구현된다.
+        attackType: 'melee_kick',
+        attackRange: 60,
+        attackWidth: 70,
+        attackDamage: 5,
+        attackCooldown: 500,
+        // 패시브: 기본 공격이 적중할 때마다 3초간 이동속도가 +0.2 빨라진다.
+        // "명중"은 서버만 아는 사실이라(이동은 클라이언트 예측) 서버가 hit 확정
+        // 지점에서 attackSpeedBoost류 이벤트로 알려주면 클라가 attackSpeedUntil을
+        // 세우는 식 -- 새로 만든 범용 패시브 필드라 다른 캐릭터도 재사용 가능.
+        attackSpeedBonusOnHit: 0.2,
+        attackSpeedBoostDurationMs: 3000,
+        // 특수스킬: 조준 없이 자기 발밑에 반경 100px "부드러움" 공간을 4초간
+        // 소환한다. 그 안에 있는 동안(팀원 누구나) 1초마다 3씩 회복.
+        skillType: 'self_heal_zone',
+        skillRadius: 100,
+        skillHealPerTick: 3,
+        skillTickMs: 1000,
+        skillDurationMs: 4000,
+        skillCooldown: 10000,
+        // 궁극기: 8초간 "분노" 상태(awakening 재사용). 30% 확률로 "극대노"가
+        // 되어 이동속도/공격력이 더 크게 오른다(ultimateRageChance/
+        // ultimateRage*). 받는 피해 감소는 없음(ultimateDamageMultiplier: 1 --
+        // awakening의 damageReductionMultiplier 분기가 이 값을 무조건 곱하므로
+        // 빠뜨리면 NaN이 된다). 그 8초 동안은 명중할 때마다 회복 3 + 보호막 2를
+        // 얻는다 -- attackHealOnUse 없이도 발동하도록 서버 쪽 게이트를 범용화하고,
+        // 보호막 쪽은 ultimateShieldPerAttack이라는 새 필드로 다른 캐릭터도
+        // 재사용 가능하게 만든다.
+        ultimateType: 'awakening',
+        ultimateDurationMs: 8000,
+        ultimateSpeedBonus: 0.5,
+        ultimateAttackDamage: 7, // 5 + 2
+        ultimateDamageMultiplier: 1,
+        ultimateRageChance: 0.3,
+        ultimateRageSpeedBonus: 1,
+        ultimateRageAttackDamage: 9, // 5 + 4
+        ultimateHealPerAttack: 3,
+        ultimateShieldPerAttack: 2,
+        ultimateCooldownMs: 30000
     }
 };
 
@@ -7355,6 +7409,22 @@ const INSTINCT_CHAR_LEVELS = {
             effect: { skillHealRatio: 0.4 },
             desc: '특수스킬 회복량이 최대 체력의 30%에서 40%로 늘어납니다.'
         }
+    },
+    // 체리크림맛 쿠키: 스킬(회복 지대)과 궁극기(분노 지속시간)를 먼저 키우고,
+    // 5강은 기본 공격력을 올린다.
+    cherrycream: {
+        3: {
+            effect: { skillHealPerTick: 5 },
+            desc: '특수스킬(회복 지대)의 초당 회복량이 3에서 5로 늘어납니다.'
+        },
+        4: {
+            effect: { ultimateDurationMs: 10000 },
+            desc: '궁극기(분노) 지속시간이 8초에서 10초로 늘어납니다.'
+        },
+        5: {
+            effect: { attackDamage: 7 },
+            desc: '기본 공격력이 5에서 7로 강해집니다.'
+        }
     }
 };
 function instinctCharLevelEffect(charType, level) {
@@ -7435,7 +7505,8 @@ const STOCK_EVENTS = [
     { element: '어둠', type: 'new_character', pct: 0.10, note: '매직블록맛 쿠키 추가' },
     { element: '어둠', type: 'new_character', pct: 0.05, note: '파핑캔디맛 쿠키 추가' },
     { element: '어둠', type: 'nerf', pct: -0.15, note: '파핑캔디맛 쿠키 등급 상향(에픽→에이션트)' },
-    { element: '빛', type: 'new_character', pct: 0.05, note: '치즈케이크맛 쿠키 추가' }
+    { element: '빛', type: 'new_character', pct: 0.05, note: '치즈케이크맛 쿠키 추가' },
+    { element: '어둠', type: 'new_character', pct: 0.10, note: '체리크림맛 쿠키 추가' }
 ];
 
 // 이벤트를 기준가에 순서대로 복리 적용. 가격은 0 밑으로는 못 내려간다.

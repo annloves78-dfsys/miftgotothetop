@@ -97,12 +97,14 @@ const GUEST_SLOT_FIELDS = ['lastSkillClientTime', 'lastUltimateClientTime',
     'natureBoostUntil', 'natureAwakenLevel', // 바람궁수맛 궁극기 2단계 이동속도 + 다음 단계 예측
     'untouchableUntil', // 바다 수호자맛 sea_hide -- 숨은 쿠키만 무적이어야 하니 슬롯마다 따로
     // 바다펄맛 밀물의 단계도 쿠키마다 따로 센다.
-    'tideStage'];
+    'tideStage',
+    'attackSpeedUntil', // 체리크림맛 패시브(명중 시 가속)
+    'awakenRaged']; // 체리크림맛 궁극기 "극대노" 롤 결과
 const GUEST_SLOT_DEFAULTS = {
     lastSkillClientTime: -Infinity, lastUltimateClientTime: -Infinity,
     skillEffectUntil: 0, ultimateEffectUntil: 0,
     speedBoostUntil: 0, awakenUntil: 0, rapidStrikeUntil: 0, natureBoostUntil: 0, natureAwakenLevel: 0,
-    untouchableUntil: 0, tideStage: 1
+    untouchableUntil: 0, tideStage: 1, attackSpeedUntil: 0, awakenRaged: false
 };
 
 function guestSlotBag(i) {
@@ -670,6 +672,10 @@ socket.on('guestTideCast', ({ windupMs, x, y, radius }) => {
     if (!windupMs) return;
     guestImpacts.push({ x, y, radius, until: performance.now() + windupMs, tide: true });
 });
+// 체리크림맛 패시브: raid/스토리 모드 쪽 attackSpeedBoost와 같은 이유.
+socket.on('guestAttackSpeedBoost', ({ id, until }) => {
+    if (guestLocal && id === socket.id) guestLocal.attackSpeedUntil = until;
+});
 socket.on('guestTideStage', ({ id, stage }) => {
     if (guestLocal && id === socket.id) guestLocal.tideStage = stage;
 });
@@ -856,7 +862,10 @@ function tryGuestUseUltimate() {
     if (!guestCanUseUltimate(now)) return;
     guestLocal.lastUltimateClientTime = now;
     guestLocal.ultimateEffectUntil = now + (stats.ultimateDurationMs || 0);
-    if (stats.ultimateType === 'awakening') guestLocal.awakenUntil = now + stats.ultimateDurationMs;
+    if (stats.ultimateType === 'awakening') {
+        guestLocal.awakenUntil = now + stats.ultimateDurationMs;
+        if (stats.ultimateRageChance != null) guestLocal.awakenRaged = Math.random() < stats.ultimateRageChance;
+    }
     if (stats.ultimateType === 'awakening_rapid') guestLocal.rapidStrikeUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'undying_soul') guestLocal.speedBoostUntil = now + stats.ultimateDurationMs;
     if (stats.ultimateType === 'great_slash') guestLocal.speedBoostUntil = now + stats.ultimateSpeedDurationMs;
@@ -963,7 +972,7 @@ function guestFrame() {
     const me = guestMe();
     if (guestLocal && me && me.alive) {
         const stats = guestStats();
-        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime, guestLocal.firingUntil);
+        const speed = moveSpeedFor(stats, now, guestLocal.speedBoostUntil, guestLocal.awakenUntil, guestLocal.butterflyOn, guestLocal.equipSpeed, guestLocal.rapidStrikeUntil, !!joystickMoveVec, guestLocal.natureBoostUntil, guestLocal.lastAttackClientTime, guestLocal.lastHitClientTime, guestLocal.firingUntil, guestLocal.attackSpeedUntil, guestLocal.awakenRaged);
         let dx = 0, dy = 0;
         if (joystickMoveVec) {
             dx = joystickMoveVec.x * speed;
