@@ -411,15 +411,22 @@ function arenaUpdateControlledLocal(pl, keysDown) {
 }
 
 function arenaFrame() {
-    arenaUpdateCamera();
-    if (arenaMouseScreen) arenaMouseWorld = arenaScreenToWorld(arenaMouseScreen.x, arenaMouseScreen.y);
-    const controlled = arenaControlledPlayerObj();
-    if (controlled && arenaFighting) {
-        const moved = arenaUpdateControlledLocal(controlled, keys);
-        if (arenaMouseWorld) controlled.aimAt(arenaMouseWorld.x, arenaMouseWorld.y);
-        if (moved) socket.emit('arenaUnitMove', { unitId: arenaControlledUnitId, x: controlled.x, y: controlled.y, facing: controlled.facing });
+    // 프레임 하나에서 예외가 나면 requestAnimationFrame 재호출(마지막 줄)까지
+    // 못 가서 루프 자체가 멈춘다 -- 그러면 "싸워라!" 같은 마지막 프레임이
+    // 화면에 그대로 얼어붙는다. try/catch로 한 프레임만 건너뛰고 계속 돌게 한다.
+    try {
+        arenaUpdateCamera();
+        if (arenaMouseScreen) arenaMouseWorld = arenaScreenToWorld(arenaMouseScreen.x, arenaMouseScreen.y);
+        const controlled = arenaControlledPlayerObj();
+        if (controlled && arenaFighting) {
+            const moved = arenaUpdateControlledLocal(controlled, keys);
+            if (arenaMouseWorld) controlled.aimAt(arenaMouseWorld.x, arenaMouseWorld.y);
+            if (moved) socket.emit('arenaUnitMove', { unitId: arenaControlledUnitId, x: controlled.x, y: controlled.y, facing: controlled.facing });
+        }
+        arenaRender(performance.now());
+    } catch (err) {
+        console.error('arenaFrame error:', err);
     }
-    arenaRender(performance.now());
     arenaLoopHandle = requestAnimationFrame(arenaFrame);
 }
 function startArenaLoop() {
