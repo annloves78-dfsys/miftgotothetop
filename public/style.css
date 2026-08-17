@@ -3674,6 +3674,20 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     display: flex;
     gap: 10px;
 }
+/* 대전(Arena) 전투 화면: 캔버스가 화면 전체를 채우고, HUD는 그 위에
+   떠 있는 오버레이 - .hp-container.top과 같은 자리에 놓는다. */
+#arena-canvas {
+    background: #14301d;
+    display: block;
+    cursor: crosshair;
+}
+.arena-hud-overlay {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+}
 .pvp-result-overlay {
     position: absolute;
     inset: 0;

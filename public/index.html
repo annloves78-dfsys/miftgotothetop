@@ -179,18 +179,15 @@
         <button id="back-from-arena-lobby-btn" class="secondary-btn">뒤로</button>
     </div>
 
+    <!-- 화면 전체를 캔버스로 쓴다 - 공격/스킬/궁극기 버튼 없이 보스 레이드와
+         같은 방식(좌클릭 공격/우클릭 스킬/F 궁극기)으로 조작한다. -->
     <div id="arena-fight-screen" class="screen hidden">
-        <div class="pvp-hud">
+        <div class="pvp-hud arena-hud-overlay">
             <div id="arena-hud-team-a" class="pvp-hud-side"></div>
             <div class="pvp-hud-vs">VS</div>
             <div id="arena-hud-team-b" class="pvp-hud-side"></div>
         </div>
         <canvas id="arena-canvas"></canvas>
-        <div class="pvp-controls">
-            <button id="arena-attack-btn" class="char-select-btn">⚔️ 공격</button>
-            <button id="arena-skill-btn" class="char-select-btn">✨ 스킬</button>
-            <button id="arena-ultimate-btn" class="char-select-btn">🌟 궁극기</button>
-        </div>
         <div id="arena-result-overlay" class="pvp-result-overlay hidden">
             <div id="arena-result-text" class="pvp-result-text"></div>
             <button id="arena-back-to-lobby-btn" class="secondary-btn">로비로</button>
@@ -373,10 +370,9 @@
         <h2>모드 선택</h2>
         <div class="mode-list">
             <div class="mode-list-left">
-                <div id="arena-mode-card" class="mode-card mode-card-small locked">
+                <div id="arena-mode-card" class="mode-card mode-card-small">
                     <div class="icon">🥊</div>
                     <div class="name">대전</div>
-                    <div class="sub">🔒 준비 중</div>
                 </div>
                 <div id="growth-category-mode-card" class="mode-card mode-card-small">
                     <div class="icon">🌱</div>
@@ -404,6 +400,24 @@
             </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 대전: 대전모드(매치메이킹) / 싸우기(친구 대결)를 묶은 카테고리 화면 -->
+    <div id="arena-category-screen" class="screen hidden">
+        <h2>대전</h2>
+        <div class="mode-list">
+            <div class="mode-list-right">
+                <div id="arena-mode-submenu-card" class="mode-card">
+                    <div class="icon">🥊</div>
+                    <div class="name">대전모드</div>
+                </div>
+                <div id="arena-friend-fight-card" class="mode-card">
+                    <div class="icon">⚔️</div>
+                    <div class="name">싸우기</div>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-arena-category-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- 성장: 성장 던전 / 각성모드를 묶은 카테고리 화면 -->

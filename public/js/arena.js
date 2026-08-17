@@ -10,6 +10,9 @@
 // through the page's single global scope.
 
 const arenaModeCard = document.getElementById('arena-mode-card');
+const arenaModeSubmenuCard = document.getElementById('arena-mode-submenu-card');
+const arenaFriendFightCard = document.getElementById('arena-friend-fight-card');
+const backFromArenaCategoryBtn = document.getElementById('back-from-arena-category-btn');
 const arenaBackFromLobbyBtn = document.getElementById('back-from-arena-lobby-btn');
 const arena1v1Card = document.getElementById('arena-1v1-card');
 const arena1v1BotCard = document.getElementById('arena-1v1bot-card');
@@ -17,18 +20,22 @@ const arena2v2BotCard = document.getElementById('arena-2v2bot-card');
 const arenaQueueStatusEl = document.getElementById('arena-queue-status');
 const arenaQueueCancelBtn = document.getElementById('arena-queue-cancel-btn');
 
-// 유누가 "대전은 아직 안 되게" 해달라고 해서 잠가 둔 상태 -- index.html의
-// arena-mode-card에도 .locked 클래스와 "준비 중" 표시가 붙어 있다. 나중에
-// 열 때는 이 플래그만 true로 바꾸면 된다 (서버/전투 로직은 이미 다 있음).
-const ARENA_MODE_ENABLED = false;
-arenaModeCard.addEventListener('click', () => {
-    if (!ARENA_MODE_ENABLED) return;
+// "대전" 카드는 카테고리 화면(대전모드 / 싸우기)으로 들어가는 입구다.
+// "싸우기"는 새로 만드는 게 아니라 기존 친구 목록의 "싸우기"(친구 대결
+// 도전장) 기능 그대로 -- 친구 화면의 목록 탭으로 바로 보내준다.
+arenaModeCard.addEventListener('click', () => showScreen('arenaCategory'));
+backFromArenaCategoryBtn.addEventListener('click', () => showScreen('modeSelect'));
+arenaModeSubmenuCard.addEventListener('click', () => {
     arenaSetQueueUi(false);
     showScreen('arenaLobby');
 });
+arenaFriendFightCard.addEventListener('click', () => {
+    openFriendsScreen();
+    showScreen('friends');
+});
 arenaBackFromLobbyBtn.addEventListener('click', () => {
     arenaLeaveQueueIfAny();
-    showScreen('modeSelect');
+    showScreen('arenaCategory');
 });
 
 function arenaJoinQueue(mode) {
@@ -180,8 +187,8 @@ function arenaUpdateLocal(me, keysDown) {
 const arenaCanvas = document.getElementById('arena-canvas');
 const arenaCtx = arenaCanvas.getContext('2d');
 function resizeArenaCanvas() {
-    arenaCanvas.width = Math.min(window.innerWidth - 32, 960);
-    arenaCanvas.height = Math.min(window.innerHeight - 260, 420);
+    arenaCanvas.width = window.innerWidth;
+    arenaCanvas.height = window.innerHeight;
 }
 window.addEventListener('resize', resizeArenaCanvas);
 
@@ -266,24 +273,38 @@ function stopArenaLoop() {
     arenaLoopHandle = null;
 }
 
-document.getElementById('arena-attack-btn').addEventListener('click', () => {
+// 화면 전체가 캔버스라 별도 버튼 없이 다른 전투 화면과 같은 조작으로 쓴다:
+// 좌클릭 공격, 우클릭 스킬, F 궁극기. 상대 타깃은 항상 가장 가까운
+// 적(arenaNearestEnemyId)이라 따로 조준할 필요가 없다.
+function arenaTryAttack() {
     const me = arenaPlayers[socket.id];
     if (!me || !arenaFighting || !me.canAttack(performance.now())) return;
     if (!clientConsumeAmmo(me.stats, me, performance.now())) return;
     me.triggerAttackEffect();
     socket.emit('arenaPlayerAttack');
-});
-document.getElementById('arena-skill-btn').addEventListener('click', () => {
+}
+function arenaTrySkill() {
     const me = arenaPlayers[socket.id];
     if (!me || !arenaFighting || !me.canUseSkill(performance.now())) return;
     me.triggerSkillEffect();
     const enemy = arenaPlayers[arenaNearestEnemyId()];
     socket.emit('arenaPlayerSkill', enemy ? { targetX: enemy.x, targetY: enemy.y } : {});
-});
-document.getElementById('arena-ultimate-btn').addEventListener('click', () => {
+}
+function arenaTryUltimate() {
     const me = arenaPlayers[socket.id];
     if (!me || !arenaFighting || !me.canUseUltimate(performance.now())) return;
     me.triggerUltimateEffect();
     const enemy = arenaPlayers[arenaNearestEnemyId()];
     socket.emit('arenaPlayerUltimate', enemy ? { targetX: enemy.x, targetY: enemy.y } : {});
+}
+
+arenaCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+arenaCanvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) arenaTryAttack();
+    else if (e.button === 2) arenaTrySkill();
+});
+window.addEventListener('keydown', (e) => {
+    if (e.key !== 'f' && e.key !== 'F') return;
+    if (screens.arenaFight.classList.contains('hidden')) return;
+    arenaTryUltimate();
 });
