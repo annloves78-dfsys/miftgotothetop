@@ -42,7 +42,7 @@ function arenaSetQueueUi(searching, text) {
     arenaQueueStatusEl.textContent = text || '';
     arenaQueueStatusEl.classList.toggle('hidden', !searching);
     arenaQueueCancelBtn.classList.toggle('hidden', !searching);
-    document.getElementById('arena-lineup-queue-btn').classList.toggle('hidden', searching);
+    arenaLineupModeButtons.forEach(btn => btn.classList.toggle('hidden', searching));
 }
 function arenaLeaveQueueIfAny() {
     socket.emit('arenaQueueLeave');
@@ -59,7 +59,10 @@ let arenaLineup = new Array(SHARED.ARENA_LINEUP_SIZE).fill(null); // {charType, 
 
 const arenaLineupSlotsEl = document.getElementById('arena-lineup-slots');
 const arenaLineupCountsEl = document.getElementById('arena-lineup-counts');
-const arenaLineupQueueBtn = document.getElementById('arena-lineup-queue-btn');
+const arenaLineup1v1Btn = document.getElementById('arena-lineup-1v1-btn');
+const arenaLineup1v1BotBtn = document.getElementById('arena-lineup-1v1bot-btn');
+const arenaLineup2v2BotBtn = document.getElementById('arena-lineup-2v2bot-btn');
+const arenaLineupModeButtons = [arenaLineup1v1Btn, arenaLineup1v1BotBtn, arenaLineup2v2BotBtn];
 
 function arenaLineupUnits() { return arenaLineup.filter(Boolean); }
 function arenaLineupCounts() {
@@ -135,26 +138,35 @@ function renderArenaLineup() {
         `광산 ${counts.mine}/${SHARED.ARENA_ROLE_MIN.mine}~${SHARED.ARENA_ROLE_MAX.mine} · `
         + `전방 ${counts.front}/${SHARED.ARENA_ROLE_MIN.front}~${SHARED.ARENA_ROLE_MAX.front} · `
         + `원거리 ${counts.ranged}/${SHARED.ARENA_ROLE_MIN.ranged}~${SHARED.ARENA_ROLE_MAX.ranged}`;
-    arenaLineupQueueBtn.disabled = !arenaLineupReady();
+    arenaLineupModeButtons.forEach(btn => { btn.disabled = !arenaLineupReady(); });
 }
 
-arenaLineupQueueBtn.addEventListener('click', () => {
+function arenaJoinQueue(mode) {
     if (!currentUser) { alert('로그인 후 이용할 수 있습니다.'); return; }
     if (!arenaLineupReady()) return;
-    arenaSetQueueUi(true, '상대를 찾는 중...');
+    arenaSetQueueUi(true, mode === '1v1bot' ? '매칭 중...' : '상대를 찾는 중...');
     socket.emit('arenaQueueJoin', {
+        mode,
         nickname: currentUser.nickname,
         units: arenaLineup.map(u => ({
             charType: u.charType, role: u.role,
             equip: equipPayload(u.charType), instinct: instinctPayload(u.charType), charLevel: charLevelPayload(u.charType)
         }))
     });
-});
+}
+arenaLineup1v1Btn.addEventListener('click', () => arenaJoinQueue('1v1'));
+arenaLineup1v1BotBtn.addEventListener('click', () => arenaJoinQueue('1v1bot'));
+arenaLineup2v2BotBtn.addEventListener('click', () => arenaJoinQueue('2v2bot'));
 
 // ==================== 전투 화면 ====================
-let arenaPlayerObjs = {}; // unitId -> Player (렌더/이펙트 전용, 광산 유닛은 없음)
-let arenaState = null;    // { players: {socketId: {nickname,team,ore,base,units:[...]}}, halfLen, laneHalfWidth }
+// side(A/B)가 실제 전투 단위다 -- 2:2에서는 사람 둘이 같은 side에 유닛을
+// 5개씩(총 10개) 넣고 기지·광석을 같이 쓴다. arenaMySide()로 "내가 어느
+// side인지"를 알아내고(members로 확정), 유닛 조작은 내가 직접 낸(내
+// socket.id로 시작하는 id) 유닛만 가능하다 -- 팀원 유닛은 로스터에 안 보임.
+let arenaPlayerObjs = {}; // unitId -> Player (렌더/이펙트 전용; 광산인 유닛은 없음)
+let arenaState = null;    // { sides: {A:{ore,base,units,isBot}, B:{...}}, halfLen, laneHalfWidth }
 let arenaMyId = null;
+let arenaMembers = { A: [], B: [] }; // 이 매치의 side별 소켓id 목록(고정, 매치 시작 때 한 번 옴)
 let arenaControlledUnitId = null; // 지금 내가 직접조종 중인 유닛 id (서버 sync로 매번 다시 확정)
 let arenaSelectedUnitId = null;   // 유닛 메뉴가 열려 있는 대상
 let arenaGroupMode = false;       // 공격가기용 그룹을 고르는 중인지
@@ -164,7 +176,12 @@ let arenaCountdownEndAt = 0;
 let arenaFighting = false;
 let arenaLoopHandle = null;
 
-function arenaMyPlayer() { return arenaState && arenaState.players[arenaMyId]; }
+function arenaMySide() { return arenaMembers.A.includes(arenaMyId) ? 'A' : 'B'; }
+function arenaMySideData() { return arenaState && arenaState.sides[arenaMySide()]; }
+function arenaEnemySideData() { return arenaState && arenaState.sides[arenaMySide() === 'A' ? 'B' : 'A']; }
+function arenaOwnsUnit(unitId) { return unitId.startsWith(arenaMyId + '_'); }
+// 로스터/조작은 내가 직접 낸 유닛만 -- 2:2 팀원이 낸 유닛은 여기 안 잡힌다.
+function arenaMyUnits() { const s = arenaMySideData(); return s ? s.units.filter(u => arenaOwnsUnit(u.id)) : []; }
 function arenaControlledPlayerObj() { return arenaControlledUnitId ? arenaPlayerObjs[arenaControlledUnitId] : null; }
 
 function arenaApplyUnitToPlayerObj(pl, u) {
@@ -172,24 +189,34 @@ function arenaApplyUnitToPlayerObj(pl, u) {
     pl.hp = u.hp; pl.maxHp = u.maxHp; pl.alive = u.alive; pl.shieldHp = u.shieldHp || 0;
 }
 
-socket.on('arenaMatchFound', (data) => {
-    arenaState = { players: data.players, halfLen: data.halfLen, laneHalfWidth: data.laneHalfWidth };
-    arenaMyId = socket.id;
-    const myTeam = data.players[socket.id] ? data.players[socket.id].team : 'A';
-    arenaPlayerObjs = {};
-    Object.entries(data.players).forEach(([pid, player]) => {
-        player.units.forEach(u => {
-            if (u.role === 'mine') return; // 광산 유닛은 세계 좌표가 없어 그릴 게 없다
-            const pl = new Player(u.id, u.charType, u.x, u.y, player.team === myTeam);
-            arenaApplyUnitToPlayerObj(pl, u);
-            if (pid === arenaMyId) {
-                const b = equipBonusOf(u.charType);
-                pl.equipSpeed = b.speed;
-                pl.equipCooldown = b.cooldown;
+// 유닛 역할이 게임 중 바뀔 수 있어(광산<->전투) Player 렌더 객체를 그때
+// 그때 만들거나 지운다 -- 광산으로 바뀌면 좌표가 없어 그릴 게 없으므로
+// 지우고, 전투 역할로 막 바뀐 유닛은 처음 보는 것이니 새로 만든다.
+function arenaSyncPlayerObjs(sides) {
+    ['A', 'B'].forEach(side => {
+        sides[side].units.forEach(u => {
+            if (u.role === 'mine') { delete arenaPlayerObjs[u.id]; return; }
+            let pl = arenaPlayerObjs[u.id];
+            if (!pl) {
+                pl = new Player(u.id, u.charType, u.x, u.y, side === arenaMySide());
+                if (arenaOwnsUnit(u.id)) {
+                    const b = equipBonusOf(u.charType);
+                    pl.equipSpeed = b.speed;
+                    pl.equipCooldown = b.cooldown;
+                }
+                arenaPlayerObjs[u.id] = pl;
             }
-            arenaPlayerObjs[u.id] = pl;
+            arenaApplyUnitToPlayerObj(pl, u);
         });
     });
+}
+
+socket.on('arenaMatchFound', (data) => {
+    arenaMyId = socket.id;
+    arenaMembers = data.members;
+    arenaState = { sides: data.sides, halfLen: data.halfLen, laneHalfWidth: data.laneHalfWidth };
+    arenaPlayerObjs = {};
+    arenaSyncPlayerObjs(data.sides);
     arenaControlledUnitId = null;
     arenaSelectedUnitId = null;
     arenaGroupMode = false;
@@ -210,24 +237,16 @@ socket.on('arenaFightStart', () => { arenaFighting = true; });
 
 // 대부분의 유닛이 서버 AI로 움직이므로, 매 틱 서버가 보내주는 전체 상태를
 // 그대로 반영한다(개별 이동 이벤트를 따로 두지 않음).
-socket.on('arenaStateSync', ({ players }) => {
+socket.on('arenaStateSync', ({ sides }) => {
     if (!arenaState) return;
-    arenaState.players = players;
-    Object.values(players).forEach(player => {
-        player.units.forEach(u => {
-            if (u.role === 'mine') return;
-            const pl = arenaPlayerObjs[u.id];
-            if (pl) arenaApplyUnitToPlayerObj(pl, u);
-        });
+    arenaState.sides = sides;
+    arenaSyncPlayerObjs(sides);
+    const myUnits = arenaMyUnits();
+    const ctrl = myUnits.find(u => u.order === 'controlled');
+    arenaControlledUnitId = ctrl ? ctrl.id : null;
+    Array.from(arenaGroupIds).forEach(id => {
+        if (!myUnits.some(u => u.id === id && u.alive)) arenaGroupIds.delete(id);
     });
-    const me = players[arenaMyId];
-    if (me) {
-        const ctrl = me.units.find(u => u.order === 'controlled');
-        arenaControlledUnitId = ctrl ? ctrl.id : null;
-        Array.from(arenaGroupIds).forEach(id => {
-            if (!me.units.some(u => u.id === id && u.alive)) arenaGroupIds.delete(id);
-        });
-    }
     arenaUpdateRoster();
 });
 
@@ -236,15 +255,13 @@ socket.on('arenaUnitDamaged', ({ id, hp, alive, shieldHp }) => {
     if (pl) { pl.hp = hp; pl.alive = alive; pl.shieldHp = shieldHp || 0; }
 });
 socket.on('arenaBaseDamaged', ({ team, hp }) => {
-    if (!arenaState) return;
-    const player = Object.values(arenaState.players).find(p => p.team === team);
-    if (player) player.base.hp = hp;
+    if (!arenaState || !arenaState.sides[team]) return;
+    arenaState.sides[team].base.hp = hp;
 });
-socket.on('arenaUnitRevived', ({ id, hp, ore }) => {
+socket.on('arenaUnitRevived', ({ id, hp, ore, side }) => {
     const pl = arenaPlayerObjs[id];
     if (pl) { pl.hp = hp; pl.alive = true; }
-    const me = arenaMyPlayer();
-    if (me && me.units.some(u => u.id === id)) me.ore = ore;
+    if (arenaState && arenaState.sides[side]) arenaState.sides[side].ore = ore;
 });
 // playerHealed/playerShielded/playerSkillUsed/playerUltimateUsed는 다른
 // 모드들과 이름을 공유한다 -- arenaPlayerObjs에 없는 id는 그냥 무시되니
@@ -270,10 +287,9 @@ socket.on('playerUltimateUsed', ({ id }) => {
 socket.on('arenaResult', ({ winningTeam }) => {
     arenaFighting = false;
     stopArenaLoop();
-    const me = arenaMyPlayer();
     const overlay = document.getElementById('arena-result-overlay');
     const text = document.getElementById('arena-result-text');
-    text.textContent = !winningTeam ? '무승부' : (me && winningTeam === me.team ? '승리!' : '패배...');
+    text.textContent = !winningTeam ? '무승부' : (winningTeam === arenaMySide() ? '승리!' : '패배...');
     overlay.classList.remove('hidden');
 });
 
@@ -319,12 +335,12 @@ arenaCanvas.addEventListener('mousemove', (e) => {
 });
 
 function arenaUpdateHud() {
-    const me = arenaMyPlayer();
-    if (!me) return;
-    const enemy = Object.values(arenaState.players).find(p => p.team !== me.team);
+    const me = arenaMySideData();
+    const enemy = arenaEnemySideData();
+    if (!me || !enemy) return;
     document.getElementById('arena-my-base-fill').style.width = `${Math.max(0, me.base.hp / me.base.maxHp * 100)}%`;
     document.getElementById('arena-my-ore').textContent = me.ore;
-    if (enemy) document.getElementById('arena-enemy-base-fill').style.width = `${Math.max(0, enemy.base.hp / enemy.base.maxHp * 100)}%`;
+    document.getElementById('arena-enemy-base-fill').style.width = `${Math.max(0, enemy.base.hp / enemy.base.maxHp * 100)}%`;
 }
 
 function arenaRender(now) {
@@ -332,7 +348,7 @@ function arenaRender(now) {
     arenaCtx.fillStyle = '#14301d';
     arenaCtx.fillRect(0, 0, w, h);
     if (!arenaState) return;
-    const me = arenaMyPlayer();
+    const mySide = arenaMySide();
     arenaCtx.save();
     arenaCtx.translate(arenaOffsetX, arenaOffsetY);
     arenaCtx.scale(arenaScale, arenaScale);
@@ -344,9 +360,9 @@ function arenaRender(now) {
     arenaCtx.lineWidth = 4;
     arenaCtx.strokeRect(-arenaState.halfLen, -arenaState.laneHalfWidth, arenaState.halfLen * 2, arenaState.laneHalfWidth * 2);
 
-    Object.values(arenaState.players).forEach(player => {
-        const pos = arenaBasePosOf(player.team);
-        const mine = me && player.team === me.team;
+    ['A', 'B'].forEach(side => {
+        const pos = arenaBasePosOf(side);
+        const mine = side === mySide;
         arenaCtx.beginPath();
         arenaCtx.arc(pos.x, pos.y, SHARED.ARENA_BASE_RADIUS, 0, Math.PI * 2);
         arenaCtx.fillStyle = mine ? 'rgba(241,196,15,0.3)' : 'rgba(231,76,60,0.3)';
@@ -431,11 +447,24 @@ function arenaTryControlledUltimate() {
     socket.emit('arenaUnitUltimate', { unitId: arenaControlledUnitId, targetX: t.x, targetY: t.y });
 }
 
+// 직접조종 중인 유닛이 없을 때 좌클릭으로 내 유닛을 화면(캔버스)에서
+// 직접 찍어도 로스터에서 누른 것과 같은 메뉴가 뜬다 -- "캐릭터를 눌러서
+// 공격 같은 걸 하게" 해달라는 요청. 직접조종 중일 땐 좌클릭은 그대로
+// 공격이라 겹치지 않게, 조종 중이 아닐 때만 선택용으로 쓴다.
+function arenaFindMyUnitAt(wx, wy) {
+    return arenaMyUnits().find(u => u.alive && u.role !== 'mine' && Math.hypot(u.x - wx, u.y - wy) <= SHARED.PLAYER_RADIUS + 6);
+}
+
 arenaCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 arenaCanvas.addEventListener('mousedown', (e) => {
-    if (!arenaControlledUnitId) return;
-    if (e.button === 0) arenaTryControlledAttack();
-    else if (e.button === 2) arenaTryControlledSkill();
+    if (arenaControlledUnitId) {
+        if (e.button === 0) arenaTryControlledAttack();
+        else if (e.button === 2) arenaTryControlledSkill();
+        return;
+    }
+    if (e.button !== 0 || !arenaMouseWorld || !arenaFighting) return;
+    const hit = arenaFindMyUnitAt(arenaMouseWorld.x, arenaMouseWorld.y);
+    if (hit) arenaOnRosterTileClick(hit);
 });
 window.addEventListener('keydown', (e) => {
     if (e.key !== 'f' && e.key !== 'F') return;
@@ -453,11 +482,10 @@ function arenaUnitStatusLabel(u) {
 }
 
 function arenaUpdateRoster() {
-    const me = arenaMyPlayer();
     const panel = document.getElementById('arena-roster-panel');
-    if (!me) { panel.innerHTML = ''; return; }
+    if (!arenaState) { panel.innerHTML = ''; return; }
     panel.innerHTML = '';
-    me.units.forEach(u => {
+    arenaMyUnits().forEach(u => {
         const stats = SHARED.CHARACTERS[u.charType];
         const tile = document.createElement('div');
         tile.className = 'arena-roster-tile'
@@ -477,24 +505,44 @@ function arenaUpdateRoster() {
 }
 
 function arenaTryRevive(unitId) {
-    const me = arenaMyPlayer();
-    const u = me && me.units.find(x => x.id === unitId);
+    const side = arenaMySideData();
+    const u = side && side.units.find(x => x.id === unitId);
     if (!u) return;
     const cost = SHARED.ARENA_REVIVE_COST[SHARED.CHARACTERS[u.charType].grade] || SHARED.ARENA_REVIVE_COST['일반'];
-    if (me.ore < cost) return; // 서버가 다시 검사하니 조용히 무시해도 안전
+    if (side.ore < cost) return; // 서버가 다시 검사하니 조용히 무시해도 안전
     socket.emit('arenaReviveUnit', { unitId });
 }
 
+// 살아있는 내 유닛이면(광산/전방/원거리 무엇이든) 클릭 시 메뉴를 연다 --
+// 역할을 게임 중에 바꿀 수 있어서 더는 "전방만 상호작용"으로 막지 않는다.
 function arenaOnRosterTileClick(u) {
     if (!u.alive) { arenaTryRevive(u.id); return; }
-    if (u.role !== 'front') return; // 광산/원거리는 상호작용 없음(항상 자동)
     if (arenaGroupMode) {
+        if (u.role !== 'front') return; // 공격가기 그룹은 전방 유닛만
         if (arenaGroupIds.has(u.id)) arenaGroupIds.delete(u.id);
         else arenaGroupIds.add(u.id);
         arenaUpdateRoster();
         return;
     }
+    arenaOpenUnitMenu(u);
+}
+
+function arenaOpenUnitMenu(u) {
     arenaSelectedUnitId = u.id;
+    const rolesEl = document.getElementById('arena-unit-menu-roles');
+    rolesEl.innerHTML = '';
+    SHARED.ARENA_UNIT_ROLES.forEach(role => {
+        const btn = document.createElement('button');
+        btn.className = 'arena-role-btn' + (u.role === role ? ' selected' : '');
+        btn.textContent = ARENA_ROLE_LABEL[role];
+        btn.addEventListener('click', () => {
+            socket.emit('arenaSetUnitRole', { unitId: u.id, role });
+            document.getElementById('arena-unit-menu').classList.add('hidden');
+            arenaSelectedUnitId = null;
+        });
+        rolesEl.appendChild(btn);
+    });
+    document.getElementById('arena-unit-attackmove-btn').classList.toggle('hidden', u.role !== 'front');
     document.getElementById('arena-unit-menu').classList.remove('hidden');
 }
 

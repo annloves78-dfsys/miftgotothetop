@@ -5590,39 +5590,51 @@ function endPvpRoom(roomId, winnerId) {
 }
 
 // ==================== 대전(Arena) 모드: 기지전 ====================
-// 친구 대결(위 pvp 블록)과는 완전히 무관한 별도 모드. 1:1 실시간이고,
-// 각자 캐릭터 5명을 광산(1~2)/전방(1~3)/원거리(1~2)로 나눠 배치한 뒤
-// 상대 기지 체력을 0으로 만들면 이긴다. 이전 세션의 "팀당 1기체, 전멸
-// 승리" 구조는 전부 갈아엎고 이 파일에서 완전히 새로 쓴다.
+// 친구 대결(위 pvp 블록)과는 완전히 무관한 별도 모드. 캐릭터 5명을
+// 광산(1~2)/전방(1~3)/원거리(1~2)로 나눠 배치한 뒤 상대 기지 체력을
+// 0으로 만들면 이긴다. 1:1 / 1:1 vs 컴퓨터 / 2:2(사람 둘이 기지·광석을
+// 같이 쓴다) vs 컴퓨터 세 편성을 지원한다.
 //
-// room.players[socketId] = { nickname, team, ore, base:{hp,maxHp}, units:[...] }
-// units는 정확히 5개, 각 유닛은 { id, role, order, x, y, ... }를 가진
-// "그 플레이어가 배치한 캐릭터 하나"다. 광산(role:'mine') 유닛은 전투에
-// 관여하지 않아 좌표가 없다(공격도 안 받고 죽지도 않는다). 유닛 id는
-// `${socketId}_uN` 형태라 어느 플레이어 소유인지 파싱 없이도 room.players
-// 전체를 뒤져 찾을 수 있다(arenaFindUnit).
+// room.sides.A / room.sides.B = { ore, base:{hp,maxHp}, units:[...], isBot,
+// memberIds:[socketId,...] }가 실제 전투 상태다. 2:2에서는 한 side에
+// 사람 둘이 각자 5명씩(총 10명) 들어와 기지 하나·광석 하나를 같이 쓴다.
+// room.players[socketId] = {nickname, side}는 "이 소켓이 어느 side
+// 소속인지"만 담는 라우팅용 얕은 테이블. 유닛 id는 `${socketId}_uN`
+// (봇은 `bot_${side}_uN`) 형태라 소유자를 파싱 없이도 알 수 있다
+// (arenaOwnedUnit) -- 2:2에서 팀원의 유닛을 건드리지 못하게 막는 근거.
 const ARENA_COUNTDOWN_MS = 3000;
 const ARENA_BASE_HP = 5000; // 임시값 -- 유누가 나중에 조정
 const ARENA_LEASH_RANGE = 260; // 지키기(guard) 유닛이 자기 홈에서 얼마나 멀리까지 쫓아갈지
+const ARENA_BOT_CHAR_POOL = Object.keys(CHARACTERS);
 
-function findOpenArenaRoom() {
+function arenaQueueProgress(room) {
+    // 2v2bot은 실제 사람이 전부 side A에 모인다(side B는 봇 전용).
+    if (room.mode === '2v2bot') return { current: room.sides.A.memberIds.length, needed: 2 };
+    return { current: room.sides.A.memberIds.length + room.sides.B.memberIds.length, needed: 2 };
+}
+
+function findOpenArenaRoom(mode) {
     for (const [roomId, room] of Object.entries(rooms)) {
-        if (room.kind === 'arena' && room.state === 'waiting' && Object.keys(room.players).length < 2) {
-            return roomId;
-        }
+        if (room.kind !== 'arena' || room.mode !== mode || room.state !== 'waiting') continue;
+        const { current, needed } = arenaQueueProgress(room);
+        if (current < needed) return roomId;
     }
     return null;
 }
 
-function createArenaRoom() {
+function createArenaRoom(mode) {
     const roomId = `arena_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     // 배경은 친구 대결과 동일하게 스토리 10층 다리 치수를 그대로 빌려 쓴다.
     const floorDef = floorDefFor(10) || { levelLength: 1100, laneHalfWidth: 220 };
     const halfLen = (floorDef.levelLength || 1100) / 2;
     const laneHalfWidth = floorDef.laneHalfWidth || 220;
     rooms[roomId] = {
-        kind: 'arena', state: 'waiting',
-        players: {}, halfLen, laneHalfWidth, activeBuffs: [], loopHandle: null
+        kind: 'arena', mode, state: 'waiting',
+        sides: {
+            A: { ore: 0, base: null, units: [], isBot: false, memberIds: [] },
+            B: { ore: 0, base: null, units: [], isBot: false, memberIds: [] }
+        },
+        players: {}, halfLen, laneHalfWidth, activeBuffs: [], botNextPushAt: {}, loopHandle: null
     };
     return roomId;
 }
@@ -5674,46 +5686,80 @@ function mkArenaUnit(id, entry, load, team, role, pos) {
 }
 
 // entryData.units: [{charType, role, equip, instinct, charLevel}] x5, 이미
-// arenaLineupValid로 검증됨.
-function addArenaLineup(room, socket, entryData, team) {
-    const roleCounters = { mine: 0, front: 0, ranged: 0 };
-    const roleTotals = { mine: 0, front: 0, ranged: 0 };
-    entryData.units.forEach(u => roleTotals[u.role]++);
-    const units = entryData.units.map((u, i) => {
+// arenaLineupValid로 검증됨. 2:2에서는 이 함수가 같은 side에 두 번
+// 불려서(사람 둘) side.units가 10개가 된다 -- 이미 있는 유닛 수만큼
+// 인덱스를 밀어서 자리가 겹치지 않게 한다.
+function addArenaLineup(room, socket, entryData, side) {
+    const sideData = room.sides[side];
+    if (!sideData.base) sideData.base = { hp: ARENA_BASE_HP, maxHp: ARENA_BASE_HP };
+    const existingByRole = { mine: 0, front: 0, ranged: 0 };
+    sideData.units.forEach(u => existingByRole[u.role]++);
+    const addedByRole = { mine: 0, front: 0, ranged: 0 };
+    entryData.units.forEach(u => addedByRole[u.role]++);
+    const placed = { mine: 0, front: 0, ranged: 0 };
+    entryData.units.forEach((u, i) => {
         const load = arenaLoadout(u);
-        const idx = roleCounters[u.role]++;
+        const idx = existingByRole[u.role] + placed[u.role]++;
+        const total = existingByRole[u.role] + addedByRole[u.role];
         const pos = u.role === 'mine'
             ? { x: null, y: null, facing: 0 }
-            : arenaHomeFor(room, team, u.role, idx, roleTotals[u.role]);
-        return mkArenaUnit(`${socket.id}_u${i}`, u, load, team, u.role, pos);
+            : arenaHomeFor(room, side, u.role, idx, total);
+        sideData.units.push(mkArenaUnit(`${socket.id}_u${i}`, u, load, side, u.role, pos));
     });
-    room.players[socket.id] = {
-        nickname: entryData.nickname, team, ore: 0,
-        base: { hp: ARENA_BASE_HP, maxHp: ARENA_BASE_HP },
-        units
-    };
+    sideData.memberIds.push(socket.id);
+    room.players[socket.id] = { nickname: entryData.nickname, side };
+}
+
+// 소켓이 지금 조종/명령할 수 있는 자기 유닛만 찾는다 -- 2:2에서 팀원의
+// 유닛을 못 건드리게 막는 근거(id가 `${socket.id}_u`로 시작하는지 확인).
+function arenaOwnedUnit(room, socket, unitId) {
+    const playerEntry = room.players[socket.id];
+    if (!playerEntry) return null;
+    const sideData = room.sides[playerEntry.side];
+    const unit = sideData.units.find(u => u.id === unitId && u.id.startsWith(socket.id + '_'));
+    return unit ? { unit, sideData, side: playerEntry.side } : null;
 }
 
 function arenaFindUnit(room, unitId) {
-    for (const player of Object.values(room.players)) {
-        const unit = player.units.find(u => u.id === unitId);
-        if (unit) return { unit, player };
+    for (const side of ['A', 'B']) {
+        const unit = room.sides[side].units.find(u => u.id === unitId);
+        if (unit) return { unit, side, sideData: room.sides[side] };
     }
     return null;
 }
 
 // 광산 유닛은 좌표가 없어 전투 대상이 될 수 없다 -- role !== 'mine'만 본다.
 function arenaNearestEnemyUnit(room, myTeam, x, y) {
+    const enemySide = room.sides[myTeam === 'A' ? 'B' : 'A'];
     let best = null, bestDist = Infinity;
-    for (const player of Object.values(room.players)) {
-        if (player.team === myTeam) continue;
-        for (const u of player.units) {
-            if (!u.alive || u.role === 'mine') continue;
-            const d = Math.hypot(u.x - x, u.y - y);
-            if (d < bestDist) { bestDist = d; best = u; }
-        }
+    for (const u of enemySide.units) {
+        if (!u.alive || u.role === 'mine') continue;
+        const d = Math.hypot(u.x - x, u.y - y);
+        if (d < bestDist) { bestDist = d; best = u; }
     }
     return best;
+}
+
+// 유닛 역할을 게임 도중에 바꾼다(예: 광산 캐릭터를 전방으로 빼거나, 그
+// 반대). 광산으로 바꾸면 좌표를 지워 전투 판정에서 완전히 빠지고, 전투
+// 역할로 바꾸면 그 role 자리 수만큼 홈 포지션을 다시 계산한다 -- 광산에서
+// 막 빠져나온 경우(원래 좌표가 없던 경우)에만 그 홈으로 순간이동하고,
+// 전방<->원거리 전환은 지금 서 있는 자리를 유지한 채 "돌아갈 자리"만
+// 바꿔서 자연스럽게 걸어가게 한다.
+function arenaAssignCombatRole(room, sideData, unit, newRole) {
+    if (unit.role === newRole) return;
+    unit.role = newRole;
+    if (newRole === 'mine') {
+        unit.x = null; unit.y = null; unit.homeX = null; unit.homeY = null;
+        unit.order = 'guard';
+        unit.lastMineTickAt = Date.now();
+        return;
+    }
+    const count = sideData.units.filter(u => u.role === newRole && u.id !== unit.id).length;
+    const home = arenaHomeFor(room, unit.team, newRole, count, count + 1);
+    unit.homeX = home.x; unit.homeY = home.y;
+    if (unit.x == null) { unit.x = home.x; unit.y = home.y; unit.facing = home.facing; }
+    unit.order = 'guard';
 }
 
 function arenaUnitAttackRange(character) {
@@ -5828,17 +5874,67 @@ function tickArenaUnitAI(room, roomId, u, now) {
 }
 
 function tickArenaMining(room, now) {
-    for (const player of Object.values(room.players)) {
-        for (const u of player.units) {
-            if (u.role !== 'mine' || !u.alive) continue;
+    ['A', 'B'].forEach(side => {
+        const sideData = room.sides[side];
+        sideData.units.forEach(u => {
+            if (u.role !== 'mine' || !u.alive) return;
             const interval = ARENA_MINE_INTERVAL_MS[u.character.grade] || ARENA_MINE_INTERVAL_MS['일반'];
             if (!u.lastMineTickAt) u.lastMineTickAt = now;
             if (now - u.lastMineTickAt >= interval) {
                 u.lastMineTickAt += interval;
-                player.ore += 1;
+                sideData.ore += 1;
             }
-        }
+        });
+    });
+}
+
+// 봇 쪽 side를 채운다. 사람이 5명씩 넣는 것과 같은 모양으로, 5명짜리
+// 유효 배치(광산1/전방3/원거리1)를 count/5번 반복해 만든다 -- 1v1bot은
+// 5명, 2v2bot은(사람 둘 몫) 10명.
+function randomArenaBotUnits() {
+    const roles = ['mine', 'front', 'front', 'front', 'ranged'];
+    return roles.map(role => ({
+        charType: ARENA_BOT_CHAR_POOL[Math.floor(Math.random() * ARENA_BOT_CHAR_POOL.length)],
+        role, equip: null, instinct: 0, charLevel: null
+    }));
+}
+function fillArenaBotSide(room, side, count) {
+    const sideData = room.sides[side];
+    sideData.isBot = true;
+    if (!sideData.base) sideData.base = { hp: ARENA_BASE_HP, maxHp: ARENA_BASE_HP };
+    const units = [];
+    for (let n = 0; n < count; n += 5) units.push(...randomArenaBotUnits());
+    const existingByRole = { mine: 0, front: 0, ranged: 0 };
+    sideData.units.forEach(u => existingByRole[u.role]++);
+    const addedByRole = { mine: 0, front: 0, ranged: 0 };
+    units.forEach(u => addedByRole[u.role]++);
+    const placed = { mine: 0, front: 0, ranged: 0 };
+    units.forEach((u, i) => {
+        const load = arenaLoadout(u);
+        const idx = existingByRole[u.role] + placed[u.role]++;
+        const total = existingByRole[u.role] + addedByRole[u.role];
+        const pos = u.role === 'mine' ? { x: null, y: null, facing: 0 } : arenaHomeFor(room, side, u.role, idx, total);
+        sideData.units.push(mkArenaUnit(`bot_${side}_u${i}`, u, load, side, u.role, pos));
+    });
+}
+
+// 유닛 하나하나의 행동(guard/ranged/attackMove)은 사람 유닛과 완전히
+// 같은 함수(tickArenaUnitAI)를 그대로 쓴다 -- 여기서는 "언제 밀어붙일지
+// (공격가기)"와 "언제 부활시킬지"만 봇 쪽에서 판단해 준다.
+function tickArenaBotSide(room, roomId, side, now) {
+    const sideData = room.sides[side];
+    if (!room.botNextPushAt[side] || now >= room.botNextPushAt[side]) {
+        sideData.units.forEach(u => { if (u.alive && u.role === 'front' && u.order === 'guard') u.order = 'attackMove'; });
+        room.botNextPushAt[side] = now + 15000 + Math.random() * 10000;
     }
+    sideData.units.forEach(u => {
+        if (u.alive) return;
+        const cost = ARENA_REVIVE_COST[u.character.grade] || ARENA_REVIVE_COST['일반'];
+        if (sideData.ore < cost) return;
+        sideData.ore -= cost;
+        u.alive = true; u.hp = u.maxHp;
+        if (u.role !== 'mine') { u.x = u.homeX; u.y = u.homeY; u.order = 'guard'; }
+    });
 }
 
 // applyPvpAbility와 같은 해석 규칙(캐릭터 정의의 skillDamage/skillHealAmount류
@@ -5947,25 +6043,26 @@ function applyDamageToArenaUnit(roomId, targetUnitId, dmg) {
 function damageArenaBase(roomId, team, dmg) {
     const room = rooms[roomId];
     if (!room || room.state !== 'fighting') return;
-    const player = Object.values(room.players).find(pl => pl.team === team);
-    if (!player) return;
-    player.base.hp = Math.max(0, player.base.hp - Math.round(dmg));
-    io.to(roomId).emit('arenaBaseDamaged', { team, hp: player.base.hp });
-    if (player.base.hp <= 0) endArenaRoom(roomId, team === 'A' ? 'B' : 'A');
+    const sideData = room.sides[team];
+    if (!sideData || !sideData.base) return;
+    sideData.base.hp = Math.max(0, sideData.base.hp - Math.round(dmg));
+    io.to(roomId).emit('arenaBaseDamaged', { team, hp: sideData.base.hp });
+    if (sideData.base.hp <= 0) endArenaRoom(roomId, team === 'A' ? 'B' : 'A');
 }
 
 function publicArenaState(room) {
     const out = {};
-    for (const [id, player] of Object.entries(room.players)) {
-        out[id] = {
-            nickname: player.nickname, team: player.team, ore: player.ore, base: player.base,
-            units: player.units.map(u => ({
+    ['A', 'B'].forEach(side => {
+        const sideData = room.sides[side];
+        out[side] = {
+            ore: sideData.ore, base: sideData.base, isBot: sideData.isBot,
+            units: sideData.units.map(u => ({
                 id: u.id, charType: u.charType, role: u.role, team: u.team,
                 x: u.x, y: u.y, facing: u.facing, hp: u.hp, maxHp: u.maxHp,
                 alive: u.alive, order: u.order, shieldHp: u.shieldHp || 0
             }))
         };
-    }
+    });
     return out;
 }
 
@@ -5974,15 +6071,16 @@ function startArenaFight(roomId) {
     if (!room) return;
     room.state = 'countdown';
     io.to(roomId).emit('arenaMatchFound', {
-        roomId, startAt: Date.now() + ARENA_COUNTDOWN_MS,
-        players: publicArenaState(room), halfLen: room.halfLen, laneHalfWidth: room.laneHalfWidth
+        roomId, mode: room.mode, startAt: Date.now() + ARENA_COUNTDOWN_MS,
+        members: { A: room.sides.A.memberIds.slice(), B: room.sides.B.memberIds.slice() },
+        sides: publicArenaState(room), halfLen: room.halfLen, laneHalfWidth: room.laneHalfWidth
     });
     setTimeout(() => {
         const r = rooms[roomId];
         if (!r || r.state !== 'countdown') return;
         r.state = 'fighting';
         const now = Date.now();
-        Object.values(r.players).forEach(pl => pl.units.forEach(u => { if (u.role === 'mine') u.lastMineTickAt = now; }));
+        ['A', 'B'].forEach(side => r.sides[side].units.forEach(u => { if (u.role === 'mine') u.lastMineTickAt = now; }));
         io.to(roomId).emit('arenaFightStart');
         r.loopHandle = setInterval(() => tickArenaRoom(roomId), 50);
     }, ARENA_COUNTDOWN_MS);
@@ -5993,9 +6091,10 @@ function tickArenaRoom(roomId) {
     if (!room || room.state !== 'fighting') return;
     const now = Date.now();
     tickArenaMining(room, now);
-    for (const player of Object.values(room.players)) {
-        for (const u of player.units) tickArenaUnitAI(room, roomId, u, now);
-    }
+    ['A', 'B'].forEach(side => {
+        room.sides[side].units.forEach(u => tickArenaUnitAI(room, roomId, u, now));
+        if (room.sides[side].isBot) tickArenaBotSide(room, roomId, side, now);
+    });
     if (room.activeBuffs && room.activeBuffs.length) {
         room.activeBuffs = room.activeBuffs.filter(b => now < b.endAt);
         for (const buff of room.activeBuffs) {
@@ -6017,8 +6116,8 @@ function tickArenaRoom(roomId) {
     }
     // 대부분의 유닛이 서버 AI로 움직이므로(직접조종 유닛만 예외), 매 틱
     // 전체 상태를 그대로 보내는 게 개별 이동 이벤트를 일일이 챙기는 것보다
-    // 훨씬 단순하고 덜 버그난다 -- 5v5라 페이로드도 작다.
-    io.to(roomId).emit('arenaStateSync', { players: publicArenaState(room) });
+    // 훨씬 단순하고 덜 버그난다 -- 10v10이라도 페이로드는 여전히 작다.
+    io.to(roomId).emit('arenaStateSync', { sides: publicArenaState(room) });
 }
 
 function endArenaRoom(roomId, winningTeam) {
@@ -6135,10 +6234,12 @@ io.on('connection', (socket) => {
         applyPvpAbility(roomId, room, socket.id, 'ultimate', now, payload);
     });
 
-    // ---- 대전(Arena) 모드: 기지전, 친구 대결과 무관한 1:1 매치메이킹 ----
-    // 캐릭터 5명(units)을 광산/전방/원거리로 나눠 보내면 대기열에 들어가고,
-    // 두 번째 사람이 차면 바로 시작한다.
-    socket.on('arenaQueueJoin', ({ nickname, units }) => {
+    // ---- 대전(Arena) 모드: 기지전, 친구 대결과 무관한 매치메이킹 ----
+    // 캐릭터 5명(units)을 광산/전방/원거리로 나눠 보내면 mode에 따라
+    // 대기열(1v1/2v2bot) 또는 즉시 시작(1v1bot)한다. 2v2bot은 side A에
+    // 사람이 둘 찰 때까지 대기하다가 봇 side B(10명)를 채운다.
+    socket.on('arenaQueueJoin', ({ mode, nickname, units }) => {
+        if (!['1v1', '1v1bot', '2v2bot'].includes(mode)) return;
         if (socket.data.roomId) return; // 이미 대기열/전투 중
         if (!arenaLineupValid(units)) return;
         const entryData = {
@@ -6149,44 +6250,78 @@ io.on('connection', (socket) => {
             }))
         };
 
-        let roomId = findOpenArenaRoom();
-        if (!roomId) roomId = createArenaRoom();
+        if (mode === '1v1bot') {
+            const roomId = createArenaRoom(mode);
+            const room = rooms[roomId];
+            addArenaLineup(room, socket, entryData, 'A');
+            fillArenaBotSide(room, 'B', 5);
+            socket.join(roomId);
+            socket.data.roomId = roomId;
+            startArenaFight(roomId);
+            return;
+        }
+
+        let roomId = findOpenArenaRoom(mode);
+        if (!roomId) roomId = createArenaRoom(mode);
         const room = rooms[roomId];
-        const team = Object.keys(room.players).length === 0 ? 'A' : 'B';
-        addArenaLineup(room, socket, entryData, team);
+        const side = mode === '2v2bot' ? 'A' : (room.sides.A.memberIds.length === 0 ? 'A' : 'B');
+        addArenaLineup(room, socket, entryData, side);
         socket.join(roomId);
         socket.data.roomId = roomId;
-        io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed: 2 });
-        if (Object.keys(room.players).length >= 2) startArenaFight(roomId);
+        const progress = arenaQueueProgress(room);
+        io.to(roomId).emit('arenaQueueUpdate', progress);
+        if (progress.current >= progress.needed) {
+            if (mode === '2v2bot') fillArenaBotSide(room, 'B', 10);
+            startArenaFight(roomId);
+        }
     });
 
     socket.on('arenaQueueLeave', () => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'waiting') return;
-        delete room.players[socket.id];
+        const playerEntry = room.players[socket.id];
+        if (playerEntry) {
+            const sideData = room.sides[playerEntry.side];
+            sideData.units = sideData.units.filter(u => !u.id.startsWith(socket.id + '_'));
+            sideData.memberIds = sideData.memberIds.filter(id => id !== socket.id);
+            delete room.players[socket.id];
+        }
         socket.leave(roomId);
         socket.data.roomId = null;
-        if (Object.keys(room.players).length === 0) delete rooms[roomId];
-        else io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed: 2 });
+        if (room.sides.A.memberIds.length + room.sides.B.memberIds.length === 0) { delete rooms[roomId]; return; }
+        io.to(roomId).emit('arenaQueueUpdate', arenaQueueProgress(room));
     });
 
-    // 전방 유닛 하나를 "직접조종"으로 지정(기존 직접조종 유닛은 자동으로
-    // "지키기"로 풀림)하거나, 다시 지키기로 되돌린다.
+    // 유닛 하나를 "직접조종"으로 지정(기존 직접조종 유닛은 자동으로
+    // "지키기"로 풀림)하거나, 다시 지키기로 되돌린다. 광산 유닛을 직접
+    // 조종하려 하면 자동으로 전방 자리로 빼서 전투에 참여시킨다.
     socket.on('arenaSetUnitOrder', ({ unitId, order }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        if (!player) return;
-        const unit = player.units.find(u => u.id === unitId);
-        if (!unit || !unit.alive || unit.role !== 'front') return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive) return;
+        const { unit, sideData } = found;
         if (order === 'controlled') {
-            player.units.forEach(u => { if (u.order === 'controlled') u.order = 'guard'; });
+            if (unit.role === 'mine') arenaAssignCombatRole(room, sideData, unit, 'front');
+            sideData.units.forEach(u => { if (u.id.startsWith(socket.id + '_') && u.order === 'controlled') u.order = 'guard'; });
             unit.order = 'controlled';
         } else if (order === 'guard') {
             unit.order = 'guard';
         }
+    });
+
+    // 게임 도중 유닛의 역할(광산/전방/원거리)을 바꾼다 -- 예: 밀리면 광산
+    // 캐릭터를 전방으로 빼거나, 안정되면 다시 광산으로 돌린다.
+    socket.on('arenaSetUnitRole', ({ unitId, role }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
+        if (!['mine', 'front', 'ranged'].includes(role)) return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive) return;
+        arenaAssignCombatRole(room, found.sideData, found.unit, role);
     });
 
     // 공격가기: 고른 전방 유닛들을 한꺼번에 상대 기지로 진군시킨다.
@@ -6194,12 +6329,11 @@ io.on('connection', (socket) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        if (!player || !Array.isArray(unitIds)) return;
+        if (!Array.isArray(unitIds)) return;
         unitIds.forEach(id => {
-            const unit = player.units.find(u => u.id === id);
-            if (unit && unit.alive && unit.role === 'front' && unit.order !== 'controlled') {
-                unit.order = 'attackMove';
+            const found = arenaOwnedUnit(room, socket, id);
+            if (found && found.unit.alive && found.unit.role === 'front' && found.unit.order !== 'controlled') {
+                found.unit.order = 'attackMove';
             }
         });
     });
@@ -6208,20 +6342,19 @@ io.on('connection', (socket) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        const u = player && player.units.find(x2 => x2.id === unitId);
-        if (!u || !u.alive || u.order !== 'controlled') return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive || found.unit.order !== 'controlled') return;
         if (Math.abs(x) > room.halfLen + 1 || Math.abs(y) > room.laneHalfWidth + 1) return;
-        u.x = x; u.y = y; u.facing = facing;
+        found.unit.x = x; found.unit.y = y; found.unit.facing = facing;
     });
 
     socket.on('arenaUnitAttack', ({ unitId }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        const u = player && player.units.find(x => x.id === unitId);
-        if (!u || !u.alive || u.order !== 'controlled') return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive || found.unit.order !== 'controlled') return;
+        const u = found.unit;
         const character = u.character;
         const now = Date.now();
         const rapid = rapidStrikeActive(character, u, now);
@@ -6254,9 +6387,9 @@ io.on('connection', (socket) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        const u = player && player.units.find(x => x.id === unitId);
-        if (!u || !u.alive || u.order !== 'controlled') return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive || found.unit.order !== 'controlled') return;
+        const u = found.unit;
         const character = u.character;
         if (!character.skillType) return;
         const now = Date.now();
@@ -6270,9 +6403,9 @@ io.on('connection', (socket) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        const u = player && player.units.find(x => x.id === unitId);
-        if (!u || !u.alive || u.order !== 'controlled') return;
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || !found.unit.alive || found.unit.order !== 'controlled') return;
+        const u = found.unit;
         const character = u.character;
         if (!character.ultimateType) return;
         const now = Date.now();
@@ -6287,19 +6420,19 @@ io.on('connection', (socket) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
-        const player = room.players[socket.id];
-        const u = player && player.units.find(x => x.id === unitId);
-        if (!u || u.alive) return;
-        const cost = ARENA_REVIVE_COST[u.character.grade] || ARENA_REVIVE_COST['일반'];
-        if (player.ore < cost) return;
-        player.ore -= cost;
-        u.alive = true;
-        u.hp = u.maxHp;
-        if (u.role !== 'mine') {
-            u.x = u.homeX; u.y = u.homeY;
-            u.order = 'guard';
+        const found = arenaOwnedUnit(room, socket, unitId);
+        if (!found || found.unit.alive) return;
+        const { unit, sideData, side } = found;
+        const cost = ARENA_REVIVE_COST[unit.character.grade] || ARENA_REVIVE_COST['일반'];
+        if (sideData.ore < cost) return;
+        sideData.ore -= cost;
+        unit.alive = true;
+        unit.hp = unit.maxHp;
+        if (unit.role !== 'mine') {
+            unit.x = unit.homeX; unit.y = unit.homeY;
+            unit.order = 'guard';
         }
-        io.to(roomId).emit('arenaUnitRevived', { id: unitId, hp: u.hp, ore: player.ore });
+        io.to(roomId).emit('arenaUnitRevived', { id: unitId, hp: unit.hp, ore: sideData.ore, side });
     });
 
     // 친구 탭 > 친구보기: 화면을 여는 동안만 자신을 노출하고, 같은 시간에
@@ -9213,17 +9346,22 @@ io.on('connection', (socket) => {
             return;
         }
         // 대전 모드: 대기열 중이면 그냥 빠지고, 이미 전투 중이면 pvp와 같은
-        // 이유로 그 즉시 상대 팀 승리로 끝낸다 -- 혼자 남으면 계속 싸울
-        // 방법이 없다.
+        // 이유로 그 즉시 상대 side 승리로 끝낸다 -- 2:2라도 팀원 하나가
+        // 빠지면 계속 싸울 방법이 없어 매치 전체를 끝낸다.
         if (room.kind === 'arena') {
+            const playerEntry = room.players[socket.id];
             if (room.state === 'waiting') {
-                delete room.players[socket.id];
-                if (Object.keys(room.players).length === 0) delete rooms[roomId];
-                else io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed: 2 });
+                if (playerEntry) {
+                    const sideData = room.sides[playerEntry.side];
+                    sideData.units = sideData.units.filter(u => !u.id.startsWith(socket.id + '_'));
+                    sideData.memberIds = sideData.memberIds.filter(id => id !== socket.id);
+                    delete room.players[socket.id];
+                }
+                if (room.sides.A.memberIds.length + room.sides.B.memberIds.length === 0) { delete rooms[roomId]; return; }
+                io.to(roomId).emit('arenaQueueUpdate', arenaQueueProgress(room));
                 return;
             }
-            const leaver = room.players[socket.id];
-            endArenaRoom(roomId, leaver ? (leaver.team === 'A' ? 'B' : 'A') : null);
+            endArenaRoom(roomId, playerEntry ? (playerEntry.side === 'A' ? 'B' : 'A') : null);
             return;
         }
         delete room.players[socket.id];

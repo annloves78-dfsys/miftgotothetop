@@ -3692,6 +3692,12 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .arena-lineup-slots {
     max-width: 460px;
 }
+.arena-mode-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
 .arena-role-row {
     display: flex;
     gap: 3px;
