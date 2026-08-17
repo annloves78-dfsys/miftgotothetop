@@ -373,15 +373,14 @@
         <h2>모드 선택</h2>
         <div class="mode-list">
             <div class="mode-list-left">
-                <div id="growth-dungeon-mode-card" class="mode-card mode-card-small">
-                    <div class="icon">🌱</div>
-                    <div class="name">성장 던전</div>
-                    <div id="growth-dungeon-mode-sub" class="sub hidden"></div>
+                <div id="arena-mode-card" class="mode-card mode-card-small locked">
+                    <div class="icon">🥊</div>
+                    <div class="name">대전</div>
+                    <div class="sub">🔒 준비 중</div>
                 </div>
-                <div id="awaken-mode-card" class="mode-card mode-card-small">
-                    <div class="icon">✨</div>
-                    <div class="name">각성모드</div>
-                    <div id="awaken-mode-sub" class="sub hidden"></div>
+                <div id="growth-category-mode-card" class="mode-card mode-card-small">
+                    <div class="icon">🌱</div>
+                    <div class="name">성장</div>
                 </div>
             </div>
             <div class="mode-list-right">
@@ -402,13 +401,29 @@
                     <div class="name">좀비막기</div>
                     <div id="zombie-mode-sub" class="sub hidden"></div>
                 </div>
-                <div id="arena-mode-card" class="mode-card">
-                    <div class="icon">🥊</div>
-                    <div class="name">대전</div>
-                </div>
             </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 성장: 성장 던전 / 각성모드를 묶은 카테고리 화면 -->
+    <div id="growth-category-screen" class="screen hidden">
+        <h2>성장</h2>
+        <div class="mode-list">
+            <div class="mode-list-right">
+                <div id="growth-dungeon-mode-card" class="mode-card">
+                    <div class="icon">🌱</div>
+                    <div class="name">성장 던전</div>
+                    <div id="growth-dungeon-mode-sub" class="sub hidden"></div>
+                </div>
+                <div id="awaken-mode-card" class="mode-card">
+                    <div class="icon">✨</div>
+                    <div class="name">각성모드</div>
+                    <div id="awaken-mode-sub" class="sub hidden"></div>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-growth-category-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- 각성모드: 어떤 쿠키의 각성 장비를 노릴지 고른다 -->

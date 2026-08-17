@@ -16,6 +16,7 @@ const screens = {
     gachaPull: document.getElementById('gacha-pull-screen'),
     legendary: document.getElementById('legendary-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
+    growthCategory: document.getElementById('growth-category-screen'),
     storyFork: document.getElementById('story-fork-screen'),
     legendDetail: document.getElementById('legend-detail-screen'),
     growthDungeon: document.getElementById('growth-dungeon-screen'),
@@ -3756,7 +3757,7 @@ awakenModeCard.addEventListener('click', () => {
     renderAwakenBossList();
     showScreen('awakenBoss');
 });
-backFromAwakenBossBtn.addEventListener('click', () => showScreen('modeSelect'));
+backFromAwakenBossBtn.addEventListener('click', () => showScreen('growthCategory'));
 backFromAwakenDetailBtn.addEventListener('click', () => {
     leaveAwakenRoomIfWaiting();
     showScreen('awakenBoss');
@@ -3872,7 +3873,7 @@ growthDungeonModeCard.addEventListener('click', () => {
     renderGrowthDungeonModeCard();
     showScreen('growthDungeon');
 });
-backFromGrowthDungeonBtn.addEventListener('click', () => showScreen('modeSelect'));
+backFromGrowthDungeonBtn.addEventListener('click', () => showScreen('growthCategory'));
 
 expDungeonCard.addEventListener('click', () => {
     if (!isExpDungeonUnlocked()) {
@@ -5010,6 +5011,10 @@ storyModeCard.addEventListener('click', () => {
 // ---- Story fork: legend story (locked, 준비중) / story mode ----
 document.getElementById('story-fork-story-card').addEventListener('click', () => showScreen('storyMode'));
 document.getElementById('back-from-story-fork-btn').addEventListener('click', () => showScreen('modeSelect'));
+
+// ---- 성장 카테고리: 성장 던전 + 각성모드를 한데 묶은 화면 ----
+document.getElementById('growth-category-mode-card').addEventListener('click', () => showScreen('growthCategory'));
+document.getElementById('back-from-growth-category-btn').addEventListener('click', () => showScreen('modeSelect'));
 
 // ---- Story mode: multi (locked) / solo entry ----
 const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');

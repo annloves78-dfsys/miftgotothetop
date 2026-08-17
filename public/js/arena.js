@@ -17,7 +17,12 @@ const arena2v2BotCard = document.getElementById('arena-2v2bot-card');
 const arenaQueueStatusEl = document.getElementById('arena-queue-status');
 const arenaQueueCancelBtn = document.getElementById('arena-queue-cancel-btn');
 
+// 유누가 "대전은 아직 안 되게" 해달라고 해서 잠가 둔 상태 -- index.html의
+// arena-mode-card에도 .locked 클래스와 "준비 중" 표시가 붙어 있다. 나중에
+// 열 때는 이 플래그만 true로 바꾸면 된다 (서버/전투 로직은 이미 다 있음).
+const ARENA_MODE_ENABLED = false;
 arenaModeCard.addEventListener('click', () => {
+    if (!ARENA_MODE_ENABLED) return;
     arenaSetQueueUi(false);
     showScreen('arenaLobby');
 });
