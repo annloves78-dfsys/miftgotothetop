@@ -384,13 +384,9 @@
                     <div class="icon">📖</div>
                     <div class="name">스토리 모드</div>
                 </div>
-                <div id="boss-raid-mode-card" class="mode-card">
-                    <div class="icon">⚔️</div>
-                    <div class="name">보스 레이드</div>
-                </div>
-                <div id="guest-raid-mode-card" class="mode-card">
+                <div id="kyeonwang-mode-card" class="mode-card">
                     <div class="icon">👑</div>
-                    <div class="name">게스트 레이드</div>
+                    <div class="name">켠왕</div>
                 </div>
                 <div id="zombie-mode-card" class="mode-card">
                     <div class="icon">🧟</div>
@@ -400,6 +396,24 @@
             </div>
         </div>
         <button id="back-from-mode-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <!-- 켠왕: 보스 레이드 / 게스트 레이드를 묶은 카테고리 화면 -->
+    <div id="kyeonwang-category-screen" class="screen hidden">
+        <h2>켠왕</h2>
+        <div class="mode-list">
+            <div class="mode-list-right">
+                <div id="boss-raid-mode-card" class="mode-card">
+                    <div class="icon">⚔️</div>
+                    <div class="name">보스 레이드</div>
+                </div>
+                <div id="guest-raid-mode-card" class="mode-card">
+                    <div class="icon">👑</div>
+                    <div class="name">게스트 레이드</div>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-kyeonwang-category-btn" class="secondary-btn">뒤로</button>
     </div>
 
     <!-- 대전: 대전모드(매치메이킹) / 싸우기(친구 대결)를 묶은 카테고리 화면 -->

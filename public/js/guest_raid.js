@@ -257,7 +257,7 @@ function openGuestDetail() {
 guestRaidModeCard.addEventListener('click', openGuestDetail);
 backFromGuestDetailBtn.addEventListener('click', () => {
     leaveGuestRaidIfAny();
-    showScreen('modeSelect');
+    showScreen('kyeonwangCategory');
 });
 guestLeaveBtn.addEventListener('click', () => leaveGuestRaidIfAny());
 

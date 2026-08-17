@@ -18,6 +18,7 @@ const screens = {
     legendary: document.getElementById('legendary-screen'),
     modeSelect: document.getElementById('mode-select-screen'),
     growthCategory: document.getElementById('growth-category-screen'),
+    kyeonwangCategory: document.getElementById('kyeonwang-category-screen'),
     storyFork: document.getElementById('story-fork-screen'),
     legendDetail: document.getElementById('legend-detail-screen'),
     growthDungeon: document.getElementById('growth-dungeon-screen'),
@@ -5017,6 +5018,10 @@ document.getElementById('back-from-story-fork-btn').addEventListener('click', ()
 document.getElementById('growth-category-mode-card').addEventListener('click', () => showScreen('growthCategory'));
 document.getElementById('back-from-growth-category-btn').addEventListener('click', () => showScreen('modeSelect'));
 
+// ---- 켠왕 카테고리: 보스 레이드 + 게스트 레이드를 한데 묶은 화면 ----
+document.getElementById('kyeonwang-mode-card').addEventListener('click', () => showScreen('kyeonwangCategory'));
+document.getElementById('back-from-kyeonwang-category-btn').addEventListener('click', () => showScreen('modeSelect'));
+
 // ---- Story mode: multi (locked) / solo entry ----
 const backFromStoryModeBtn = document.getElementById('back-from-story-mode-btn');
 const storySoloBtn = document.getElementById('story-solo-btn');
@@ -7161,7 +7166,7 @@ function renderBossList() {
     });
 }
 
-backToLobbyBtn.addEventListener('click', () => showScreen('modeSelect'));
+backToLobbyBtn.addEventListener('click', () => showScreen('kyeonwangCategory'));
 
 // ---- Boss detail ----
 let selectedBossId = null;
