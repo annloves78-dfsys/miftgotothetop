@@ -6295,6 +6295,20 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('arenaQueueUpdate', arenaQueueProgress(room));
     });
 
+    // 카운트다운/전투 중 스스로 나가기 -- disconnect 핸들러의 대전 모드
+    // 처리(2:2라도 팀원 하나가 빠지면 계속 싸울 방법이 없어 그 즉시
+    // 상대 side 승리로 끝냄)와 같은 로직. 소켓 연결은 그대로 두고
+    // 방만 나가게 해서, 나간 뒤에도 로비/친구 기능은 계속 쓸 수 있다.
+    socket.on('arenaLeaveMatch', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state === 'waiting') return;
+        const playerEntry = room.players[socket.id];
+        socket.leave(roomId);
+        socket.data.roomId = null;
+        endArenaRoom(roomId, playerEntry ? (playerEntry.side === 'A' ? 'B' : 'A') : null);
+    });
+
     // 유닛 하나를 "직접조종"으로 지정(기존 직접조종 유닛은 자동으로
     // "지키기"로 풀림)하거나, 다시 지키기로 되돌린다. 광산 유닛을 직접
     // 조종하려 하면 자동으로 전방 자리로 빼서 전투에 참여시킨다.

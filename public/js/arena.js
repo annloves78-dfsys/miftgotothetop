@@ -286,6 +286,16 @@ document.getElementById('arena-back-to-lobby-btn').addEventListener('click', () 
     showScreen('arenaLineup');
 });
 
+// 전투 중 스스로 나가기 -- 연결이 끊겼을 때와 같은 이유(2:2라도 팀원 하나가
+// 빠지면 계속 싸울 방법이 없음)로 그 즉시 상대 side 승리 처리된다
+// (서버 arenaLeaveMatch 핸들러, disconnect 핸들러와 로직 공유).
+document.getElementById('arena-leave-btn').addEventListener('click', () => {
+    socket.emit('arenaLeaveMatch');
+    stopArenaLoop();
+    document.getElementById('arena-result-overlay').classList.add('hidden');
+    showScreen('arenaLineup');
+});
+
 // ---- 카메라: 기지 두 개가 한 화면에 다 안 담길 만큼 지도를 넓게 잡고,
 // 마우스를 화면 가장자리 쪽으로 옮기면 그쪽이 보이도록 카메라를 옮긴다
 // (화면 가운데에 마우스를 두면 지도 가운데가 보임). 직접조종+공격가기+
