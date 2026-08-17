@@ -3756,7 +3756,6 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 .arena-roster-tile.controlled .slot-circle { border-color: #f1c40f; }
 .arena-roster-tile.attack-move .slot-circle { border-color: #e74c3c; }
-.arena-roster-tile.selected-for-group .slot-circle { box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.8); }
 .arena-roster-tile.dead .slot-circle { border-color: #c0392b; opacity: 0.6; }
 .arena-roster-tile .slot-name {
     font-size: 9px;
@@ -3776,7 +3775,7 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     background: #2ecc71;
 }
 
-.arena-unit-menu, .arena-attackmove-bar {
+.arena-unit-menu {
     position: absolute;
     left: 16px;
     bottom: 96px;
@@ -3788,15 +3787,6 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     border-radius: 10px;
     padding: 8px 10px;
     z-index: 15;
-}
-/* 여기 들어가는 .play-btn(진군!)도 기본이 position:absolute라 그냥
-   두면 이 박스 밖으로 튀어나간다 -- 다른 화면들과 같은 관례로 고정. */
-.arena-unit-menu .play-btn, .arena-attackmove-bar .play-btn {
-    position: static;
-}
-.arena-attackmove-bar span {
-    color: #ecf0f1;
-    font-size: 13px;
 }
 .pvp-result-overlay {
     position: absolute;

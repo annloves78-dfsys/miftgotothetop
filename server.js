@@ -5643,15 +5643,21 @@ function arenaBasePos(room, team) {
     return { x: team === 'A' ? -room.halfLen + 40 : room.halfLen - 40, y: 0 };
 }
 
-// front/ranged 유닛이 "지키는" 홈 좌표. 원거리는 기지 바로 앞, 전방은
-// 그보다 더 앞줄에 선다 -- 실제로 적을 먼저 만나는 쪽이 전방이 되도록.
-// index/count는 같은 role끼리 나란히 세우기 위한 좌표(부채꼴로 흩어짐).
+// 전투 역할(전방/원거리) 유닛이 "지키는" 홈 좌표. 역할별로 자리를 따로
+// 나누지 않고(예전엔 원거리가 기지에 더 가까웠음) 기지 앞 한 자리에
+// 다 같이 모아 세운다 -- index/count는 몇 명이 있든 나란히 부채꼴로
+// 흩어지기 위한 것일 뿐, role은 이제 위치 계산에 쓰이지 않는다.
 function arenaHomeFor(room, team, role, index, count) {
     const base = arenaBasePos(room, team);
     const dir = team === 'A' ? 1 : -1;
-    const laneX = role === 'ranged' ? 140 : 220;
+    const laneX = 180;
     const spread = count > 1 ? (index - (count - 1) / 2) * 60 : 0;
     return { x: base.x + dir * laneX, y: spread, facing: team === 'A' ? 0 : Math.PI };
+}
+// 전투 역할 유닛(광산 제외) 수 -- 홈 포지션을 한 자리에 몰아 세울 때
+// 몇 명이 그 자리를 나눠 쓰는지 계산하는 데 쓴다.
+function arenaCombatUnitCount(sideData, excludeId) {
+    return sideData.units.filter(u => u.role !== 'mine' && u.id !== excludeId).length;
 }
 
 // 층 이벤트(applyFloorCharEvent)와 정확히 같은 모양 -- charType별 배율이
@@ -5692,18 +5698,14 @@ function mkArenaUnit(id, entry, load, team, role, pos) {
 function addArenaLineup(room, socket, entryData, side) {
     const sideData = room.sides[side];
     if (!sideData.base) sideData.base = { hp: ARENA_BASE_HP, maxHp: ARENA_BASE_HP };
-    const existingByRole = { mine: 0, front: 0, ranged: 0 };
-    sideData.units.forEach(u => existingByRole[u.role]++);
-    const addedByRole = { mine: 0, front: 0, ranged: 0 };
-    entryData.units.forEach(u => addedByRole[u.role]++);
-    const placed = { mine: 0, front: 0, ranged: 0 };
+    const existingCombat = arenaCombatUnitCount(sideData);
+    const addedCombat = entryData.units.filter(u => u.role !== 'mine').length;
+    let placedCombat = 0;
     entryData.units.forEach((u, i) => {
         const load = arenaLoadout(u);
-        const idx = existingByRole[u.role] + placed[u.role]++;
-        const total = existingByRole[u.role] + addedByRole[u.role];
         const pos = u.role === 'mine'
             ? { x: null, y: null, facing: 0 }
-            : arenaHomeFor(room, side, u.role, idx, total);
+            : arenaHomeFor(room, side, u.role, existingCombat + placedCombat++, existingCombat + addedCombat);
         sideData.units.push(mkArenaUnit(`${socket.id}_u${i}`, u, load, side, u.role, pos));
     });
     sideData.memberIds.push(socket.id);
@@ -5755,7 +5757,7 @@ function arenaAssignCombatRole(room, sideData, unit, newRole) {
         unit.lastMineTickAt = Date.now();
         return;
     }
-    const count = sideData.units.filter(u => u.role === newRole && u.id !== unit.id).length;
+    const count = arenaCombatUnitCount(sideData, unit.id);
     const home = arenaHomeFor(room, unit.team, newRole, count, count + 1);
     unit.homeX = home.x; unit.homeY = home.y;
     if (unit.x == null) { unit.x = home.x; unit.y = home.y; unit.facing = home.facing; }
@@ -5868,9 +5870,11 @@ function tickArenaAttackMoveUnit(room, roomId, u, now) {
 
 function tickArenaUnitAI(room, roomId, u, now) {
     if (!u.alive || u.role === 'mine' || u.order === 'controlled') return;
+    // 공격가기 명령이 role보다 우선한다 -- 원거리 유닛도 공격가기를 받으면
+    // (원래는 제자리 고정이 기본이지만) 실제로 진군해서 싸운다.
+    if (u.order === 'attackMove') { tickArenaAttackMoveUnit(room, roomId, u, now); return; }
     if (u.role === 'ranged') { tickArenaRangedUnit(room, roomId, u, now); return; }
-    if (u.order === 'attackMove') tickArenaAttackMoveUnit(room, roomId, u, now);
-    else tickArenaGuardUnit(room, roomId, u, now);
+    tickArenaGuardUnit(room, roomId, u, now);
 }
 
 function tickArenaMining(room, now) {
@@ -5904,16 +5908,14 @@ function fillArenaBotSide(room, side, count) {
     if (!sideData.base) sideData.base = { hp: ARENA_BASE_HP, maxHp: ARENA_BASE_HP };
     const units = [];
     for (let n = 0; n < count; n += 5) units.push(...randomArenaBotUnits());
-    const existingByRole = { mine: 0, front: 0, ranged: 0 };
-    sideData.units.forEach(u => existingByRole[u.role]++);
-    const addedByRole = { mine: 0, front: 0, ranged: 0 };
-    units.forEach(u => addedByRole[u.role]++);
-    const placed = { mine: 0, front: 0, ranged: 0 };
+    const existingCombat = arenaCombatUnitCount(sideData);
+    const addedCombat = units.filter(u => u.role !== 'mine').length;
+    let placedCombat = 0;
     units.forEach((u, i) => {
         const load = arenaLoadout(u);
-        const idx = existingByRole[u.role] + placed[u.role]++;
-        const total = existingByRole[u.role] + addedByRole[u.role];
-        const pos = u.role === 'mine' ? { x: null, y: null, facing: 0 } : arenaHomeFor(room, side, u.role, idx, total);
+        const pos = u.role === 'mine'
+            ? { x: null, y: null, facing: 0 }
+            : arenaHomeFor(room, side, u.role, existingCombat + placedCombat++, existingCombat + addedCombat);
         sideData.units.push(mkArenaUnit(`bot_${side}_u${i}`, u, load, side, u.role, pos));
     });
 }
@@ -6324,7 +6326,9 @@ io.on('connection', (socket) => {
         arenaAssignCombatRole(room, found.sideData, found.unit, role);
     });
 
-    // 공격가기: 고른 전방 유닛들을 한꺼번에 상대 기지로 진군시킨다.
+    // 공격가기: 고른 유닛들을 한꺼번에 상대 기지로 진군시킨다. 역할
+    // 제한 없음 -- 광산 유닛이면 자동으로 전방 자리를 배정해 참전시키고,
+    // 원거리 유닛도 명령이 오면 (평소엔 제자리 고정이지만) 실제로 나간다.
     socket.on('arenaAttackMove', ({ unitIds }) => {
         const roomId = socket.data.roomId;
         const room = rooms[roomId];
@@ -6332,9 +6336,9 @@ io.on('connection', (socket) => {
         if (!Array.isArray(unitIds)) return;
         unitIds.forEach(id => {
             const found = arenaOwnedUnit(room, socket, id);
-            if (found && found.unit.alive && found.unit.role === 'front' && found.unit.order !== 'controlled') {
-                found.unit.order = 'attackMove';
-            }
+            if (!found || !found.unit.alive || found.unit.order === 'controlled') return;
+            if (found.unit.role === 'mine') arenaAssignCombatRole(room, found.sideData, found.unit, 'front');
+            found.unit.order = 'attackMove';
         });
     });
 

@@ -134,10 +134,7 @@ function renderArenaLineup() {
         arenaLineupSlotsEl.appendChild(slot);
     }
     const counts = arenaLineupCounts();
-    arenaLineupCountsEl.textContent =
-        `광산 ${counts.mine}/${SHARED.ARENA_ROLE_MIN.mine}~${SHARED.ARENA_ROLE_MAX.mine} · `
-        + `전방 ${counts.front}/${SHARED.ARENA_ROLE_MIN.front}~${SHARED.ARENA_ROLE_MAX.front} · `
-        + `원거리 ${counts.ranged}/${SHARED.ARENA_ROLE_MIN.ranged}~${SHARED.ARENA_ROLE_MAX.ranged}`;
+    arenaLineupCountsEl.textContent = `광산 ${counts.mine} · 전방 ${counts.front} · 원거리 ${counts.ranged}`;
     arenaLineupModeButtons.forEach(btn => { btn.disabled = !arenaLineupReady(); });
 }
 
@@ -169,8 +166,6 @@ let arenaMyId = null;
 let arenaMembers = { A: [], B: [] }; // 이 매치의 side별 소켓id 목록(고정, 매치 시작 때 한 번 옴)
 let arenaControlledUnitId = null; // 지금 내가 직접조종 중인 유닛 id (서버 sync로 매번 다시 확정)
 let arenaSelectedUnitId = null;   // 유닛 메뉴가 열려 있는 대상
-let arenaGroupMode = false;       // 공격가기용 그룹을 고르는 중인지
-let arenaGroupIds = new Set();
 let arenaMouseWorld = null;
 let arenaCountdownEndAt = 0;
 let arenaFighting = false;
@@ -219,18 +214,14 @@ socket.on('arenaMatchFound', (data) => {
     arenaSyncPlayerObjs(data.sides);
     arenaControlledUnitId = null;
     arenaSelectedUnitId = null;
-    arenaGroupMode = false;
-    arenaGroupIds = new Set();
     arenaCountdownEndAt = data.startAt;
     arenaFighting = false;
     arenaSetQueueUi(false);
     document.getElementById('arena-result-overlay').classList.add('hidden');
     document.getElementById('arena-unit-menu').classList.add('hidden');
-    document.getElementById('arena-attackmove-bar').classList.add('hidden');
     resizeArenaCanvas();
     arenaUpdateRoster();
     showScreen('arenaFight');
-    requestGameFullscreen();
     startArenaLoop();
 });
 
@@ -242,12 +233,8 @@ socket.on('arenaStateSync', ({ sides }) => {
     if (!arenaState) return;
     arenaState.sides = sides;
     arenaSyncPlayerObjs(sides);
-    const myUnits = arenaMyUnits();
-    const ctrl = myUnits.find(u => u.order === 'controlled');
+    const ctrl = arenaMyUnits().find(u => u.order === 'controlled');
     arenaControlledUnitId = ctrl ? ctrl.id : null;
-    Array.from(arenaGroupIds).forEach(id => {
-        if (!myUnits.some(u => u.id === id && u.alive)) arenaGroupIds.delete(id);
-    });
     arenaUpdateRoster();
 });
 
@@ -296,31 +283,46 @@ socket.on('arenaResult', ({ winningTeam }) => {
 
 document.getElementById('arena-back-to-lobby-btn').addEventListener('click', () => {
     stopArenaLoop();
-    exitGameFullscreen();
     showScreen('arenaLineup');
 });
 
-// ---- 카메라: 다리 전체(양쪽 기지 포함)가 한 화면에 들어오는 고정 시점.
-// 직접조종+공격가기+자동방어가 동시에 벌어져서 캐릭터를 따라다니는
-// 카메라 대신, 세계 좌표를 화면에 맞는 배율로 그대로 그린다. ----
+// ---- 카메라: 기지 두 개가 한 화면에 다 안 담길 만큼 지도를 넓게 잡고,
+// 마우스를 화면 가장자리 쪽으로 옮기면 그쪽이 보이도록 카메라를 옮긴다
+// (화면 가운데에 마우스를 두면 지도 가운데가 보임). 직접조종+공격가기+
+// 자동방어가 동시에 벌어져서 한 캐릭터를 따라다니는 카메라 대신 이
+// 방식을 쓴다. ----
 const arenaCanvas = document.getElementById('arena-canvas');
 const arenaCtx = arenaCanvas.getContext('2d');
-let arenaScale = 1, arenaOffsetX = 0, arenaOffsetY = 0;
+const ARENA_RENDER_SCALE = 1.4; // 고정 배율 -- 다리 전체가 한 화면에 다 안 들어오게
+let arenaScale = ARENA_RENDER_SCALE;
+let arenaOffsetX = 0, arenaOffsetY = 0;
+let arenaMouseScreen = null; // 캔버스 좌표계 기준 raw 마우스 위치
 
-function arenaComputeCamera() {
-    if (!arenaState) return;
-    const worldW = arenaState.halfLen * 2 + 160;
-    const worldH = arenaState.laneHalfWidth * 2 + 160;
-    arenaScale = Math.min(arenaCanvas.width / worldW, arenaCanvas.height / worldH);
-    arenaOffsetX = arenaCanvas.width / 2;
-    arenaOffsetY = arenaCanvas.height / 2;
-}
 function resizeArenaCanvas() {
     arenaCanvas.width = window.innerWidth;
     arenaCanvas.height = window.innerHeight;
-    arenaComputeCamera();
 }
 window.addEventListener('resize', resizeArenaCanvas);
+
+// 마우스 화면 위치를 카메라 중심(세계 좌표)으로 바꾼다 -- 화면 왼쪽
+// 끝에 마우스가 있으면 카메라가 지도 왼쪽 끝까지, 오른쪽 끝이면 지도
+// 오른쪽 끝까지 이동한다(그 사이는 비례). 화면보다 작은 축은 그냥 가운데.
+function arenaUpdateCamera() {
+    if (!arenaState) return;
+    if (!arenaMouseScreen) arenaMouseScreen = { x: arenaCanvas.width / 2, y: arenaCanvas.height / 2 };
+    const viewW = arenaCanvas.width / arenaScale;
+    const viewH = arenaCanvas.height / arenaScale;
+    const worldW = arenaState.halfLen * 2 + 160;
+    const worldH = arenaState.laneHalfWidth * 2 + 160;
+    const maxPanX = Math.max(0, (worldW - viewW) / 2);
+    const maxPanY = Math.max(0, (worldH - viewH) / 2);
+    const fracX = arenaCanvas.width ? (arenaMouseScreen.x / arenaCanvas.width - 0.5) * 2 : 0;
+    const fracY = arenaCanvas.height ? (arenaMouseScreen.y / arenaCanvas.height - 0.5) * 2 : 0;
+    const camX = Math.max(-maxPanX, Math.min(maxPanX, fracX * maxPanX));
+    const camY = Math.max(-maxPanY, Math.min(maxPanY, fracY * maxPanY));
+    arenaOffsetX = arenaCanvas.width / 2 - camX * arenaScale;
+    arenaOffsetY = arenaCanvas.height / 2 - camY * arenaScale;
+}
 
 function arenaScreenToWorld(sx, sy) {
     return { x: (sx - arenaOffsetX) / arenaScale, y: (sy - arenaOffsetY) / arenaScale };
@@ -333,7 +335,7 @@ arenaCanvas.addEventListener('mousemove', (e) => {
     const rect = arenaCanvas.getBoundingClientRect();
     const scaleX = arenaCanvas.width / rect.width;
     const scaleY = arenaCanvas.height / rect.height;
-    arenaMouseWorld = arenaScreenToWorld((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+    arenaMouseScreen = { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
 });
 
 function arenaUpdateHud() {
@@ -409,6 +411,8 @@ function arenaUpdateControlledLocal(pl, keysDown) {
 }
 
 function arenaFrame() {
+    arenaUpdateCamera();
+    if (arenaMouseScreen) arenaMouseWorld = arenaScreenToWorld(arenaMouseScreen.x, arenaMouseScreen.y);
     const controlled = arenaControlledPlayerObj();
     if (controlled && arenaFighting) {
         const moved = arenaUpdateControlledLocal(controlled, keys);
@@ -493,8 +497,7 @@ function arenaUpdateRoster() {
         tile.className = 'arena-roster-tile'
             + (!u.alive ? ' dead' : '')
             + (u.order === 'controlled' ? ' controlled' : '')
-            + (u.order === 'attackMove' ? ' attack-move' : '')
-            + (arenaGroupIds.has(u.id) ? ' selected-for-group' : '');
+            + (u.order === 'attackMove' ? ' attack-move' : '');
         const hpPct = u.role === 'mine' ? 100 : Math.max(0, u.hp / u.maxHp * 100);
         tile.innerHTML = `
             <div class="slot-circle" style="background:${u.alive ? charIconBackground(stats) : '#333'}"></div>
@@ -516,16 +519,9 @@ function arenaTryRevive(unitId) {
 }
 
 // 살아있는 내 유닛이면(광산/전방/원거리 무엇이든) 클릭 시 메뉴를 연다 --
-// 역할을 게임 중에 바꿀 수 있어서 더는 "전방만 상호작용"으로 막지 않는다.
+// 역할 제한 없이 아무 유닛이나 조종/공격 명령을 받을 수 있다.
 function arenaOnRosterTileClick(u) {
     if (!u.alive) { arenaTryRevive(u.id); return; }
-    if (arenaGroupMode) {
-        if (u.role !== 'front') return; // 공격가기 그룹은 전방 유닛만
-        if (arenaGroupIds.has(u.id)) arenaGroupIds.delete(u.id);
-        else arenaGroupIds.add(u.id);
-        arenaUpdateRoster();
-        return;
-    }
     arenaOpenUnitMenu(u);
 }
 
@@ -544,7 +540,6 @@ function arenaOpenUnitMenu(u) {
         });
         rolesEl.appendChild(btn);
     });
-    document.getElementById('arena-unit-attackmove-btn').classList.toggle('hidden', u.role !== 'front');
     document.getElementById('arena-unit-menu').classList.remove('hidden');
 }
 
@@ -555,29 +550,15 @@ document.getElementById('arena-unit-control-btn').addEventListener('click', () =
     document.getElementById('arena-unit-menu').classList.add('hidden');
     arenaSelectedUnitId = null;
 });
+// 공격: 그룹을 모으지 않고 고른 그 한 마리만 바로 상대 기지로 내보낸다
+// (서버 arenaAttackMove는 배열을 받으므로 한 명짜리 배열로 보낸다).
 document.getElementById('arena-unit-attackmove-btn').addEventListener('click', () => {
     if (!arenaSelectedUnitId) return;
-    arenaGroupMode = true;
-    arenaGroupIds = new Set([arenaSelectedUnitId]);
+    socket.emit('arenaAttackMove', { unitIds: [arenaSelectedUnitId] });
     document.getElementById('arena-unit-menu').classList.add('hidden');
-    document.getElementById('arena-attackmove-bar').classList.remove('hidden');
     arenaSelectedUnitId = null;
-    arenaUpdateRoster();
 });
 document.getElementById('arena-unit-menu-close-btn').addEventListener('click', () => {
     document.getElementById('arena-unit-menu').classList.add('hidden');
     arenaSelectedUnitId = null;
-});
-document.getElementById('arena-attackmove-confirm-btn').addEventListener('click', () => {
-    socket.emit('arenaAttackMove', { unitIds: Array.from(arenaGroupIds) });
-    arenaGroupMode = false;
-    arenaGroupIds.clear();
-    document.getElementById('arena-attackmove-bar').classList.add('hidden');
-    arenaUpdateRoster();
-});
-document.getElementById('arena-attackmove-cancel-btn').addEventListener('click', () => {
-    arenaGroupMode = false;
-    arenaGroupIds.clear();
-    document.getElementById('arena-attackmove-bar').classList.add('hidden');
-    arenaUpdateRoster();
 });

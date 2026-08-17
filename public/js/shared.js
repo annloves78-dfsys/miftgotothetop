@@ -7803,15 +7803,13 @@ const ARENA_REVIVE_COST = {
     게스트: 100
 };
 // 클라이언트(배치 화면 검증)와 서버(제출값 검증)가 똑같은 규칙을 쓰도록
-// 여기 한 군데에만 둔다. units: [{role}, ...] 형태만 보면 된다.
+// 여기 한 군데에만 둔다. 역할별 인원 제한(예전엔 광산 1~2/전방 1~3/
+// 원거리 1~2)은 없앴다 -- 유누가 "포지션을 따로 나눌 필요 없이 몰아넣을
+// 수 있게" 해달라고 해서, 5명 다 아무 역할로나 자유롭게 고를 수 있다
+// (전부 광산으로 몰아도 됨). units: [{role}, ...] 형태만 보면 된다.
 function arenaLineupValid(units) {
     if (!Array.isArray(units) || units.length !== ARENA_LINEUP_SIZE) return false;
-    const counts = { mine: 0, front: 0, ranged: 0 };
-    for (const u of units) {
-        if (!u || !counts.hasOwnProperty(u.role)) return false;
-        counts[u.role]++;
-    }
-    return ARENA_UNIT_ROLES.every(r => counts[r] >= ARENA_ROLE_MIN[r] && counts[r] <= ARENA_ROLE_MAX[r]);
+    return units.every(u => u && ARENA_UNIT_ROLES.includes(u.role));
 }
 
 if (typeof module !== 'undefined' && module.exports) {
