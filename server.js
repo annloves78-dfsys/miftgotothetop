@@ -23,7 +23,7 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     zombieUpgradeCost, ZOMBIE_ATK_UPGRADE_AMOUNT, ZOMBIE_FENCE_HP_UPGRADE_AMOUNT, zombieCellIndex, zombieCellColRow,
     zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
     ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
-    zombieWaveReward } = require('./public/js/shared.js');
+    zombieWaveReward, ARENA_BALANCE } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -5575,6 +5575,342 @@ function endPvpRoom(roomId, winnerId) {
     delete rooms[roomId];
 }
 
+// ==================== 대전(Arena) 모드 ====================
+// 친구 대결(위 pvp 블록)과는 완전히 분리된 별도 모드다 -- 도전장 없이
+// 매치메이킹으로 들어가고, 1:1 / 1:1 vs 컴퓨터 / 2:2(사람) vs 컴퓨터 세
+// 편성을 지원한다. 전투 로직(공격 판정/스킬·궁극기 해석/피해 처리)은
+// applyPvpAbility/applyDamageToPvpPlayer와 같은 모양이지만, "룸에 있는
+// 상대 1명"이 아니라 팀(A/B)과 봇을 다뤄야 해서 별도 함수로 둔다.
+// room.players는 실제 플레이어와 봇을 구분 없이 한 딕셔너리에 담는다
+// (봇은 'bot_1'처럼 socket.id와 겹치지 않는 합성 id를 쓴다) -- 그래야
+// 공격/스킬/피해 함수가 "누가 사람이고 누가 봇인지" 신경 쓸 필요 없이
+// team만 비교하면 된다.
+const ARENA_MODES = ['1v1', '1v1bot', '2v2bot'];
+const ARENA_BOT_CHAR_POOL = Object.keys(CHARACTERS);
+const ARENA_COUNTDOWN_MS = 3000;
+
+function arenaTeamCapacity(mode) {
+    return mode === '2v2bot' ? 2 : 1;
+}
+
+function findOpenArenaRoom(mode) {
+    const needed = arenaTeamCapacity(mode); // 실제 플레이어는 전부 team A에 모인다
+    for (const [roomId, room] of Object.entries(rooms)) {
+        if (room.kind === 'arena' && room.mode === mode && room.state === 'waiting'
+            && Object.keys(room.players).length < needed) {
+            return roomId;
+        }
+    }
+    return null;
+}
+
+function createArenaRoom(mode) {
+    const roomId = `arena_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // 배경은 친구 대결과 동일하게 스토리 10층 다리 치수를 그대로 빌려 쓴다.
+    const floorDef = floorDefFor(10) || { levelLength: 1100, laneHalfWidth: 220 };
+    const halfLen = (floorDef.levelLength || 1100) / 2;
+    const laneHalfWidth = floorDef.laneHalfWidth || 220;
+    rooms[roomId] = {
+        kind: 'arena',
+        mode,
+        state: 'waiting',
+        players: {},
+        halfLen, laneHalfWidth,
+        activeBuffs: [],
+        nextBotIndex: 1,
+        loopHandle: null
+    };
+    return roomId;
+}
+
+function arenaSpawnFor(room, team, slotIndex) {
+    const x = team === 'A' ? -room.halfLen + 90 : room.halfLen - 90;
+    const y = slotIndex < 0 ? 0 : (slotIndex === 0 ? -70 : 70);
+    const facing = team === 'A' ? 0 : Math.PI;
+    return { x, y, facing };
+}
+
+// 층 이벤트(applyFloorCharEvent)와 정확히 같은 모양 -- charType별 배율이
+// 있으면 곱하고, 없으면 default를 쓴다. 지금은 shared.js의 ARENA_BALANCE가
+// 전부 1.0이라 실질적으로 무보정이고, 유누가 실제 수치를 확정하면 여기
+// 손댈 것 없이 shared.js 테이블만 채우면 된다.
+function applyArenaBalance(character, charType) {
+    const mult = (ARENA_BALANCE.overrides && ARENA_BALANCE.overrides[charType]) || ARENA_BALANCE.default;
+    if (!mult) return character;
+    return {
+        ...character,
+        health: mult.health != null ? character.health * mult.health : character.health,
+        attackDamage: mult.attackDamage != null ? character.attackDamage * mult.attackDamage : character.attackDamage
+    };
+}
+
+function arenaLoadout(entry) {
+    const bonus = bonusFrom(entry.equip, entry.charType, entry.instinct);
+    const character = applyArenaBalance(charFrom(entry.charType, entry.equip, entry.instinct, entry.charLevel), entry.charType);
+    return { bonus, character, awakenGear: gearFrom(entry.charType, entry.equip) };
+}
+
+function mkArenaFighter(entry, load, x, y, facing, team, isBot) {
+    return {
+        x, y, facing, team, isBot: !!isBot,
+        bonus: load.bonus, character: load.character, awakenGear: load.awakenGear,
+        hp: load.character.health + load.bonus.health, maxHp: load.character.health + load.bonus.health,
+        charType: entry.charType, nickname: entry.nickname,
+        alive: true, lastAttackTime: 0, lastSkillTime: 0, lastUltimateTime: 0
+    };
+}
+
+function addArenaPlayer(room, socket, entryData, team) {
+    const capacity = arenaTeamCapacity(room.mode);
+    const slotIndex = capacity > 1 ? Object.values(room.players).filter(p => p.team === team && !p.isBot).length : -1;
+    const { x, y, facing } = arenaSpawnFor(room, team, slotIndex);
+    const load = arenaLoadout(entryData);
+    room.players[socket.id] = mkArenaFighter(entryData, load, x, y, facing, team, false);
+}
+
+function fillArenaBots(room, team, count) {
+    for (let i = 0; i < count; i++) {
+        const charType = ARENA_BOT_CHAR_POOL[Math.floor(Math.random() * ARENA_BOT_CHAR_POOL.length)];
+        const entry = { charType, nickname: `컴퓨터${room.nextBotIndex}`, equip: null, instinct: 0, charLevel: null };
+        const load = arenaLoadout(entry);
+        const { x, y, facing } = arenaSpawnFor(room, team, count > 1 ? i : -1);
+        room.players[`bot_${room.nextBotIndex++}`] = mkArenaFighter(entry, load, x, y, facing, team, true);
+    }
+}
+
+// pvpOpponentEntry 대응: "룸에 있는 다른 플레이어 1명"이 아니라 "살아있는
+// 상대팀 중 가장 가까운 쪽"을 고른다 -- 공격/스킬 타깃팅과 봇의 추격
+// 대상 결정에 공용으로 쓰인다.
+function arenaNearestEnemy(room, casterId) {
+    const caster = room.players[casterId];
+    if (!caster) return null;
+    let best = null, bestDist = Infinity;
+    for (const [id, p] of Object.entries(room.players)) {
+        if (id === casterId || !p.alive || p.team === caster.team) continue;
+        const d = Math.hypot(p.x - caster.x, p.y - caster.y);
+        if (d < bestDist) { bestDist = d; best = { id, p }; }
+    }
+    return best;
+}
+
+function publicArenaPlayers(room) {
+    const out = {};
+    for (const [id, p] of Object.entries(room.players)) {
+        out[id] = {
+            x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, charType: p.charType, nickname: p.nickname,
+            facing: p.facing, alive: p.alive, shieldHp: p.shieldHp || 0, team: p.team, isBot: p.isBot
+        };
+    }
+    return out;
+}
+
+function startArenaFight(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    room.state = 'countdown';
+    io.to(roomId).emit('arenaMatchFound', {
+        roomId, mode: room.mode, startAt: Date.now() + ARENA_COUNTDOWN_MS,
+        players: publicArenaPlayers(room), halfLen: room.halfLen, laneHalfWidth: room.laneHalfWidth
+    });
+    setTimeout(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'countdown') return;
+        r.state = 'fighting';
+        io.to(roomId).emit('arenaFightStart');
+        r.loopHandle = setInterval(() => tickArenaRoom(roomId), 50);
+    }, ARENA_COUNTDOWN_MS);
+}
+
+// applyPvpAbility와 같은 해석 규칙(캐릭터 정의의 skillDamage/skillHealAmount류
+// 필드를 보고 "회복/보호막/버프는 나에게만, 피해는 가장 가까운 상대에게"로
+// 옮긴다)을 그대로 쓰되, 상대를 arenaNearestEnemy로 고른다.
+function applyArenaAbility(roomId, room, casterId, prefix, now, payload) {
+    const room2 = rooms[roomId];
+    if (!room2) return;
+    const p = room2.players[casterId];
+    if (!p || !p.alive) return;
+    const character = charOf(p);
+    const enemy = arenaNearestEnemy(room2, casterId);
+
+    const healAmount = character[prefix + 'HealAmount'] || character[prefix + 'SelfHeal'];
+    if (healAmount) {
+        p.hp = Math.min(p.maxHp, p.hp + healAmount);
+        io.to(roomId).emit('playerHealed', { id: casterId, hp: p.hp });
+    }
+    const healRatio = character[prefix + 'HealRatio'];
+    if (healRatio) {
+        p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * healRatio));
+        io.to(roomId).emit('playerHealed', { id: casterId, hp: p.hp });
+    }
+    const healPerTick = character[prefix + 'HealPerTick'];
+    const tickMs = character[prefix + 'TickMs'];
+    const durationMs = character[prefix + 'DurationMs'];
+    if (healPerTick && tickMs && durationMs) {
+        room2.activeBuffs.push({
+            type: 'arena_self_hot', target: casterId,
+            healPerTick, tickMs, endAt: now + durationMs, lastTickAt: now
+        });
+    }
+    const shieldAmount = character[prefix + 'ShieldAmount'];
+    if (shieldAmount) {
+        p.shieldHp = (p.shieldHp || 0) + shieldAmount;
+        io.to(roomId).emit('playerShielded', { id: casterId, shieldHp: p.shieldHp });
+    }
+    const speedValue = character[prefix + 'SpeedValue'] || character[prefix + 'SpeedBonus'];
+    const speedDurationMs = character[prefix + 'SpeedDurationMs'];
+    if (speedValue && speedDurationMs) {
+        p.speedBoostUntil = now + speedDurationMs;
+    }
+    const attackMultiplier = character[prefix + 'AttackMultiplier'];
+    const attackBuffDurationMs = character[prefix + 'AttackBuffDurationMs'];
+    if (attackMultiplier && attackBuffDurationMs) {
+        p.attackMultiplierUntil = now + attackBuffDurationMs;
+        p.attackMultiplierValue = attackMultiplier;
+    }
+    const enemyDamageRatio = character[prefix + 'SanctuaryEnemyDamageRatio'];
+    if (enemyDamageRatio && enemy && enemy.p.alive) {
+        applyDamageToArenaEntity(roomId, enemy.id, Math.max(1, Math.round(enemy.p.maxHp * enemyDamageRatio)));
+    }
+
+    const damage = character[prefix + 'Damage'];
+    if (damage && enemy && enemy.p.alive) {
+        const range = character[prefix + 'Range'];
+        const width = character[prefix + 'Width'];
+        const radius = character[prefix + 'Radius'];
+        let hit = false;
+        if (range) {
+            hit = meleeLineHitPoint(p.x, p.y, p.facing, range, width || 60, enemy.p.x, enemy.p.y, PLAYER_RADIUS);
+        } else if (radius) {
+            const ox = (payload && typeof payload.targetX === 'number') ? payload.targetX : p.x;
+            const oy = (payload && typeof payload.targetY === 'number') ? payload.targetY : p.y;
+            hit = Math.hypot(enemy.p.x - ox, enemy.p.y - oy) <= radius + PLAYER_RADIUS;
+        }
+        if (hit) applyDamageToArenaEntity(roomId, enemy.id, damage);
+    }
+
+    const zoneDamagePerTick = character[prefix + 'ZoneDamagePerTick'];
+    const zoneTickMs = character[prefix + 'ZoneTickMs'];
+    const zoneDurationMs = character[prefix + 'ZoneDurationMs'];
+    if (zoneDamagePerTick && zoneTickMs && zoneDurationMs && enemy) {
+        const zx = (payload && typeof payload.targetX === 'number') ? payload.targetX : p.x;
+        const zy = (payload && typeof payload.targetY === 'number') ? payload.targetY : p.y;
+        room2.activeBuffs.push({
+            type: 'arena_zone_damage', targetId: enemy.id, x: zx, y: zy,
+            radius: character[prefix + 'Radius'] || character[prefix + 'Width'] || 80,
+            damagePerTick: zoneDamagePerTick, tickMs: zoneTickMs,
+            endAt: now + zoneDurationMs, lastTickAt: now
+        });
+    }
+}
+
+function applyDamageToArenaEntity(roomId, targetId, dmg) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const p = room.players[targetId];
+    if (!p || !p.alive) return;
+    const character = charOf(p);
+    const now = Date.now();
+    dmg = Math.round(dmg * damageReductionMultiplier(character, p, now, null));
+    if (p.shieldHp > 0) {
+        const absorbed = Math.min(p.shieldHp, dmg);
+        p.shieldHp -= absorbed;
+        dmg -= absorbed;
+    }
+    p.hp = Math.max(0, p.hp - dmg);
+    if (p.hp <= 0) p.alive = false;
+    io.to(roomId).emit('arenaPlayerDamaged', { id: targetId, hp: p.hp, alive: p.alive, shieldHp: p.shieldHp || 0 });
+    if (!p.alive) {
+        const teamAlive = Object.values(room.players).some(f => f.team === p.team && f.alive);
+        if (!teamAlive) endArenaRoom(roomId, p.team === 'A' ? 'B' : 'A');
+    }
+}
+
+// 좀비 병사(tickZombieSoldiers)의 추격 로직과 같은 관례(speed * 3 px/tick)로
+// 이동하되, 사거리 안에 들어오면 실제 플레이어가 pvpPlayerAttack/
+// pvpPlayerSkill/pvpPlayerUltimate에서 부르는 것과 완전히 같은 함수
+// (resolveAttack/applyArenaAbility)를 그대로 호출한다 -- 봇 전용 전투
+// 엔진을 새로 만들지 않고, "누가 트리거하냐"만 다르게 한다. 그래서 봇도
+// 스킬/궁극기까지 실제로 쓰는 "진짜 캐릭터"가 된다.
+function tickArenaBots(roomId, now) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    for (const [id, p] of Object.entries(room.players)) {
+        if (!p.isBot || !p.alive) continue;
+        const enemy = arenaNearestEnemy(room, id);
+        if (!enemy || !enemy.p.alive) continue;
+        const character = charOf(p);
+        p.facing = Math.atan2(enemy.p.y - p.y, enemy.p.x - p.x);
+
+        const range = character.attackRange || 80;
+        const dist = Math.hypot(enemy.p.x - p.x, enemy.p.y - p.y);
+        if (dist > range) {
+            const step = (character.speed || 2) * 3;
+            const move = Math.min(step, dist - range + 1);
+            p.x = Math.max(-room.halfLen + PLAYER_RADIUS, Math.min(room.halfLen - PLAYER_RADIUS, p.x + Math.cos(p.facing) * move));
+            p.y = Math.max(-room.laneHalfWidth + PLAYER_RADIUS, Math.min(room.laneHalfWidth - PLAYER_RADIUS, p.y + Math.sin(p.facing) * move));
+        } else {
+            const rapid = rapidStrikeActive(character, p, now);
+            const cooldown = attackCooldownFor(character, p, rapid, now);
+            if (now - p.lastAttackTime >= cooldown && consumeAmmoOrBlock(character, p, now)) {
+                p.lastAttackTime = now;
+                const swing = resolveAttack(character, p, now, rapid);
+                advanceAttackSequence(character, p);
+                const width = swing.width || (character.attackProjectileRadius ? character.attackProjectileRadius * 2 : 50);
+                if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, width, enemy.p.x, enemy.p.y, PLAYER_RADIUS)) {
+                    applyDamageToArenaEntity(roomId, enemy.id, swing.damage);
+                }
+            }
+        }
+
+        if (character.skillType && now - p.lastSkillTime >= skillCooldownFor(character, p)) {
+            p.lastSkillTime = now;
+            io.to(roomId).emit('playerSkillUsed', { id });
+            applyArenaAbility(roomId, room, id, 'skill', now, { targetX: enemy.p.x, targetY: enemy.p.y });
+        }
+        if (character.ultimateType && now - p.lastUltimateTime >= ultimateCooldownFor(character, p)) {
+            p.lastUltimateTime = now;
+            io.to(roomId).emit('playerUltimateUsed', { id });
+            applyArenaAbility(roomId, room, id, 'ultimate', now, { targetX: enemy.p.x, targetY: enemy.p.y });
+        }
+        io.to(roomId).emit('arenaPlayerMoved', { id, x: p.x, y: p.y, facing: p.facing });
+    }
+}
+
+function tickArenaRoom(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'fighting') return;
+    const now = Date.now();
+    if (room.activeBuffs && room.activeBuffs.length) {
+        room.activeBuffs = room.activeBuffs.filter(b => now < b.endAt);
+        for (const buff of room.activeBuffs) {
+            if (now - buff.lastTickAt < buff.tickMs) continue;
+            buff.lastTickAt += buff.tickMs;
+            if (buff.type === 'arena_self_hot') {
+                const p = room.players[buff.target];
+                if (p && p.alive) {
+                    p.hp = Math.min(p.maxHp, p.hp + buff.healPerTick);
+                    io.to(roomId).emit('playerHealed', { id: buff.target, hp: p.hp });
+                }
+            } else if (buff.type === 'arena_zone_damage') {
+                const target = room.players[buff.targetId];
+                if (target && target.alive && Math.hypot(target.x - buff.x, target.y - buff.y) <= buff.radius) {
+                    applyDamageToArenaEntity(roomId, buff.targetId, buff.damagePerTick);
+                }
+            }
+        }
+    }
+    tickArenaBots(roomId, now);
+}
+
+function endArenaRoom(roomId, winningTeam) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.loopHandle) clearInterval(room.loopHandle);
+    room.state = 'ended';
+    io.to(roomId).emit('arenaResult', { winningTeam: winningTeam || null });
+    delete rooms[roomId];
+}
+
 io.on('connection', (socket) => {
     // 로그인 계정의 "지금 이 소켓에 연결돼 있다"를 등록. 친구 대결 신청을
     // 수락했을 때 신청 보낸 사람을 화면과 무관하게 찾아내기 위해 쓴다.
@@ -5678,6 +6014,122 @@ io.on('connection', (socket) => {
         p.lastUltimateTime = now;
         io.to(roomId).emit('playerUltimateUsed', { id: socket.id });
         applyPvpAbility(roomId, room, socket.id, 'ultimate', now, payload);
+    });
+
+    // ---- 대전(Arena) 모드: 친구 대결과 분리된 매치메이킹 기반 모드 ----
+    // 1v1은 대기열(같은 mode의 waiting 룸을 찾아 합류, 없으면 새로 생성),
+    // 1v1bot은 대기열 없이 즉시 시작, 2v2bot은 사람 2명(둘 다 team A)이
+    // 찰 때까지 대기하다가 봇 2명(team B)을 채워 시작한다.
+    socket.on('arenaQueueJoin', ({ mode, nickname, charType, equip, instinct, charLevel }) => {
+        if (!ARENA_MODES.includes(mode)) return;
+        if (socket.data.roomId) return; // 이미 대기열/전투 중
+        const entryData = {
+            nickname: String(nickname || '플레이어').slice(0, 20),
+            charType: charType && CHARACTERS[charType] ? charType : 'kicker',
+            equip, instinct, charLevel
+        };
+
+        if (mode === '1v1bot') {
+            const roomId = createArenaRoom(mode);
+            const room = rooms[roomId];
+            addArenaPlayer(room, socket, entryData, 'A');
+            fillArenaBots(room, 'B', 1);
+            socket.join(roomId);
+            socket.data.roomId = roomId;
+            startArenaFight(roomId);
+            return;
+        }
+
+        let roomId = findOpenArenaRoom(mode);
+        if (!roomId) roomId = createArenaRoom(mode);
+        const room = rooms[roomId];
+        const team = mode === '1v1' ? (Object.keys(room.players).length === 0 ? 'A' : 'B') : 'A';
+        addArenaPlayer(room, socket, entryData, team);
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        const needed = arenaTeamCapacity(mode) * (mode === '1v1' ? 2 : 1);
+        io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed });
+        if (Object.keys(room.players).length >= needed) {
+            if (mode === '2v2bot') fillArenaBots(room, 'B', 2);
+            startArenaFight(roomId);
+        }
+    });
+
+    socket.on('arenaQueueLeave', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state !== 'waiting') return;
+        delete room.players[socket.id];
+        socket.leave(roomId);
+        socket.data.roomId = null;
+        if (Object.keys(room.players).length === 0) delete rooms[roomId];
+        else io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed: arenaTeamCapacity(room.mode) * (room.mode === '1v1' ? 2 : 1) });
+    });
+
+    socket.on('arenaPlayerMove', ({ x, y, facing }) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        if (Math.abs(x) > room.halfLen + 1 || Math.abs(y) > room.laneHalfWidth + 1) return;
+        p.x = x; p.y = y; p.facing = facing;
+        socket.to(roomId).emit('arenaPlayerMoved', { id: socket.id, x, y, facing });
+    });
+
+    socket.on('arenaPlayerAttack', () => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const enemy = arenaNearestEnemy(room, socket.id);
+        if (!enemy || !enemy.p.alive) return;
+        const character = charOf(p);
+        const now = Date.now();
+        const rapid = rapidStrikeActive(character, p, now);
+        const cooldown = attackCooldownFor(character, p, rapid, now);
+        if (now - p.lastAttackTime < cooldown) return;
+        if (!consumeAmmoOrBlock(character, p, now)) return;
+        p.lastAttackTime = now;
+        if (character.skillType === 'guard_stance') p.guardStanceUntil = 0;
+
+        const swing = resolveAttack(character, p, now, rapid);
+        advanceAttackSequence(character, p);
+        const width = swing.width || (character.attackProjectileRadius ? character.attackProjectileRadius * 2 : 50);
+        if (meleeLineHitPoint(swing.originX, swing.originY, p.facing, swing.range, width, enemy.p.x, enemy.p.y, PLAYER_RADIUS)) {
+            applyDamageToArenaEntity(roomId, enemy.id, swing.damage);
+        }
+    });
+
+    socket.on('arenaPlayerSkill', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = charOf(p);
+        if (!character.skillType) return;
+        const now = Date.now();
+        if (now - p.lastSkillTime < skillCooldownFor(character, p)) return;
+        p.lastSkillTime = now;
+        io.to(roomId).emit('playerSkillUsed', { id: socket.id });
+        applyArenaAbility(roomId, room, socket.id, 'skill', now, payload);
+    });
+
+    socket.on('arenaPlayerUltimate', (payload) => {
+        const roomId = socket.data.roomId;
+        const room = rooms[roomId];
+        if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
+        const p = room.players[socket.id];
+        if (!p || !p.alive) return;
+        const character = charOf(p);
+        if (!character.ultimateType) return;
+        const now = Date.now();
+        if (now - p.lastUltimateTime < ultimateCooldownFor(character, p)) return;
+        p.lastUltimateTime = now;
+        io.to(roomId).emit('playerUltimateUsed', { id: socket.id });
+        applyArenaAbility(roomId, room, socket.id, 'ultimate', now, payload);
     });
 
     // 친구 탭 > 친구보기: 화면을 여는 동안만 자신을 노출하고, 같은 시간에
@@ -8588,6 +9040,20 @@ io.on('connection', (socket) => {
         if (room.kind === 'pvp') {
             const winner = Object.keys(room.players).find(id => id !== socket.id);
             endPvpRoom(roomId, winner || null);
+            return;
+        }
+        // 대전 모드: 대기열 중이면 그냥 빠지고(2v2bot이면 남은 팀원이 계속
+        // 대기), 이미 전투 중이면 pvp와 같은 이유로 그 즉시 상대 팀 승리로
+        // 끝낸다 -- 봇만 남은 팀이 계속 싸울 방법이 없다.
+        if (room.kind === 'arena') {
+            if (room.state === 'waiting') {
+                delete room.players[socket.id];
+                if (Object.keys(room.players).length === 0) delete rooms[roomId];
+                else io.to(roomId).emit('arenaQueueUpdate', { count: Object.keys(room.players).length, needed: arenaTeamCapacity(room.mode) * (room.mode === '1v1' ? 2 : 1) });
+                return;
+            }
+            const leaver = room.players[socket.id];
+            endArenaRoom(roomId, leaver ? (leaver.team === 'A' ? 'B' : 'A') : null);
             return;
         }
         delete room.players[socket.id];

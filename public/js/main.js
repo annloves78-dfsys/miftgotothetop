@@ -8,6 +8,8 @@ const screens = {
     items: document.getElementById('items-screen'),
     friends: document.getElementById('friends-screen'),
     pvpFight: document.getElementById('pvp-fight-screen'),
+    arenaLobby: document.getElementById('arena-lobby-screen'),
+    arenaFight: document.getElementById('arena-fight-screen'),
     awakenBoss: document.getElementById('awaken-boss-screen'),
     awakenDetail: document.getElementById('awaken-detail-screen'),
     gacha: document.getElementById('gacha-screen'),

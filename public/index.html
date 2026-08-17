@@ -156,6 +156,47 @@
         </div>
     </div>
 
+    <!-- 대전(Arena): 친구 대결과 별개인 매치메이킹 기반 모드. 1:1 / 1:1 vs
+         컴퓨터 / 2:2(사람) vs 컴퓨터 세 편성을 고른다. -->
+    <div id="arena-lobby-screen" class="screen hidden">
+        <h2>대전</h2>
+        <div class="mode-list">
+            <div id="arena-1v1-card" class="mode-card">
+                <div class="icon">⚔️</div>
+                <div class="name">1:1 대전</div>
+            </div>
+            <div id="arena-1v1bot-card" class="mode-card">
+                <div class="icon">🤖</div>
+                <div class="name">1:1 vs 컴퓨터</div>
+            </div>
+            <div id="arena-2v2bot-card" class="mode-card">
+                <div class="icon">👥</div>
+                <div class="name">2:2 vs 컴퓨터</div>
+            </div>
+        </div>
+        <div id="arena-queue-status" class="awaken-sub hidden"></div>
+        <button id="arena-queue-cancel-btn" class="secondary-btn hidden">매칭 취소</button>
+        <button id="back-from-arena-lobby-btn" class="secondary-btn">뒤로</button>
+    </div>
+
+    <div id="arena-fight-screen" class="screen hidden">
+        <div class="pvp-hud">
+            <div id="arena-hud-team-a" class="pvp-hud-side"></div>
+            <div class="pvp-hud-vs">VS</div>
+            <div id="arena-hud-team-b" class="pvp-hud-side"></div>
+        </div>
+        <canvas id="arena-canvas"></canvas>
+        <div class="pvp-controls">
+            <button id="arena-attack-btn" class="char-select-btn">⚔️ 공격</button>
+            <button id="arena-skill-btn" class="char-select-btn">✨ 스킬</button>
+            <button id="arena-ultimate-btn" class="char-select-btn">🌟 궁극기</button>
+        </div>
+        <div id="arena-result-overlay" class="pvp-result-overlay hidden">
+            <div id="arena-result-text" class="pvp-result-text"></div>
+            <button id="arena-back-to-lobby-btn" class="secondary-btn">로비로</button>
+        </div>
+    </div>
+
     <!-- Gacha: banner list -->
     <div id="gacha-screen" class="screen hidden">
         <h2>뽑기</h2>
@@ -360,6 +401,10 @@
                     <div class="icon">🧟</div>
                     <div class="name">좀비막기</div>
                     <div id="zombie-mode-sub" class="sub hidden"></div>
+                </div>
+                <div id="arena-mode-card" class="mode-card">
+                    <div class="icon">🥊</div>
+                    <div class="name">대전</div>
                 </div>
             </div>
         </div>
@@ -1000,5 +1045,6 @@
     <script src="js/main.js"></script>
     <script src="js/guest_raid.js"></script>
     <script src="js/zombie_defense.js"></script>
+    <script src="js/arena.js"></script>
 </body>
 </html>
