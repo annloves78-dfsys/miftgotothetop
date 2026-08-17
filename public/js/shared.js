@@ -1195,7 +1195,13 @@ const CHARACTERS = {
         ultimateHealPerTick: 15,
         ultimateTickMs: 1000,
         ultimateDurationMs: 10000,
-        ultimateCooldownMs: 30000
+        ultimateCooldownMs: 30000,
+        // 아래 둘은 실제 플레이(revive_team_hot)에서는 안 쓰인다 -- 각성모드
+        // 보스전에서만 읽는 값. 보스는 부활시킬 동료가 없으니 궁극기가
+        // guard_surge류(자가 회복+보호막)로 바뀐다 (server.js useAwakenBossUltimate
+        // 참고). blacksugar의 guard_surge와 같은 필드를 그대로 재사용한다.
+        ultimateHealAmount: 50,
+        ultimateShieldAmount: 60
     },
     // 유누 신청작. 에픽 등급의 어둠 속성 대미지 딜러. 보라색 몸에 하얀 쌍검을
     // 들고, 앞으로 찌르지 않고 앞쪽을 가로로 넓게 베는 근접 판정을 쓴다.
@@ -6233,6 +6239,16 @@ const EQUIPMENT = {
         awakenForm: { attackAmmoMax: 150, attackCooldown: 50 },
         ownerText: '파핑캔디맛 쿠키 전용 — 탄창 100 → 150발, 공격 재사용 대기시간 0.1초 → 0.05초로 더 빨라집니다.'
     },
+    // 치즈케이크맛은 원래 부활이 없는 쿠키라, 쿠키맛쿠키(gingerbread_man)와
+    // 같은 사정으로 부활 시 체력 비율(passiveReviveHpRatio)도 이 장비가
+    // 처음 준다. 궁극기 초당 회복량도 15 -> 20으로 더 세진다.
+    cheesecake_slice: {
+        name: '치즈케이크 한 조각', slot: 'awaken', grade: '게스트', icon: '🍰',
+        ownerChar: 'cheesecake',
+        ownerBonus: { bonusRevive: 1 },
+        awakenForm: { passiveReviveHpRatio: 1, ultimateHealPerTick: 20 },
+        ownerText: '치즈케이크맛 쿠키 전용 — 쓰러지면 체력 100%로 한 번 부활합니다. 궁극기 회복량이 1초당 15 → 20으로 늘어납니다.'
+    },
     // ---- 등급 x 종류 채우기 (각성 장비 제외, 등급별 5종류 모두 하나씩) ----
     // ---- 일반 ----
     rusty_sword: { name: '녹슨 검', slot: 'weapon', grade: '일반', icon: '🗡', bonusAttack: 1 },
@@ -6574,6 +6590,16 @@ const AWAKEN_BOSSES = {
         // 궁극기(자기 회복+보호막)의 보호막만 레벨마다 5씩. 10레벨이면 50 -> 100.
         // 회복은 비율(ultimateHealRatio)이라 이 표로는 못 건드린다 -- 그대로 둔다.
         ultimate: { shieldAmountPerLevel: 5 },
+        movement: null
+    },
+    cheesecake: {
+        // 팀 회복+공격버프 스킬은 보스전에서 자기 자신에게만 걸린다(수치는
+        // 원래 그대로: 회복 30%, 공격력 1.3배 4초). 레벨로 세지지 않는다.
+        skill: { perLevel: null },
+        // 궁극기(팀원 부활+지속회복)는 부활시킬 동료가 없어서 자가 회복+보호막
+        // (guard_surge류)으로 바뀐다. 회복/보호막 둘 다 레벨마다 5씩.
+        // 10레벨이면 회복 50 -> 100, 보호막 60 -> 110.
+        ultimate: { healAmountPerLevel: 5, shieldAmountPerLevel: 5 },
         movement: null
     }
 };

@@ -2379,6 +2379,18 @@ function useAwakenBossSkill(roomId, room, mid, m, now) {
             if (hits > 0) healAwakenBoss(roomId, mid, m, heal);
             break;
         }
+        case 'team_ratio_heal_attack_buff': {
+            // 팀 버프였던 걸 자기 자신에게만: 최대 체력의 skillHealRatio만큼
+            // 회복하고, skillAttackBuffDurationMs 동안 나가는 피해가
+            // skillAttackMultiplier배가 된다 (undying_soul과 같은 장치를
+            // 재사용 -- outgoingDamageMultiplier가 읽는다).
+            healAwakenBoss(roomId, mid, m, m.maxHp * (base.skillHealRatio || 0));
+            if (base.skillAttackMultiplier) {
+                m.damageDebuffUntil = now + (base.skillAttackBuffDurationMs || 0);
+                m.damageDebuffMultiplier = base.skillAttackMultiplier;
+            }
+            break;
+        }
         default:
             // 발차기(kick)를 비롯한 나머지는 앞쪽 반경을 그냥 때린다.
             awakenBossHitAround(roomId, room, m, radius, dmg);
@@ -2412,7 +2424,8 @@ function useAwakenBossUltimate(roomId, room, mid, m, now) {
             break;
         }
         case 'guard_surge':
-        case 'team_guard': {
+        case 'team_guard':
+        case 'revive_team_hot': {
             const flat = awakenBossUltimateHealAmount(info.charType, info.level) || 0;
             const ratio = base.ultimateHealRatio || 0;
             healAwakenBoss(roomId, mid, m, flat + m.maxHp * ratio);
