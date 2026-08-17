@@ -16,8 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   추가할 때 이걸 깜빡해서 한 번 층이 아예 안 보이는 버그가 났었다).
 - **뭔가 새로 만들면**(캐릭터/장비/보스 등) 물어볼 게 있으면 먼저 물어보고, 답 들은
   다음엔 "배포할까요?" 다시 안 물어보고 바로 커밋·푸시·배포까지 진행할 것.
-- **배포 끝나면 항상 라이브 링크**(https://miftgotothetop.onrender.com)를 답변에
-  같이 보낼 것.
+- **배포 끝나면 항상 라이브 링크**(https://mift.anne.ai.kr — 2026-08-17부로 Render는
+  그만 쓰고 여기로 옮김, Render 링크는 더 이상 언급하지 말 것)를 답변에 같이 보낼 것.
 - 이 프로젝트는 **여러 세션이 동시에** 건드릴 때가 있다. 커밋 전에 `git status`/
   `git diff --stat`로 내가 안 건드린 변경사항이 섞여 있는지 확인하고, 내 작업분만
   스테이징할 것.
@@ -42,7 +42,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run the server locally**: `node server.js` (or `npm start`). Reads `PORT` env var, defaults to 8080.
 - No build step — `public/` is served directly via `express.static`; editing a client file takes effect on next page load.
 - No test suite and no linter configured in this repo.
-- **Deploy**: pushing to `main` on GitHub (`https://github.com/annloves78-dfsys/miftgotothetop.git`) auto-deploys to Render at `https://miftgotothetop.onrender.com`. There is no other deploy step.
+- **Deploy**: live at `https://mift.anne.ai.kr`, an Ubuntu 24.04 server (Korean cloud provider, IP 1.201.117.244) running Node 22 + nginx (reverse proxy 80/443 → localhost:8080) + pm2 (process `boss-raid`) + Let's Encrypt SSL. `git push` to `main` on GitHub does **not** auto-deploy here — after pushing, SSH in and pull+restart manually:
+  ```
+  KEY="/g/내 드라이브/working/yunu/SSH_KeyPair-260817135047.pem"
+  chmod 600 "$KEY"
+  ssh -i "$KEY" -o StrictHostKeyChecking=accept-new ubuntu@mift.anne.ai.kr \
+    "cd /home/ubuntu/miftgotothetop && git pull && pm2 restart boss-raid && pm2 status boss-raid"
+  ```
+  (Render deploy at miftgotothetop.onrender.com still technically exists but is retired/unused as of 2026-08-17 — don't bother keeping it in sync, and don't send its link.)
 
 ## Architecture
 

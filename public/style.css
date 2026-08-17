@@ -3679,6 +3679,108 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
     transform: translateX(-50%);
     z-index: 10;
 }
+.arena-ore-badge {
+    flex: 0 0 auto;
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: 16px;
+    white-space: nowrap;
+}
+
+/* 대전모드 배치 화면: guest-party-slots(캐릭터 원+이름)에 역할 버튼 한
+   줄을 더 얹은 5칸. */
+.arena-lineup-slots {
+    max-width: 460px;
+}
+.arena-role-row {
+    display: flex;
+    gap: 3px;
+}
+.arena-role-btn {
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 6px;
+    border: 1px solid #34495e;
+    background: #1c2735;
+    color: #bdc3c7;
+    cursor: pointer;
+}
+.arena-role-btn.selected {
+    background: #f1c40f;
+    border-color: #f1c40f;
+    color: #1a1f2b;
+    font-weight: bold;
+}
+
+/* 대전모드 전투 화면: 내 유닛 5명 로스터(화면 왼쪽 아래 오버레이). */
+.arena-roster-panel {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+}
+.arena-roster-tile {
+    position: relative;
+    width: 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+}
+.arena-roster-tile .slot-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 3px solid #7f8c8d;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #ecf0f1;
+}
+.arena-roster-tile.controlled .slot-circle { border-color: #f1c40f; }
+.arena-roster-tile.attack-move .slot-circle { border-color: #e74c3c; }
+.arena-roster-tile.selected-for-group .slot-circle { box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.8); }
+.arena-roster-tile.dead .slot-circle { border-color: #c0392b; opacity: 0.6; }
+.arena-roster-tile .slot-name {
+    font-size: 9px;
+    color: #ecf0f1;
+    text-align: center;
+    line-height: 1.2;
+}
+.arena-roster-tile .arena-tile-hp {
+    width: 46px;
+    height: 4px;
+    border-radius: 2px;
+    background: #1c2735;
+    overflow: hidden;
+}
+.arena-roster-tile .arena-tile-hp-fill {
+    height: 100%;
+    background: #2ecc71;
+}
+
+.arena-unit-menu, .arena-attackmove-bar {
+    position: absolute;
+    left: 16px;
+    bottom: 96px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(10, 14, 20, 0.9);
+    border: 2px solid #34495e;
+    border-radius: 10px;
+    padding: 8px 10px;
+    z-index: 15;
+}
+.arena-attackmove-bar span {
+    color: #ecf0f1;
+    font-size: 13px;
+}
 .pvp-result-overlay {
     position: absolute;
     inset: 0;

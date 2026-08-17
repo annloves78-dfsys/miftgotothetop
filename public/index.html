@@ -153,38 +153,47 @@
         </div>
     </div>
 
-    <!-- 대전(Arena): 친구 대결과 별개인 매치메이킹 기반 모드. 1:1 / 1:1 vs
-         컴퓨터 / 2:2(사람) vs 컴퓨터 세 편성을 고른다. -->
-    <div id="arena-lobby-screen" class="screen hidden">
-        <h2>대전</h2>
-        <div class="mode-list">
-            <div id="arena-1v1-card" class="mode-card">
-                <div class="icon">⚔️</div>
-                <div class="name">1:1 대전</div>
-            </div>
-            <div id="arena-1v1bot-card" class="mode-card">
-                <div class="icon">🤖</div>
-                <div class="name">1:1 vs 컴퓨터</div>
-            </div>
-            <div id="arena-2v2bot-card" class="mode-card">
-                <div class="icon">👥</div>
-                <div class="name">2:2 vs 컴퓨터</div>
-            </div>
-        </div>
+    <!-- 대전모드(기지전): 친구 대결과 무관한 1:1 매치메이킹. 캐릭터 5명을
+         광산(1~2)/전방(1~3)/원거리(1~2)로 나눠 배치한 뒤 매칭을 시작한다. -->
+    <div id="arena-lineup-screen" class="screen hidden">
+        <h2>대전모드</h2>
+        <p class="settings-hint">캐릭터 5명을 광산(1~2)·전방(1~3)·원거리(1~2)로 나눠 배치하세요.</p>
+        <div id="arena-lineup-slots" class="guest-party-slots arena-lineup-slots"></div>
+        <div id="arena-lineup-counts" class="settings-hint"></div>
+        <button id="arena-lineup-queue-btn" class="play-btn" disabled>매칭 시작</button>
         <div id="arena-queue-status" class="awaken-sub hidden"></div>
         <button id="arena-queue-cancel-btn" class="secondary-btn hidden">매칭 취소</button>
         <button id="back-from-arena-lobby-btn" class="secondary-btn">뒤로</button>
     </div>
 
-    <!-- 화면 전체를 캔버스로 쓴다 - 공격/스킬/궁극기 버튼 없이 보스 레이드와
-         같은 방식(좌클릭 공격/우클릭 스킬/F 궁극기)으로 조작한다. -->
+    <!-- 대전모드 전투 화면: 다리 전체(양쪽 기지 포함)가 한 화면에 다 보이는
+         고정 시점 -- 직접조종/공격가기/자동방어가 동시에 벌어져서 캐릭터를
+         따라다니는 카메라를 쓰지 않는다. 직접조종 중인 유닛은 다른 전투
+         화면과 같은 조작(좌클릭 공격/우클릭 스킬/F 궁극기)을 쓴다. -->
     <div id="arena-fight-screen" class="screen hidden">
         <div class="pvp-hud arena-hud-overlay">
-            <div id="arena-hud-team-a" class="pvp-hud-side"></div>
-            <div class="pvp-hud-vs">VS</div>
-            <div id="arena-hud-team-b" class="pvp-hud-side"></div>
+            <div class="pvp-hud-side">
+                <div class="pvp-hud-name">내 기지</div>
+                <div class="pvp-hp-bar"><div id="arena-my-base-fill" class="pvp-hp-fill"></div></div>
+            </div>
+            <div class="arena-ore-badge">⛏️ <span id="arena-my-ore">0</span></div>
+            <div class="pvp-hud-side">
+                <div class="pvp-hud-name">상대 기지</div>
+                <div class="pvp-hp-bar"><div id="arena-enemy-base-fill" class="pvp-hp-fill"></div></div>
+            </div>
         </div>
         <canvas id="arena-canvas"></canvas>
+        <div id="arena-roster-panel" class="arena-roster-panel"></div>
+        <div id="arena-unit-menu" class="arena-unit-menu hidden">
+            <button id="arena-unit-control-btn" class="secondary-btn">직접조종</button>
+            <button id="arena-unit-attackmove-btn" class="secondary-btn">공격가기</button>
+            <button id="arena-unit-menu-close-btn" class="secondary-btn">닫기</button>
+        </div>
+        <div id="arena-attackmove-bar" class="arena-attackmove-bar hidden">
+            <span>공격가기: 같이 보낼 전방 유닛을 더 눌러 고르세요</span>
+            <button id="arena-attackmove-confirm-btn" class="play-btn">진군!</button>
+            <button id="arena-attackmove-cancel-btn" class="secondary-btn">취소</button>
+        </div>
         <div id="arena-result-overlay" class="pvp-result-overlay hidden">
             <div id="arena-result-text" class="pvp-result-text"></div>
             <button id="arena-back-to-lobby-btn" class="secondary-btn">로비로</button>
