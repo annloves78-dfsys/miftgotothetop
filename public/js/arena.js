@@ -357,6 +357,18 @@ function arenaUpdateHud() {
     document.getElementById('arena-enemy-base-fill').style.width = `${Math.max(0, enemy.base.hp / enemy.base.maxHp * 100)}%`;
 }
 
+// 기지 두 덩이(넓은 땅) + 가운데 좁은 다리 하나로 지형 윤곽선을 만든다.
+// arenaHalfWidthAt이 구간별 선형이라 꺾이는 지점(기지 끝/테이퍼 시작·끝)
+// 6개만 있으면 정확한 모양이 나온다 -- 촘촘히 샘플링할 필요 없음.
+function arenaTerrainOutline(halfLen, baseHalfWidth) {
+    const taperStart = SHARED.ARENA_BASE_ZONE_LEN - SHARED.ARENA_BRIDGE_TAPER;
+    const xs = [
+        -halfLen, -(halfLen - taperStart), -(halfLen - SHARED.ARENA_BASE_ZONE_LEN),
+        (halfLen - SHARED.ARENA_BASE_ZONE_LEN), (halfLen - taperStart), halfLen
+    ];
+    return xs.map(x => ({ x, h: SHARED.arenaHalfWidthAt(halfLen, baseHalfWidth, x) }));
+}
+
 function arenaRender(now) {
     const w = arenaCanvas.width, h = arenaCanvas.height;
     arenaCtx.fillStyle = '#14301d';
@@ -368,11 +380,16 @@ function arenaRender(now) {
     arenaCtx.scale(arenaScale, arenaScale);
 
     const floorDef = SHARED.floorDefFor(10) || {};
+    arenaCtx.beginPath();
+    const terrain = arenaTerrainOutline(arenaState.halfLen, arenaState.laneHalfWidth);
+    terrain.forEach((p, i) => { if (i === 0) arenaCtx.moveTo(p.x, -p.h); else arenaCtx.lineTo(p.x, -p.h); });
+    for (let i = terrain.length - 1; i >= 0; i--) arenaCtx.lineTo(terrain[i].x, terrain[i].h);
+    arenaCtx.closePath();
     arenaCtx.fillStyle = floorDef.deckColor || '#4a3c2f';
-    arenaCtx.fillRect(-arenaState.halfLen, -arenaState.laneHalfWidth, arenaState.halfLen * 2, arenaState.laneHalfWidth * 2);
+    arenaCtx.fill();
     arenaCtx.strokeStyle = floorDef.deckGlow || 'rgba(255,255,255,0.15)';
     arenaCtx.lineWidth = 4;
-    arenaCtx.strokeRect(-arenaState.halfLen, -arenaState.laneHalfWidth, arenaState.halfLen * 2, arenaState.laneHalfWidth * 2);
+    arenaCtx.stroke();
 
     ['A', 'B'].forEach(side => {
         const pos = arenaBasePosOf(side);
@@ -416,7 +433,8 @@ function arenaUpdateControlledLocal(pl, keysDown) {
     if (dx === 0 && dy === 0) return false;
     const R = SHARED.PLAYER_RADIUS;
     pl.x = Math.max(-arenaState.halfLen + R, Math.min(arenaState.halfLen - R, pl.x + dx));
-    pl.y = Math.max(-arenaState.laneHalfWidth + R, Math.min(arenaState.laneHalfWidth - R, pl.y + dy));
+    const h = SHARED.arenaHalfWidthAt(arenaState.halfLen, arenaState.laneHalfWidth, pl.x) - R;
+    pl.y = Math.max(-h, Math.min(h, pl.y + dy));
     return true;
 }
 

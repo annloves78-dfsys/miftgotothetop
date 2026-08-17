@@ -24,7 +24,8 @@ const { ARENA_RADIUS, BOSS_RADIUS, PLAYER_RADIUS, CHARACTERS, BOSS_DEFS, MONSTER
     zombieCellCenter, zombieColRowOfPos, zombieCellIndexOfPos, zombieBuildableCellsFrom,
     ZOMBIE_DEFS, zombieStatsForWave, zombieCountForWave, zombieRollTypeForWave,
     zombieWaveReward, ARENA_BALANCE,
-    ARENA_MINE_INTERVAL_MS, ARENA_REVIVE_COST, arenaLineupValid, ARENA_BASE_RADIUS } = require('./public/js/shared.js');
+    ARENA_MINE_INTERVAL_MS, ARENA_REVIVE_COST, arenaLineupValid, ARENA_BASE_RADIUS,
+    arenaHalfWidthAt } = require('./public/js/shared.js');
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -5774,7 +5775,10 @@ function arenaStepToward(room, u, tx, ty) {
     const step = (u.character.speed || 2) * 3;
     const move = Math.min(step, d);
     u.x = Math.max(-room.halfLen + PLAYER_RADIUS, Math.min(room.halfLen - PLAYER_RADIUS, u.x + (dx / d) * move));
-    u.y = Math.max(-room.laneHalfWidth + PLAYER_RADIUS, Math.min(room.laneHalfWidth - PLAYER_RADIUS, u.y + (dy / d) * move));
+    // 기지 쪽은 넓고 가운데 다리만 좁으니, 지금 x 위치에서 실제로 걸을 수
+    // 있는 폭을 다시 구해서 y를 거기 맞춰 자른다(고정 laneHalfWidth 아님).
+    const h = arenaHalfWidthAt(room.halfLen, room.laneHalfWidth, u.x) - PLAYER_RADIUS;
+    u.y = Math.max(-h, Math.min(h, u.y + (dy / d) * move));
 }
 
 function arenaTryUnitAttack(roomId, u, enemy, now) {
@@ -6371,7 +6375,9 @@ io.on('connection', (socket) => {
         if (!room || room.kind !== 'arena' || room.state !== 'fighting') return;
         const found = arenaOwnedUnit(room, socket, unitId);
         if (!found || !found.unit.alive || found.unit.order !== 'controlled') return;
-        if (Math.abs(x) > room.halfLen + 1 || Math.abs(y) > room.laneHalfWidth + 1) return;
+        if (Math.abs(x) > room.halfLen + 1) return;
+        const maxY = arenaHalfWidthAt(room.halfLen, room.laneHalfWidth, x) + 1;
+        if (Math.abs(y) > maxY) return;
         found.unit.x = x; found.unit.y = y; found.unit.facing = facing;
     });
 
