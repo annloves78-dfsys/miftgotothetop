@@ -6128,6 +6128,15 @@ function endArenaRoom(roomId, winningTeam) {
     if (room.loopHandle) clearInterval(room.loopHandle);
     room.state = 'ended';
     io.to(roomId).emit('arenaResult', { winningTeam: winningTeam || null });
+    // arenaQueueJoin은 socket.data.roomId가 남아있으면 "이미 대기열/전투 중"으로
+    // 보고 그냥 무시해버린다 -- 여기서 안 지우면 한 판 끝난 뒤 같은 소켓으로
+    // 다시 솔로/대결을 눌러도 서버가 조용히 무시해서 "매칭 중..."에서 멈춘
+    // 것처럼 보인다(승리한 쪽도 포함, leave/disconnect 경로만 따로 지우고
+    // 있었음). 봇은 memberIds에 안 들어가 있어 여기서 자연히 걸러진다.
+    ['A', 'B'].forEach(side => room.sides[side].memberIds.forEach(id => {
+        const s = io.sockets.sockets.get(id);
+        if (s) { s.leave(roomId); s.data.roomId = null; }
+    }));
     delete rooms[roomId];
 }
 
