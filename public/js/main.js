@@ -8083,6 +8083,7 @@ socket.on('pvpMatchFound', (data) => {
     document.getElementById('pvp-opp-name').textContent = pvpOpponentId && pvpPlayers[pvpOpponentId] ? pvpPlayers[pvpOpponentId].nickname : '상대';
     resizePvpCanvas();
     showScreen('pvpFight');
+    requestPvpFullscreen();
     startPvpLoop();
 });
 
@@ -8129,6 +8130,7 @@ socket.on('pvpResult', ({ winnerId }) => {
 
 document.getElementById('pvp-back-to-lobby-btn').addEventListener('click', () => {
     stopPvpLoop();
+    exitPvpFullscreen();
     showScreen('lobby');
 });
 
@@ -8153,10 +8155,19 @@ function pvpUpdateLocal(me, keysDown) {
 const pvpCanvas = document.getElementById('pvp-canvas');
 const pvpCtx = pvpCanvas.getContext('2d');
 function resizePvpCanvas() {
-    pvpCanvas.width = Math.min(window.innerWidth - 32, 960);
-    pvpCanvas.height = Math.min(window.innerHeight - 260, 420);
+    pvpCanvas.width = window.innerWidth;
+    pvpCanvas.height = window.innerHeight;
 }
 window.addEventListener('resize', resizePvpCanvas);
+
+// 전투 시작 시 전체화면으로 전환하고, 로비로 돌아갈 때 해제한다.
+function requestPvpFullscreen() {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+}
+function exitPvpFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
 
 function updatePvpHud() {
     const me = pvpPlayers[socket.id];
@@ -8216,24 +8227,38 @@ function stopPvpLoop() {
     pvpLoopHandle = null;
 }
 
-document.getElementById('pvp-attack-btn').addEventListener('click', () => {
+// 화면 전체가 캔버스라 별도 버튼 없이 다른 전투 화면과 같은 조작으로 쓴다:
+// 좌클릭 공격, 우클릭 스킬, F 궁극기. 상대는 항상 pvpOpponentId 한 명이라
+// 따로 조준할 필요가 없다.
+function pvpTryAttack() {
     const me = pvpPlayers[socket.id];
     if (!me || !pvpFighting || !me.canAttack(performance.now())) return;
     if (!clientConsumeAmmo(me.stats, me, performance.now())) return;
     me.triggerAttackEffect();
     socket.emit('pvpPlayerAttack');
-});
-document.getElementById('pvp-skill-btn').addEventListener('click', () => {
+}
+function pvpTrySkill() {
     const me = pvpPlayers[socket.id];
     if (!me || !pvpFighting || !me.canUseSkill(performance.now())) return;
     me.triggerSkillEffect();
     const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
     socket.emit('pvpPlayerSkill', opp ? { targetX: opp.x, targetY: opp.y } : {});
-});
-document.getElementById('pvp-ultimate-btn').addEventListener('click', () => {
+}
+function pvpTryUltimate() {
     const me = pvpPlayers[socket.id];
     if (!me || !pvpFighting || !me.canUseUltimate(performance.now())) return;
     me.triggerUltimateEffect();
     const opp = pvpOpponentId ? pvpPlayers[pvpOpponentId] : null;
     socket.emit('pvpPlayerUltimate', opp ? { targetX: opp.x, targetY: opp.y } : {});
+}
+
+pvpCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+pvpCanvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) pvpTryAttack();
+    else if (e.button === 2) pvpTrySkill();
+});
+window.addEventListener('keydown', (e) => {
+    if (e.key !== 'f' && e.key !== 'F') return;
+    if (screens.pvpFight.classList.contains('hidden')) return;
+    pvpTryUltimate();
 });

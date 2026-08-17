@@ -3627,12 +3627,8 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 .item-use-btn.friends-reject-btn:hover,
 .item-use-btn.pvp-reject-btn:hover { background: #95a5a6; }
 
-/* ---- 친구 대결 (PvP) ---- */
-#pvp-fight-screen {
-    justify-content: flex-start;
-    padding-top: 16px;
-    gap: 10px;
-}
+/* ---- 친구 대결 (PvP): 대전(Arena)과 같은 방식으로 캔버스가 화면 전체를
+   채우고, HUD는 그 위에 떠 있는 오버레이(.arena-hud-overlay)로 놓는다. ---- */
 .pvp-hud {
     display: flex;
     align-items: center;
@@ -3666,13 +3662,8 @@ body.mc-compact .equip-up-btn { padding: 4px 7px; font-size: 11px; }
 }
 #pvp-canvas {
     background: #14301d;
-    border-radius: 12px;
-    border: 2px solid #34495e;
-    max-width: 96vw;
-}
-.pvp-controls {
-    display: flex;
-    gap: 10px;
+    display: block;
+    cursor: crosshair;
 }
 /* 대전(Arena) 전투 화면: 캔버스가 화면 전체를 채우고, HUD는 그 위에
    떠 있는 오버레이 - .hp-container.top과 같은 자리에 놓는다. */
