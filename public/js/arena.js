@@ -230,6 +230,7 @@ socket.on('arenaMatchFound', (data) => {
     resizeArenaCanvas();
     arenaUpdateRoster();
     showScreen('arenaFight');
+    requestGameFullscreen();
     startArenaLoop();
 });
 
@@ -295,6 +296,7 @@ socket.on('arenaResult', ({ winningTeam }) => {
 
 document.getElementById('arena-back-to-lobby-btn').addEventListener('click', () => {
     stopArenaLoop();
+    exitGameFullscreen();
     showScreen('arenaLineup');
 });
 

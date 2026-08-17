@@ -8083,7 +8083,7 @@ socket.on('pvpMatchFound', (data) => {
     document.getElementById('pvp-opp-name').textContent = pvpOpponentId && pvpPlayers[pvpOpponentId] ? pvpPlayers[pvpOpponentId].nickname : '상대';
     resizePvpCanvas();
     showScreen('pvpFight');
-    requestPvpFullscreen();
+    requestGameFullscreen();
     startPvpLoop();
 });
 
@@ -8130,7 +8130,7 @@ socket.on('pvpResult', ({ winnerId }) => {
 
 document.getElementById('pvp-back-to-lobby-btn').addEventListener('click', () => {
     stopPvpLoop();
-    exitPvpFullscreen();
+    exitGameFullscreen();
     showScreen('lobby');
 });
 
@@ -8161,11 +8161,12 @@ function resizePvpCanvas() {
 window.addEventListener('resize', resizePvpCanvas);
 
 // 전투 시작 시 전체화면으로 전환하고, 로비로 돌아갈 때 해제한다.
-function requestPvpFullscreen() {
+// 친구 대결(pvp)과 대전모드(arena.js)가 함께 쓰는 공용 헬퍼.
+function requestGameFullscreen() {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
 }
-function exitPvpFullscreen() {
+function exitGameFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
