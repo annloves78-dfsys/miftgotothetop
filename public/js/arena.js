@@ -481,7 +481,16 @@ function arenaFindMyUnitAt(wx, wy) {
 arenaCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 arenaCanvas.addEventListener('mousedown', (e) => {
     if (arenaControlledUnitId) {
-        if (e.button === 0) arenaTryControlledAttack();
+        if (e.button === 0) {
+            // 파핑캔디맛처럼 attackAmmoMax가 있는 캐릭터는 눌러서 뗄 때까지
+            // 계속 쏴야 한다(다른 전투 화면과 같은 연사 방식) -- 단발 호출만
+            // 하면 클릭할 때마다 한 발씩만 나가 탄창 캐릭터가 사실상 못 쓴다.
+            arenaTryControlledAttack();
+            maybeStartHoldFire(arenaTryControlledAttack, () => {
+                const pl = arenaControlledPlayerObj();
+                return pl && pl.stats;
+            });
+        }
         else if (e.button === 2) arenaTryControlledSkill();
         return;
     }
